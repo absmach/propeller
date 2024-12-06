@@ -1,0 +1,8 @@
+{
+  "broker_url": "mqtt://localhost:1883",
+  "password": "example-password",
+  "proplet_id": "proplet-1",
+  "channel_id": "channel-1",
+  "registry_url": "",
+  "registry_token": ""
+}
