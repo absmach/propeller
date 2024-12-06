@@ -2,13 +2,13 @@ package worker
 
 import (
 	"context"
-
-	"github.com/absmach/propeller/task"
 )
 
-type WorkerInterface interface {
-	StartTask(ctx context.Context, task task.Task) error
-	RunTask(ctx context.Context, taskID string, proplet *Proplet) ([]uint64, error)
-	StopTask(ctx context.Context, taskID string) error
-	RemoveTask(ctx context.Context, taskID string) error
+type Service interface {
+	DeployApp(ctx context.Context, appName string) error
+	StopApp(ctx context.Context, appName string) error
+	PublishDiscovery(ctx context.Context) error
+	ListenForAppChunks(ctx context.Context, appName string) error
+	SendTelemetry(ctx context.Context) error
+	HandleRPCCommand(ctx context.Context, command string, params []string) error
 }
