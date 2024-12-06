@@ -2,8 +2,10 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/absmach/propeller/task"
 	"github.com/tetratelabs/wazero"
@@ -11,9 +13,9 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-var _ Worker = (*worker)(nil)
+var _ WorkerInterface = (*Worker)(nil)
 
-type worker struct {
+type Worker struct {
 	mu        sync.Mutex
 	Name      string
 	Db        map[string]task.Task
@@ -22,8 +24,8 @@ type worker struct {
 	functions map[string]api.Function
 }
 
-func NewWasmWorker(name string) *worker {
-	return &worker{
+func NewWasmWorker(name string) *Worker {
+	return &Worker{
 		Name:      name,
 		Db:        make(map[string]task.Task),
 		TaskCount: 0,
@@ -32,7 +34,7 @@ func NewWasmWorker(name string) *worker {
 	}
 }
 
-func (w *worker) StartTask(ctx context.Context, task task.Task) error {
+func (w *Worker) StartTask(ctx context.Context, task task.Task) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -59,7 +61,7 @@ func (w *worker) StartTask(ctx context.Context, task task.Task) error {
 	return nil
 }
 
-func (w *worker) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
+func (w *Worker) RunTask(ctx context.Context, taskID string, proplet *Proplet) ([]uint64, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -72,6 +74,12 @@ func (w *worker) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
 
 	result, err := function.Call(ctx, task.Function.Inputs...)
 	if err != nil {
+		w.PublishTelemetry(proplet, map[string]interface{}{
+			"taskID":    task.ID,
+			"state":     task.State.String(),
+			"error":     err.Error(),
+			"timestamp": time.Now(),
+		})
 		return nil, err
 	}
 
@@ -80,10 +88,17 @@ func (w *worker) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
 		return nil, err
 	}
 
+	w.PublishTelemetry(proplet, map[string]interface{}{
+		"taskID":    task.ID,
+		"state":     task.State.String(),
+		"results":   result,
+		"timestamp": time.Now(),
+	})
+
 	return result, nil
 }
 
-func (w *worker) StopTask(ctx context.Context, taskID string) error {
+func (w *Worker) StopTask(ctx context.Context, taskID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -91,7 +106,7 @@ func (w *worker) StopTask(ctx context.Context, taskID string) error {
 	return r.Close(ctx)
 }
 
-func (w *worker) RemoveTask(ctx context.Context, taskID string) error {
+func (w *Worker) RemoveTask(ctx context.Context, taskID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -101,4 +116,16 @@ func (w *worker) RemoveTask(ctx context.Context, taskID string) error {
 	w.TaskCount--
 
 	return nil
+}
+
+func (w *Worker) PublishTelemetry(proplet *Proplet, telemetryData map[string]interface{}) {
+	topic := fmt.Sprintf("channels/%s/messages/monitor", proplet.ChannelID)
+	payload := mapToJSON(telemetryData)
+	proplet.Publish(topic, payload)
+}
+
+// Helper function to convert telemetry data to JSON
+func mapToJSON(data map[string]interface{}) string {
+	jsonData, _ := json.Marshal(data)
+	return string(jsonData)
 }

@@ -1,0 +1,5 @@
+{
+  "brokerURL": "tcp://mqtt.example.com:1883",
+  "token": "your-mqtt-token",
+  "channelID": "your-channel-id"
+}
