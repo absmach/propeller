@@ -1,25 +1,12 @@
 package worker
 
-type DeployAppResponse struct {
-	Err string `json:"error,omitempty"`
+type Response struct {
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }
 
-type StopAppResponse struct {
-	Err string `json:"error,omitempty"`
-}
-
-type PublishDiscoveryResponse struct {
-	Err string `json:"error,omitempty"`
-}
-
-type ListenForAppChunksResponse struct {
-	Err string `json:"error,omitempty"`
-}
-
-type SendTelemetryResponse struct {
-	Err string `json:"error,omitempty"`
-}
-
-type HandleRPCCommandResponse struct {
-	Err string `json:"error,omitempty"`
+type RPCResponse struct {
+	Result string `json:"result,omitempty"`
+	Error  string `json:"error,omitempty"`
+	ID     int    `json:"id"`
 }

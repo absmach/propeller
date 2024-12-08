@@ -4,20 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
+	"time"
 
-	MQTT "github.com/eclipse/paho.mqtt.golang"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type propletService struct {
-	clientID     string
-	channelID    string
-	mqttClient   MQTT.Client
-	chunkBuffers map[string][]ChunkPayload
-	bufferMutex  sync.Mutex
-}
-
+// ChunkPayload represents a single chunk of a Wasm binary.
 type ChunkPayload struct {
 	AppName     string `json:"appName"`
 	ChunkIdx    int    `json:"chunkIdx"`
@@ -25,116 +18,190 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(clientID, channelID string, mqttClient MQTT.Client) Service {
-	return &propletService{
-		clientID:     clientID,
-		channelID:    channelID,
-		mqttClient:   mqttClient,
-		chunkBuffers: make(map[string][]ChunkPayload),
-	}
+type PropletService struct {
+	config      *Config
+	mqttClient  mqtt.Client
+	runtime     *WasmRuntime
+	appChunks   map[string][]ChunkPayload
+	chunksMutex sync.Mutex
 }
 
-func (s *propletService) DeployApp(ctx context.Context, appName string) error {
-	s.bufferMutex.Lock()
-	chunks, allChunksReceived := s.chunkBuffers[appName]
-	s.bufferMutex.Unlock()
+// NewPropletService creates a new instance of the PropletService.
+func NewPropletService(ctx context.Context, config *Config) (*PropletService, error) {
+	mqttClient, err := NewMQTTClient(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize MQTT client: %v", err)
+	}
 
-	if allChunksReceived && len(chunks) > 0 {
-		wasmBinary := s.reassembleChunks(appName)
-		if wasmBinary != nil {
-			fmt.Printf("Deploying Wasm app: %s\n", appName)
-			fmt.Printf("Wasm app %s successfully deployed on node %s\n", appName, s.clientID)
-		} else {
-			return fmt.Errorf("failed to reassemble chunks for app: %s", appName)
+	runtime := NewWasmRuntime(ctx)
+	return &PropletService{
+		config:      config,
+		mqttClient:  mqttClient,
+		runtime:     runtime,
+		appChunks:   make(map[string][]ChunkPayload),
+		chunksMutex: sync.Mutex{},
+	}, nil
+}
+
+// Run starts the PropletService and listens for commands and artifacts.
+func (p *PropletService) Run(ctx context.Context) error {
+	// Publish discovery and set LWT
+	PublishDiscovery(p.mqttClient, p.config)
+
+	// Subscribe to control topic for commands
+	controlTopic := fmt.Sprintf("channels/%s/messages/control", p.config.ChannelID)
+	if token := p.mqttClient.Subscribe(controlTopic, 0, func(client mqtt.Client, msg mqtt.Message) {
+		p.handleCommand(ctx, msg)
+	}); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to control topic: %v", token.Error())
+	}
+
+	// Subscribe to registry topic for receiving Wasm chunks
+	registryTopic := fmt.Sprintf("channels/%s/messages/registry/proplet", p.config.ChannelID)
+	if token := p.mqttClient.Subscribe(registryTopic, 0, func(client mqtt.Client, msg mqtt.Message) {
+		p.handleChunk(msg)
+	}); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to registry topic: %v", token.Error())
+	}
+
+	fmt.Println("Proplet service is running...")
+	<-ctx.Done()
+	return nil
+}
+
+// handleCommand processes incoming JSON-RPC commands.
+func (p *PropletService) handleCommand(ctx context.Context, msg mqtt.Message) {
+	var req RPCRequest
+	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
+		p.publishErrorResponse(req.ID, "Invalid JSON-RPC request")
+		return
+	}
+
+	switch req.Method {
+	case "start":
+		if len(req.Params) < 1 {
+			p.publishErrorResponse(req.ID, "Invalid parameters for 'start'")
+			return
 		}
-	} else {
-		return fmt.Errorf("waiting for all chunks to be received for app: %s", appName)
+		appName := req.Params[0].(string)
+		go p.handleStart(ctx, req.ID, appName)
+	case "stop":
+		if len(req.Params) < 1 {
+			p.publishErrorResponse(req.ID, "Invalid parameters for 'stop'")
+			return
+		}
+		appName := req.Params[0].(string)
+		go p.handleStop(ctx, req.ID, appName)
+	default:
+		p.publishErrorResponse(req.ID, "Unknown method")
 	}
-	return nil
 }
 
-func (s *propletService) StopApp(ctx context.Context, appName string) error {
-	fmt.Printf("Stopping Wasm app: %s\n", appName)
-	fmt.Printf("Wasm app %s successfully stopped on node %s\n", appName, s.clientID)
-	return nil
-}
+// handleStart processes the "start" command.
+func (p *PropletService) handleStart(ctx context.Context, id int, appName string) {
+	p.chunksMutex.Lock()
+	chunks, exists := p.appChunks[appName]
+	p.chunksMutex.Unlock()
 
-func (s *propletService) PublishDiscovery(ctx context.Context) error {
-	discoveryTopic := fmt.Sprintf("channels/%s/messages/discovery", s.channelID)
-	discoveryPayload := fmt.Sprintf(`{"channelID":"%s", "clientID":"%s"}`, s.channelID, s.clientID)
-	token := s.mqttClient.Publish(discoveryTopic, 0, false, discoveryPayload)
-	token.Wait()
-	if token.Error() != nil {
-		return token.Error()
-	}
-	return nil
-}
-
-func (s *propletService) ListenForAppChunks(ctx context.Context, appName string) error {
-	registryTopic := fmt.Sprintf("channels/%s/messages/registry/server", s.channelID)
-
-	// Subscribe to the registry topic to receive chunks
-	token := s.mqttClient.Subscribe(registryTopic, 0, func(client MQTT.Client, msg MQTT.Message) {
-		var chunk ChunkPayload
-		if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
-			fmt.Printf("Failed to unmarshal chunk payload: %v\n", err)
+	if !exists || len(chunks) == 0 {
+		err := p.requestArtifact(appName)
+		if err != nil {
+			p.publishErrorResponse(id, fmt.Sprintf("Failed to request artifact: %v", err))
 			return
 		}
 
-		if chunk.AppName == appName {
-			s.bufferMutex.Lock()
-			s.chunkBuffers[appName] = append(s.chunkBuffers[appName], chunk)
-			s.bufferMutex.Unlock()
-			fmt.Printf("Received chunk %d/%d for app: %s\n", chunk.ChunkIdx+1, chunk.TotalChunks, appName)
+		fmt.Printf("Waiting for Wasm chunks for app: %s\n", appName)
+		if !p.waitForChunks(ctx, appName) {
+			p.publishErrorResponse(id, fmt.Sprintf("Timed out waiting for chunks for app: %s", appName))
+			return
 		}
-	})
+	}
+
+	p.chunksMutex.Lock()
+	wasmBinary := reassembleChunks(p.appChunks[appName])
+	p.chunksMutex.Unlock()
+
+	function, err := p.runtime.StartApp(ctx, appName, wasmBinary, "main")
+	if err != nil {
+		p.publishErrorResponse(id, fmt.Sprintf("Failed to deploy app: %v", err))
+		return
+	}
+
+	_, err = function.Call(ctx)
+	if err != nil {
+		p.publishErrorResponse(id, fmt.Sprintf("Failed to run app: %v", err))
+		return
+	}
+
+	p.publishSuccessResponse(id, fmt.Sprintf("App %s started successfully", appName))
+}
+
+// handleStop processes the "stop" command.
+func (p *PropletService) handleStop(ctx context.Context, id int, appName string) {
+	err := p.runtime.StopApp(ctx, appName)
+	if err != nil {
+		p.publishErrorResponse(id, fmt.Sprintf("Failed to stop app: %v", err))
+		return
+	}
+	p.publishSuccessResponse(id, fmt.Sprintf("App %s stopped successfully", appName))
+}
+
+// handleChunk processes Wasm chunks received from the Registry Proxy.
+func (p *PropletService) handleChunk(msg mqtt.Message) {
+	var chunk ChunkPayload
+	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
+		fmt.Printf("Failed to unmarshal chunk payload: %v\n", err)
+		return
+	}
+
+	p.chunksMutex.Lock()
+	defer p.chunksMutex.Unlock()
+	p.appChunks[chunk.AppName] = append(p.appChunks[chunk.AppName], chunk)
+	fmt.Printf("Received chunk %d/%d for app: %s\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
+}
+
+// requestArtifact sends an artifact request to the Registry Proxy.
+func (p *PropletService) requestArtifact(appName string) error {
+	topic := fmt.Sprintf("channels/%s/messages/registry/manager", p.config.ChannelID)
+	payload := fmt.Sprintf(`{"appName": "%s", "action": "fetch"}`, appName)
+	token := p.mqttClient.Publish(topic, 0, false, payload)
 	token.Wait()
-	if token.Error() != nil {
-		return token.Error()
-	}
-
-	fmt.Printf("Subscribed to registry topic for app: %s\n", appName)
-	return nil
+	return token.Error()
 }
 
-func (s *propletService) SendTelemetry(ctx context.Context) error {
-	telemetryTopic := fmt.Sprintf("channels/%s/messages/monitor", s.channelID)
-	telemetryPayload := fmt.Sprintf(`{"clientID":"%s", "status":"healthy"}`, s.clientID)
-	token := s.mqttClient.Publish(telemetryTopic, 0, false, telemetryPayload)
-	token.Wait()
-	if token.Error() != nil {
-		return token.Error()
-	}
-	fmt.Printf("Telemetry data sent for client: %s\n", s.clientID)
-	return nil
-}
+// waitForChunks waits for all chunks of a Wasm app to arrive or times out.
+func (p *PropletService) waitForChunks(ctx context.Context, appName string) bool {
+	chunkArrival := make(chan struct{})
+	go func() {
+		for {
+			p.chunksMutex.Lock()
+			chunks, exists := p.appChunks[appName]
+			p.chunksMutex.Unlock()
 
-func (s *propletService) HandleRPCCommand(ctx context.Context, command string, params []string) error {
-	switch command {
-	case "start":
-		if len(params) > 0 {
-			return s.DeployApp(ctx, params[0])
+			if exists && len(chunks) > 0 {
+				close(chunkArrival)
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
-		return fmt.Errorf("missing parameters for start command")
-	case "stop":
-		if len(params) > 0 {
-			return s.StopApp(ctx, params[0])
-		}
-		return fmt.Errorf("missing parameters for stop command")
-	default:
-		return fmt.Errorf("unknown command: %s", command)
+	}()
+
+	select {
+	case <-chunkArrival:
+		return true
+	case <-time.After(30 * time.Second):
+		return false
 	}
 }
 
-func (s *propletService) reassembleChunks(appName string) []byte {
-	s.bufferMutex.Lock()
-	defer s.bufferMutex.Unlock()
-
-	chunks := s.chunkBuffers[appName]
-	if len(chunks) == 0 {
-		return nil
-	}
-
+// reassembleChunks reconstructs the binary from received Wasm chunks.
+func reassembleChunks(chunks []ChunkPayload) []byte {
 	chunkMap := make(map[int][]byte)
 	for _, chunk := range chunks {
 		chunkMap[chunk.ChunkIdx] = chunk.Data
@@ -142,48 +209,23 @@ func (s *propletService) reassembleChunks(appName string) []byte {
 
 	var wasmBinary []byte
 	for i := 0; i < len(chunks); i++ {
-		if data, ok := chunkMap[i]; ok {
-			wasmBinary = append(wasmBinary, data...)
-		} else {
-			fmt.Printf("Missing chunk %d for app: %s\n", i, appName)
-			return nil
-		}
+		wasmBinary = append(wasmBinary, chunkMap[i]...)
 	}
-
 	return wasmBinary
 }
 
-func loadConfig(filepath string) (*PropletConfig, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var config PropletConfig
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&config); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+// publishErrorResponse publishes an error response to the control topic.
+func (p *PropletService) publishErrorResponse(id int, errMsg string) {
+	response := RPCResponse{Error: errMsg, ID: id}
+	payload, _ := json.Marshal(response)
+	topic := fmt.Sprintf("channels/%s/messages/control/proplet", p.config.ChannelID)
+	p.mqttClient.Publish(topic, 0, false, payload)
 }
 
-func generatePropletName() string {
-	counterMutex.Lock()
-	defer counterMutex.Unlock()
-	propletCounter++
-	return fmt.Sprintf("Proplet-%d", propletCounter)
-}
-
-var (
-	propletCounter int
-	counterMutex   sync.Mutex
-)
-
-// PropletConfig holds the configuration for creating a Proplet.
-type PropletConfig struct {
-	BrokerURL string `json:"brokerURL"`
-	Token     string `json:"token"`
-	ChannelID string `json:"channelID"`
+// publishSuccessResponse publishes a success response to the control topic.
+func (p *PropletService) publishSuccessResponse(id int, result string) {
+	response := RPCResponse{Result: result, ID: id}
+	payload, _ := json.Marshal(response)
+	topic := fmt.Sprintf("channels/%s/messages/control/proplet", p.config.ChannelID)
+	p.mqttClient.Publish(topic, 0, false, payload)
 }

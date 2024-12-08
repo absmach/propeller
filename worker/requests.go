@@ -1,22 +1,16 @@
 package worker
 
-type DeployAppRequest struct {
-	AppName string `json:"appName"`
-}
-
-type StopAppRequest struct {
-	AppName string `json:"appName"`
-}
-
-type PublishDiscoveryRequest struct{}
-
-type ListenForAppChunksRequest struct {
-	AppName string `json:"appName"`
-}
-
-type SendTelemetryRequest struct{}
-
-type HandleRPCCommandRequest struct {
-	Command string   `json:"command"`
+type StartRequest struct {
+	AppName string   `json:"app_name"`
 	Params  []string `json:"params"`
+}
+
+type StopRequest struct {
+	AppName string `json:"app_name"`
+}
+
+type RPCRequest struct {
+	Method string        `json:"method"`
+	Params []interface{} `json:"params"`
+	ID     int           `json:"id"`
 }
