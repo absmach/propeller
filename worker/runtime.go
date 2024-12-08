@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 )
@@ -15,6 +16,7 @@ type WasmRuntime struct {
 	mutex   sync.Mutex
 }
 
+// NewWasmRuntime initializes a new WasmRuntime instance.
 func NewWasmRuntime(ctx context.Context) *WasmRuntime {
 	return &WasmRuntime{
 		runtime: wazero.NewRuntime(ctx),
@@ -22,40 +24,56 @@ func NewWasmRuntime(ctx context.Context) *WasmRuntime {
 	}
 }
 
+// StartApp instantiates and starts a Wasm module.
 func (w *WasmRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (api.Function, error) {
+	if appName == "" {
+		return nil, fmt.Errorf("start app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+	if len(wasmBinary) == 0 {
+		return nil, fmt.Errorf("start app: Wasm binary is empty: %w", pkgerrors.ErrInvalidValue)
+	}
+	if functionName == "" {
+		return nil, fmt.Errorf("start app: functionName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
 	if _, exists := w.modules[appName]; exists {
-		return nil, fmt.Errorf("app %s is already running", appName)
+		return nil, fmt.Errorf("start app: app '%s' is already running: %w", appName, pkgerrors.ErrAppAlreadyRunning)
 	}
 
 	module, err := w.runtime.Instantiate(ctx, wasmBinary)
 	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate Wasm module for app %s: %v", appName, err)
+		return nil, fmt.Errorf("start app: failed to instantiate Wasm module for app '%s': %w", appName, pkgerrors.ErrModuleInstantiation)
 	}
 
 	function := module.ExportedFunction(functionName)
 	if function == nil {
 		_ = module.Close(ctx)
-		return nil, fmt.Errorf("function %s not found in Wasm module for app %s", functionName, appName)
+		return nil, fmt.Errorf("start app: function '%s' not found in Wasm module for app '%s': %w", functionName, appName, pkgerrors.ErrFunctionNotFound)
 	}
 
 	w.modules[appName] = module
 	return function, nil
 }
 
+// StopApp stops and removes a running Wasm module.
 func (w *WasmRuntime) StopApp(ctx context.Context, appName string) error {
+	if appName == "" {
+		return fmt.Errorf("stop app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
 	module, exists := w.modules[appName]
 	if !exists {
-		return fmt.Errorf("app %s is not running", appName)
+		return fmt.Errorf("stop app: app '%s' is not running: %w", appName, pkgerrors.ErrAppNotRunning)
 	}
 
 	if err := module.Close(ctx); err != nil {
-		return fmt.Errorf("failed to stop app %s: %v", appName, err)
+		return fmt.Errorf("stop app: failed to stop app '%s': %w", appName, pkgerrors.ErrModuleStopFailed)
 	}
 
 	delete(w.modules, appName)
