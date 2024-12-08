@@ -1,0 +1,7 @@
+{
+    "brokerURL": "mqtt://localhost:1883",
+    "token": "example-token",
+    "propletID": "proplet-1",
+    "channelID": "channel-1"
+  }
+  
