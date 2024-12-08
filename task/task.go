@@ -38,10 +38,19 @@ type Function struct {
 }
 
 type Task struct {
-	ID         string
-	Name       string
-	State      State
-	Function   Function
-	StartTime  time.Time
-	FinishTime time.Time
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	State      State     `json:"state"`
+	Function   Function  `json:"function"`
+	StartTime  time.Time `json:"start_time"`
+	FinishTime time.Time `json:"finish_time"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type TaskPage struct {
+	Offset uint64 `json:"offset"`
+	Limit  uint64 `json:"limit"`
+	Total  uint64 `json:"total"`
+	Tasks  []Task `json:"tasks"`
 }
