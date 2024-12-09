@@ -105,25 +105,33 @@ func startLivelinessUpdates(client mqtt.Client, config *Config) {
 	}
 }
 
-// SubscribeToTopics subscribes to relevant MQTT topics for commands and registry interaction.
-func SubscribeToTopics(client mqtt.Client, config *Config, commandHandler, registryHandler mqtt.MessageHandler) error {
-	controlTopic := fmt.Sprintf("channels/%s/messages/control/manager", config.ChannelID)
-	if token := client.Subscribe(controlTopic, 0, commandHandler); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("failed to subscribe to control topic: %w", token.Error())
+// SubscribeToTopics subscribes to relevant MQTT topics for Manager and registry interaction.
+func SubscribeToTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler) error {
+	// Subscribe to the start command topic
+	startTopic := fmt.Sprintf("channels/%s/messages/control/manager/start", config.ChannelID)
+	if token := client.Subscribe(startTopic, 0, startHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to start topic: %w", token.Error())
 	}
 
-	registryTopic := fmt.Sprintf("channels/%s/messages/registry/proplet", config.ChannelID)
+	// Subscribe to the stop command topic
+	stopTopic := fmt.Sprintf("channels/%s/messages/control/manager/stop", config.ChannelID)
+	if token := client.Subscribe(stopTopic, 0, stopHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to stop topic: %w", token.Error())
+	}
+
+	// Subscribe to the registry topic for image chunks
+	registryTopic := fmt.Sprintf("channels/%s/messages/registry/server", config.ChannelID)
 	if token := client.Subscribe(registryTopic, 0, registryHandler); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to subscribe to registry topic: %w", token.Error())
 	}
 
-	fmt.Println("Subscribed to control and registry topics.")
+	fmt.Printf("Subscribed to start topic '%s', stop topic '%s', and registry topic '%s'\n", startTopic, stopTopic, registryTopic)
 	return nil
 }
 
 // PublishFetchRequest sends a fetch request to the Registry Proxy.
 func PublishFetchRequest(client mqtt.Client, channelID string, appName string) error {
-	topic := fmt.Sprintf("channels/%s/messages/registry/proplet/fetch", channelID)
+	topic := fmt.Sprintf("channels/%s/messages/registry/proplet", channelID)
 	payload := map[string]string{"app_name": appName}
 	data, err := json.Marshal(payload)
 	if err != nil {

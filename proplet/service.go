@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 type PropletService struct {
-	config      *Config
-	mqttClient  mqtt.Client
-	runtime     *WazeroRuntime
-	chunks      map[string][][]byte
-	chunksMutex sync.Mutex
+	config        *Config
+	mqttClient    mqtt.Client
+	runtime       *WazeroRuntime
+	chunks        map[string][][]byte
+	chunkMetadata map[string]*ChunkPayload
+	chunksMutex   sync.Mutex
 }
 
 // ChunkPayload represents a single chunk of a Wasm binary.
@@ -34,16 +36,24 @@ func NewPropletService(ctx context.Context, config *Config) (*PropletService, er
 
 	runtime := NewWazeroRuntime(ctx)
 	return &PropletService{
-		config:     config,
-		mqttClient: mqttClient,
-		runtime:    runtime,
-		chunks:     make(map[string][][]byte),
+		config:        config,
+		mqttClient:    mqttClient,
+		runtime:       runtime,
+		chunks:        make(map[string][][]byte),
+		chunkMetadata: make(map[string]*ChunkPayload),
 	}, nil
 }
 
 // Run starts the PropletService and subscribes to relevant topics.
 func (p *PropletService) Run(ctx context.Context) error {
-	err := SubscribeToTopics(p.mqttClient, p.config, p.handleCommand, p.handleChunk)
+	// Subscribe to Manager command topics (start and stop) and registry topic
+	err := SubscribeToTopics(
+		p.mqttClient,
+		p.config,
+		p.handleStartCommand,
+		p.handleStopCommand,
+		p.handleChunk,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to MQTT topics: %w", err)
 	}
@@ -53,29 +63,13 @@ func (p *PropletService) Run(ctx context.Context) error {
 	return nil
 }
 
-// handleCommand processes commands from the Manager.
-func (p *PropletService) handleCommand(client mqtt.Client, msg mqtt.Message) {
-	var req RPCRequest
+func (p *PropletService) handleStartCommand(client mqtt.Client, msg mqtt.Message) {
+	var req StartRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
-		fmt.Printf("Invalid command payload: %v\n", err)
+		fmt.Printf("Invalid start command payload: %v\n", err)
 		return
 	}
 
-	switch req.Method {
-	case "start":
-		params, _ := req.ParseParams()
-		startReq := params.(StartRequest)
-		go p.handleStart(startReq)
-	case "stop":
-		params, _ := req.ParseParams()
-		stopReq := params.(StopRequest)
-		go p.handleStop(stopReq)
-	default:
-		fmt.Printf("Unknown command: %s\n", req.Method)
-	}
-}
-
-func (p *PropletService) handleStart(req StartRequest) {
 	fmt.Printf("Received start command for app '%s'\n", req.AppName)
 
 	// Publish fetch request to the Registry Proxy
@@ -84,6 +78,46 @@ func (p *PropletService) handleStart(req StartRequest) {
 		fmt.Printf("Failed to publish fetch request: %v\n", err)
 		return
 	}
+
+	// Wait for chunks to be received and assembled
+	go func() {
+		fmt.Printf("Waiting for chunks for app '%s'...\n", req.AppName)
+
+		// Poll for chunk completion
+		for {
+			p.chunksMutex.Lock()
+			metadata, exists := p.chunkMetadata[req.AppName]
+			receivedChunks := len(p.chunks[req.AppName])
+			p.chunksMutex.Unlock()
+
+			if exists && receivedChunks == metadata.TotalChunks {
+				fmt.Printf("All chunks received for app '%s'. Deploying...\n", req.AppName)
+				go p.deployAndRunApp(req.AppName)
+				break
+			}
+
+			time.Sleep(1 * time.Second) // Avoid tight polling
+		}
+	}()
+}
+
+// handleStopCommand processes the stop command from the Manager.
+func (p *PropletService) handleStopCommand(client mqtt.Client, msg mqtt.Message) {
+	var req StopRequest
+	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
+		fmt.Printf("Invalid stop command payload: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Received stop command for app '%s'\n", req.AppName)
+
+	err := p.runtime.StopApp(context.Background(), req.AppName)
+	if err != nil {
+		fmt.Printf("Failed to stop app '%s': %v\n", req.AppName, err)
+		return
+	}
+
+	fmt.Printf("App '%s' stopped successfully.\n", req.AppName)
 }
 
 // handleChunk processes Wasm chunks from the Registry Proxy.
@@ -100,31 +134,35 @@ func (p *PropletService) handleChunk(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	// Safely append the chunk data
+	// Safely append the chunk data and store metadata
 	p.chunksMutex.Lock()
+	defer p.chunksMutex.Unlock()
+
+	// Store metadata if this is the first chunk
+	if _, exists := p.chunkMetadata[chunk.AppName]; !exists {
+		p.chunkMetadata[chunk.AppName] = &chunk
+	}
+
+	// Append chunk data
 	p.chunks[chunk.AppName] = append(p.chunks[chunk.AppName], chunk.Data)
-	p.chunksMutex.Unlock()
 
 	fmt.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
 
 	// Check if all chunks are received
-	p.chunksMutex.Lock()
-	if len(p.chunks[chunk.AppName]) == chunk.TotalChunks {
-		p.chunksMutex.Unlock()
+	if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
+		fmt.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
 		go p.deployAndRunApp(chunk.AppName)
-	} else {
-		p.chunksMutex.Unlock()
 	}
 }
 
-// deployAndRunApp deploys and starts the Wasm app.
+// deployAndRunApp assembles, deploys, and starts the Wasm app.
 func (p *PropletService) deployAndRunApp(appName string) {
 	fmt.Printf("Assembling chunks for app '%s'\n", appName)
 
 	// Safely retrieve and delete chunks
 	p.chunksMutex.Lock()
 	chunks := p.chunks[appName]
-	delete(p.chunks, appName) // Clean up after deployment
+	delete(p.chunks, appName)
 	p.chunksMutex.Unlock()
 
 	// Assemble Wasm binary
@@ -153,26 +191,6 @@ func assembleChunks(chunks [][]byte) []byte {
 		wasmBinary = append(wasmBinary, chunk...)
 	}
 	return wasmBinary
-}
-
-// handleStop stops the Wasm app.
-func (p *PropletService) handleStop(req StopRequest) {
-	err := p.runtime.StopApp(context.Background(), req.AppName)
-	if err != nil {
-		fmt.Printf("Failed to stop app '%s': %v\n", req.AppName, err)
-		return
-	}
-	fmt.Printf("App '%s' stopped successfully.\n", req.AppName)
-}
-
-// handleRegistryChunks processes Wasm chunks from the Registry Proxy.
-func (p *PropletService) handleChunks(_ mqtt.Client, msg mqtt.Message) {
-	var chunk ChunkPayload
-	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
-		fmt.Printf("Invalid chunk payload: %v\n", err)
-		return
-	}
-	fmt.Printf("Received chunk for app '%s': %d/%d\n", chunk.AppName, chunk.ChunkIdx+1, chunk.TotalChunks)
 }
 
 // Validate checks if the ChunkPayload has all required fields and valid values.
