@@ -37,7 +37,7 @@ func (c *ChunkPayload) Validate() error {
 type PropletService struct {
 	config      *Config
 	mqttClient  mqtt.Client
-	runtime     *WasmRuntime
+	runtime     *WazeroRuntime
 	appChunks   map[string][]ChunkPayload
 	chunksMutex sync.Mutex
 }
@@ -49,7 +49,7 @@ func NewPropletService(ctx context.Context, config *Config) (*PropletService, er
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
 
-	runtime := NewWasmRuntime(ctx)
+	runtime := NewWazeroRuntime(ctx)
 	return &PropletService{
 		config:      config,
 		mqttClient:  mqttClient,

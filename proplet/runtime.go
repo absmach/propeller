@@ -10,22 +10,23 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-type WasmRuntime struct {
+// WazeroRuntime manages the Wazero runtime and running Wasm modules.
+type WazeroRuntime struct {
 	runtime wazero.Runtime
 	modules map[string]api.Module
 	mutex   sync.Mutex
 }
 
-// NewWasmRuntime initializes a new WasmRuntime instance.
-func NewWasmRuntime(ctx context.Context) *WasmRuntime {
-	return &WasmRuntime{
+// NewWazeroRuntime initializes a new WazeroRuntime instance.
+func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
+	return &WazeroRuntime{
 		runtime: wazero.NewRuntime(ctx),
 		modules: make(map[string]api.Module),
 	}
 }
 
 // StartApp instantiates and starts a Wasm module.
-func (w *WasmRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (api.Function, error) {
+func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (api.Function, error) {
 	if appName == "" {
 		return nil, fmt.Errorf("start app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
 	}
@@ -59,7 +60,7 @@ func (w *WasmRuntime) StartApp(ctx context.Context, appName string, wasmBinary [
 }
 
 // StopApp stops and removes a running Wasm module.
-func (w *WasmRuntime) StopApp(ctx context.Context, appName string) error {
+func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 	if appName == "" {
 		return fmt.Errorf("stop app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
 	}
