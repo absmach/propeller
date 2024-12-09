@@ -24,7 +24,7 @@ func main() {
 	}()
 
 	// Load configuration
-	config, err := proplet.LoadConfig("worker/config.json")
+	config, err := proplet.LoadConfig("proplet/config.json")
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)

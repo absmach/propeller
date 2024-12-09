@@ -9,6 +9,7 @@ import (
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 )
 
+// Config holds configuration for the MQTT client.
 type Config struct {
 	BrokerURL string `json:"brokerURL"`
 	Token     string `json:"token"`
