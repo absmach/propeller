@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-
-	pkgerrors "github.com/absmach/propeller/pkg/errors"
 )
 
 // Config holds configuration for the MQTT client.
@@ -21,14 +19,14 @@ type Config struct {
 func LoadConfig(filepath string) (*Config, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to open configuration file '%s': %w", filepath, pkgerrors.ErrInvalidData)
+		return nil, fmt.Errorf("unable to open configuration file '%s': %w", filepath, err)
 	}
 	defer file.Close()
 
 	var config Config
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("failed to parse configuration file '%s': %w", filepath, pkgerrors.ErrInvalidData)
+		return nil, fmt.Errorf("failed to parse configuration file '%s': %w", filepath, err)
 	}
 
 	if err := config.Validate(); err != nil {
@@ -40,17 +38,11 @@ func LoadConfig(filepath string) (*Config, error) {
 
 // Validate ensures that all required fields are set and correct.
 func (c *Config) Validate() error {
-	if c.BrokerURL == "" {
-		return fmt.Errorf("brokerURL is required but missing: %w", pkgerrors.ErrMissingValue)
+	if c.BrokerURL == "" || c.PropletID == "" || c.ChannelID == "" {
+		return fmt.Errorf("missing required configuration fields")
 	}
 	if _, err := url.ParseRequestURI(c.BrokerURL); err != nil {
-		return fmt.Errorf("brokerURL '%s' is not a valid URL: %w", c.BrokerURL, pkgerrors.ErrInvalidValue)
-	}
-	if c.PropletID == "" {
-		return fmt.Errorf("propletID is required but missing: %w", pkgerrors.ErrMissingValue)
-	}
-	if c.ChannelID == "" {
-		return fmt.Errorf("channelID is required but missing: %w", pkgerrors.ErrMissingValue)
+		return fmt.Errorf("invalid broker URL '%s': %w", c.BrokerURL, err)
 	}
 	return nil
 }

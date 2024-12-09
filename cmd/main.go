@@ -23,21 +23,28 @@ func main() {
 		fmt.Println("Shutting down gracefully...")
 	}()
 
-	// Load configuration
-	config, err := proplet.LoadConfig("proplet/config.json")
-	if err != nil {
-		fmt.Printf("Failed to load configuration: %v\n", err)
-		os.Exit(1)
-	}
-
 	// Initialize and run the Proplet service
-	proplet, err := proplet.NewPropletService(ctx, config)
+	service, err := initializeProplet(ctx, "proplet/config.json")
 	if err != nil {
-		fmt.Printf("Failed to initialize Proplet: %v\n", err)
+		fmt.Printf("Error initializing Proplet: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := proplet.Run(ctx); err != nil {
+	if err := service.Run(ctx); err != nil {
 		fmt.Printf("Error running Proplet: %v\n", err)
 	}
+}
+
+func initializeProplet(ctx context.Context, configPath string) (*proplet.PropletService, error) {
+	config, err := proplet.LoadConfig(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	propletService, err := proplet.NewPropletService(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Proplet: %w", err)
+	}
+
+	return propletService, nil
 }

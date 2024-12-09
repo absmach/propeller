@@ -11,14 +11,9 @@ import (
 
 // NewMQTTClient initializes a new MQTT client with LWT and starts liveliness updates.
 func NewMQTTClient(config *Config) (mqtt.Client, error) {
-	// Validate broker URL
-	if _, err := url.ParseRequestURI(config.BrokerURL); err != nil {
-		return nil, fmt.Errorf("invalid MQTT broker URL '%s': %w", config.BrokerURL, pkgerrors.ErrMQTTInvalidBrokerURL)
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-
-	// Topics
-	createTopic := fmt.Sprintf("channels/%s/messages/control/proplet/create", config.ChannelID)
-	aliveTopic := fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID)
 
 	// Last Will and Testament payload
 	lwtPayload := fmt.Sprintf(`{"status":"offline","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
@@ -33,7 +28,7 @@ func NewMQTTClient(config *Config) (mqtt.Client, error) {
 		SetUsername("token").
 		SetPassword(config.Token).
 		SetCleanSession(true).
-		SetWill(aliveTopic, lwtPayload, 0, false)
+		SetWill(fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID), lwtPayload, 0, false)
 
 	// Handlers for connection events
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
@@ -53,26 +48,62 @@ func NewMQTTClient(config *Config) (mqtt.Client, error) {
 
 	fmt.Println("MQTT client connected successfully.")
 
-	// Publish to the "create" topic to announce the Proplet's existence
-	createPayload := fmt.Sprintf(`{"proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
-	client.Publish(createTopic, 0, false, createPayload)
+	// Publish discovery message
+	if err := PublishDiscovery(client, config); err != nil {
+		return nil, fmt.Errorf("failed to publish discovery message: %w", err)
+	}
 
 	// Start liveliness updates
-	go startLivelinessUpdates(client, config, aliveTopic)
+	go startLivelinessUpdates(client, config)
 
 	return client, nil
 }
 
+// validateConfig ensures that the provided configuration is valid and complete.
+func validateConfig(config *Config) error {
+	if config == nil {
+		return fmt.Errorf("config is nil: %w", pkgerrors.ErrConfigValidation)
+	}
+	if config.ChannelID == "" {
+		return fmt.Errorf("ChannelID is missing: %w", pkgerrors.ErrMissingChannelID)
+	}
+	if config.PropletID == "" {
+		return fmt.Errorf("PropletID is missing: %w", pkgerrors.ErrMissingPropletID)
+	}
+	if config.BrokerURL == "" {
+		return fmt.Errorf("BrokerURL is missing: %w", pkgerrors.ErrMissingValue)
+	}
+	if _, err := url.ParseRequestURI(config.BrokerURL); err != nil {
+		return fmt.Errorf("invalid broker URL '%s': %w", config.BrokerURL, pkgerrors.ErrInvalidValue)
+	}
+	return nil
+}
+
+// publishDiscovery sends an initial "create" message to announce the Proplet's existence.
+func PublishDiscovery(client mqtt.Client, config *Config) error {
+	topic := fmt.Sprintf("channels/%s/messages/control/proplet/create", config.ChannelID)
+	payload := fmt.Sprintf(`{"proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
+	token := client.Publish(topic, 0, false, payload)
+	token.Wait()
+	if token.Error() != nil {
+		return fmt.Errorf("failed to publish discovery message to topic '%s': %w", topic, pkgerrors.ErrPublishDiscovery)
+	}
+
+	fmt.Printf("Discovery message published to topic '%s'\n", topic)
+	return nil
+}
+
 // startLivelinessUpdates sends periodic "alive" messages to the MQTT broker.
-func startLivelinessUpdates(client mqtt.Client, config *Config, aliveTopic string) {
+func startLivelinessUpdates(client mqtt.Client, config *Config) {
 	for {
-		alivePayload := fmt.Sprintf(`{"status":"alive","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
-		token := client.Publish(aliveTopic, 0, false, alivePayload)
+		topic := fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID)
+		payload := fmt.Sprintf(`{"status":"alive","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
+		token := client.Publish(topic, 0, false, payload)
 		token.Wait()
 		if token.Error() != nil {
 			fmt.Printf("Failed to publish liveliness: %v\n", token.Error())
 		}
 
-		time.Sleep(10 * time.Second) // Publish every 10 seconds
+		time.Sleep(10 * time.Second)
 	}
 }
