@@ -1,4 +1,4 @@
-package worker
+package proplet
 
 import (
 	"encoding/json"

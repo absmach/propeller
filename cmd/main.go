@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/absmach/propeller/worker"
+	"github.com/absmach/propeller/proplet"
 )
 
 func main() {
@@ -24,14 +24,14 @@ func main() {
 	}()
 
 	// Load configuration
-	config, err := worker.LoadConfig("worker/config.json")
+	config, err := proplet.LoadConfig("worker/config.json")
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Initialize and run the Proplet service
-	proplet, err := worker.NewPropletService(ctx, config)
+	proplet, err := proplet.NewPropletService(ctx, config)
 	if err != nil {
 		fmt.Printf("Failed to initialize Proplet: %v\n", err)
 		os.Exit(1)
