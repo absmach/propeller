@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	_ "embed"
-	"fmt"
+	"log"
 
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 	"github.com/google/uuid"
 )
 
@@ -28,13 +28,15 @@ func main() {
 		},
 	}
 
-	fmt.Printf("task: %s\n", t.Name)
+	log.Printf("task: %s\n", t.Name)
 
-	w := worker.NewWasmWorker("Wasm-Worker-1")
-	w.StartTask(ctx, t)
+	w := proplet.NewWasmProplet("Wasm-Proplet-1")
+	if err := w.StartTask(ctx, t); err != nil {
+		log.Println(err)
+	}
 	results, err := w.RunTask(ctx, t.ID)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
-	fmt.Printf("results: %v\n", results)
+	log.Printf("results: %v\n", results)
 }
