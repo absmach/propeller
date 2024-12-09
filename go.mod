@@ -9,6 +9,8 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-kit/kit v0.13.0
+	github.com/caarlos0/env/v11 v11.2.2
+	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/google/uuid v1.6.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f
 	github.com/prometheus/client_golang v1.20.5
@@ -52,6 +54,13 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/grpc v1.68.1 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect
+	golang.org/x/sync v0.7.0
+	oras.land/oras-go/v2 v2.5.0
+)
+
+require (
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/opencontainers/image-spec v1.1.0 // indirect
 )
 
 require github.com/gorilla/websocket v1.5.3 // indirect
