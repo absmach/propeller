@@ -21,16 +21,6 @@ func Tracing(tracer trace.Tracer, svc manager.Service) manager.Service {
 	return &tracing{tracer, svc}
 }
 
-func (tm *tracing) CreateProplet(ctx context.Context, w proplet.Proplet) (resp proplet.Proplet, err error) {
-	ctx, span := tm.tracer.Start(ctx, "create-proplet", trace.WithAttributes(
-		attribute.String("name", resp.Name),
-		attribute.String("id", resp.ID),
-	))
-	defer span.End()
-
-	return tm.svc.CreateProplet(ctx, w)
-}
-
 func (tm *tracing) GetProplet(ctx context.Context, id string) (resp proplet.Proplet, err error) {
 	ctx, span := tm.tracer.Start(ctx, "get-proplet", trace.WithAttributes(
 		attribute.String("id", id),
@@ -48,25 +38,6 @@ func (tm *tracing) ListProplets(ctx context.Context, offset, limit uint64) (resp
 	defer span.End()
 
 	return tm.svc.ListProplets(ctx, offset, limit)
-}
-
-func (tm *tracing) UpdateProplet(ctx context.Context, w proplet.Proplet) (resp proplet.Proplet, err error) {
-	ctx, span := tm.tracer.Start(ctx, "update-proplet", trace.WithAttributes(
-		attribute.String("id", resp.ID),
-		attribute.String("name", resp.Name),
-	))
-	defer span.End()
-
-	return tm.svc.UpdateProplet(ctx, w)
-}
-
-func (tm *tracing) DeleteProplet(ctx context.Context, id string) (err error) {
-	ctx, span := tm.tracer.Start(ctx, "delete-proplet", trace.WithAttributes(
-		attribute.String("id", id),
-	))
-	defer span.End()
-
-	return tm.svc.DeleteProplet(ctx, id)
 }
 
 func (tm *tracing) SelectProplet(ctx context.Context, t task.Task) (resp proplet.Proplet, err error) {
@@ -127,4 +98,22 @@ func (tm *tracing) DeleteTask(ctx context.Context, id string) (err error) {
 	defer span.End()
 
 	return tm.svc.DeleteTask(ctx, id)
+}
+
+func (tm *tracing) StartTask(ctx context.Context, id string) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "start-task", trace.WithAttributes(
+		attribute.String("id", id),
+	))
+	defer span.End()
+
+	return tm.svc.StartTask(ctx, id)
+}
+
+func (tm *tracing) StopTask(ctx context.Context, id string) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "stop-task", trace.WithAttributes(
+		attribute.String("id", id),
+	))
+	defer span.End()
+
+	return tm.svc.StopTask(ctx, id)
 }

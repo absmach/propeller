@@ -22,26 +22,6 @@ func Logging(logger *slog.Logger, svc manager.Service) manager.Service {
 	}
 }
 
-func (lm *loggingMiddleware) CreateProplet(ctx context.Context, w proplet.Proplet) (resp proplet.Proplet, err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-			slog.Group("proplet",
-				slog.String("name", w.Name),
-			),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Save proplet failed", args...)
-
-			return
-		}
-		lm.logger.Info("Save proplet completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.CreateProplet(ctx, w)
-}
-
 func (lm *loggingMiddleware) GetProplet(ctx context.Context, id string) (resp proplet.Proplet, err error) {
 	defer func(begin time.Time) {
 		args := []any{
@@ -79,47 +59,6 @@ func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uin
 	}(time.Now())
 
 	return lm.svc.ListProplets(ctx, offset, limit)
-}
-
-func (lm *loggingMiddleware) UpdateProplet(ctx context.Context, t proplet.Proplet) (resp proplet.Proplet, err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-			slog.Group("proplet",
-				slog.String("name", resp.Name),
-				slog.String("id", t.ID),
-			),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Update proplet failed", args...)
-
-			return
-		}
-		lm.logger.Info("Update proplet completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.UpdateProplet(ctx, t)
-}
-
-func (lm *loggingMiddleware) DeleteProplet(ctx context.Context, id string) (err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-			slog.Group("proplet",
-				slog.String("id", id),
-			),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Delete proplet failed", args...)
-
-			return
-		}
-		lm.logger.Info("Delete proplet completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.DeleteProplet(ctx, id)
 }
 
 func (lm *loggingMiddleware) SelectProplet(ctx context.Context, t task.Task) (w proplet.Proplet, err error) {
@@ -245,4 +184,44 @@ func (lm *loggingMiddleware) DeleteTask(ctx context.Context, id string) (err err
 	}(time.Now())
 
 	return lm.svc.DeleteTask(ctx, id)
+}
+
+func (lm *loggingMiddleware) StartTask(ctx context.Context, id string) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", id),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Starting task failed", args...)
+
+			return
+		}
+		lm.logger.Info("Starting task completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.StartTask(ctx, id)
+}
+
+func (lm *loggingMiddleware) StopTask(ctx context.Context, id string) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", id),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Stopping task failed", args...)
+
+			return
+		}
+		lm.logger.Info("Stopping task completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.StopTask(ctx, id)
 }

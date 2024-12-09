@@ -13,6 +13,7 @@ var (
 	_ magistrala.Response = (*listpropletResponse)(nil)
 	_ magistrala.Response = (*taskResponse)(nil)
 	_ magistrala.Response = (*listTaskResponse)(nil)
+	_ magistrala.Response = (*messageResponse)(nil)
 )
 
 type propletResponse struct {
@@ -106,5 +107,19 @@ func (l listTaskResponse) Headers() map[string]string {
 }
 
 func (l listTaskResponse) Empty() bool {
+	return false
+}
+
+type messageResponse map[string]interface{}
+
+func (w messageResponse) Code() int {
+	return http.StatusOK
+}
+
+func (w messageResponse) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (w messageResponse) Empty() bool {
 	return false
 }

@@ -10,27 +10,6 @@ import (
 	"github.com/go-kit/kit/endpoint"
 )
 
-func createPropletEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		req, ok := request.(propletReq)
-		if !ok {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
-		}
-		if err := req.validate(); err != nil {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
-		}
-
-		proplet, err := svc.CreateProplet(ctx, req.Proplet)
-		if err != nil {
-			return propletResponse{}, err
-		}
-
-		return propletResponse{
-			Proplet: proplet,
-		}, nil
-	}
-}
-
 func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req, ok := request.(listEntityReq)
@@ -69,47 +48,6 @@ func getPropletEndpoint(svc manager.Service) endpoint.Endpoint {
 
 		return propletResponse{
 			Proplet: node,
-		}, nil
-	}
-}
-
-func updatePropletEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		req, ok := request.(propletReq)
-		if !ok {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
-		}
-		if err := req.validate(); err != nil {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
-		}
-
-		proplet, err := svc.UpdateProplet(ctx, req.Proplet)
-		if err != nil {
-			return propletResponse{}, err
-		}
-
-		return propletResponse{
-			Proplet: proplet,
-		}, nil
-	}
-}
-
-func deletePropletEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		req, ok := request.(entityReq)
-		if !ok {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
-		}
-		if err := req.validate(); err != nil {
-			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
-		}
-
-		if err := svc.DeleteProplet(ctx, req.id); err != nil {
-			return propletResponse{}, err
-		}
-
-		return propletResponse{
-			deleted: true,
 		}, nil
 	}
 }
@@ -216,6 +154,45 @@ func deleteTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 
 		return taskResponse{
 			deleted: true,
+		}, nil
+	}
+}
+
+func startTaskEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		req, ok := request.(entityReq)
+		if !ok {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		if err := svc.StartTask(ctx, req.id); err != nil {
+			return messageResponse{}, err
+		}
+
+		return messageResponse{
+			"started": true,
+		}, nil
+	}
+}
+
+func stopTaskEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		req, ok := request.(entityReq)
+		if !ok {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+		if err := svc.StopTask(ctx, req.id); err != nil {
+			return messageResponse{}, err
+		}
+
+		return messageResponse{
+			"stopped": true,
 		}, nil
 	}
 }

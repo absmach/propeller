@@ -26,15 +26,6 @@ func Metrics(counter metrics.Counter, latency metrics.Histogram, svc manager.Ser
 	}
 }
 
-func (mm *metricsMiddleware) CreateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "create-proplet").Add(1)
-		mm.latency.With("method", "create-proplet").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.CreateProplet(ctx, w)
-}
-
 func (mm *metricsMiddleware) GetProplet(ctx context.Context, id string) (proplet.Proplet, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "get-proplet").Add(1)
@@ -51,24 +42,6 @@ func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uin
 	}(time.Now())
 
 	return mm.svc.ListProplets(ctx, offset, limit)
-}
-
-func (mm *metricsMiddleware) UpdateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "update-proplet").Add(1)
-		mm.latency.With("method", "update-proplet").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.UpdateProplet(ctx, w)
-}
-
-func (mm *metricsMiddleware) DeleteProplet(ctx context.Context, id string) error {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "delete-proplet").Add(1)
-		mm.latency.With("method", "delete-proplet").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.DeleteProplet(ctx, id)
 }
 
 func (mm *metricsMiddleware) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
@@ -123,4 +96,22 @@ func (mm *metricsMiddleware) DeleteTask(ctx context.Context, id string) error {
 	}(time.Now())
 
 	return mm.svc.DeleteTask(ctx, id)
+}
+
+func (mm *metricsMiddleware) StartTask(ctx context.Context, id string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "start-task").Add(1)
+		mm.latency.With("method", "start-task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StartTask(ctx, id)
+}
+
+func (mm *metricsMiddleware) StopTask(ctx context.Context, id string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "stop-task").Add(1)
+		mm.latency.With("method", "stop-task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StopTask(ctx, id)
 }

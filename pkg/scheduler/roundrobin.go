@@ -17,13 +17,30 @@ func NewRoundRobin() Scheduler {
 
 func (r *roundRobin) SelectProplet(t task.Task, proplets []proplet.Proplet) (proplet.Proplet, error) {
 	if len(proplets) == 0 {
-		return proplet.Proplet{}, ErrNoproplet
+		return proplet.Proplet{}, ErrNoProplet
 	}
+
+	alive := 0
+	for i := range proplets {
+		if proplets[i].Alive {
+			alive += 1
+		}
+	}
+	if alive == 0 {
+		return proplet.Proplet{}, ErrDeadProplers
+	}
+
 	if len(proplets) == 1 {
 		return proplets[0], nil
 	}
 
 	r.LastProplet = (r.LastProplet + 1) % len(proplets)
 
-	return proplets[r.LastProplet], nil
+	p := proplets[r.LastProplet]
+	if !p.Alive {
+		return r.SelectProplet(t, proplets)
+	}
+	p.TaskCount += 1
+
+	return p, nil
 }

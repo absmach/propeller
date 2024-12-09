@@ -26,12 +26,6 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 	}
 
 	mux.Route("/proplets", func(r chi.Router) {
-		r.Post("/", otelhttp.NewHandler(kithttp.NewServer(
-			createPropletEndpoint(svc),
-			decodeCreatePropletReq,
-			api.EncodeResponse,
-			opts...,
-		), "create-proplet").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listPropletsEndpoint(svc),
 			decodeListEntityReq,
@@ -45,18 +39,6 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "get-proplet").ServeHTTP)
-			r.Put("/", otelhttp.NewHandler(kithttp.NewServer(
-				updatePropletEndpoint(svc),
-				decodePropletTaskReq,
-				api.EncodeResponse,
-				opts...,
-			), "update-proplet").ServeHTTP)
-			r.Delete("/", otelhttp.NewHandler(kithttp.NewServer(
-				deletePropletEndpoint(svc),
-				decodeEntityReq("propletID"),
-				api.EncodeResponse,
-				opts...,
-			), "delete-proplet").ServeHTTP)
 		})
 	})
 
@@ -92,6 +74,18 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "delete-task").ServeHTTP)
+			r.Post("/start", otelhttp.NewHandler(kithttp.NewServer(
+				startTaskEndpoint(svc),
+				decodeEntityReq("taskID"),
+				api.EncodeResponse,
+				opts...,
+			), "start-task").ServeHTTP)
+			r.Post("/stop", otelhttp.NewHandler(kithttp.NewServer(
+				stopTaskEndpoint(svc),
+				decodeEntityReq("taskID"),
+				api.EncodeResponse,
+				opts...,
+			), "stop-task").ServeHTTP)
 		})
 	})
 
@@ -99,31 +93,6 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux
-}
-
-func decodeCreatePropletReq(_ context.Context, r *http.Request) (interface{}, error) {
-	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
-		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
-	}
-	var req propletReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, errors.Join(err, apiutil.ErrValidation)
-	}
-
-	return req, nil
-}
-
-func decodePropletTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
-	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
-		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
-	}
-	var req propletReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, errors.Join(err, apiutil.ErrValidation)
-	}
-	req.Proplet.ID = chi.URLParam(r, "propletID")
-
-	return req, nil
 }
 
 func decodeEntityReq(key string) kithttp.DecodeRequestFunc {

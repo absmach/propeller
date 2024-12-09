@@ -75,7 +75,7 @@ services:
       - magistrala-auth-db-volume:/var/lib/postgresql/data
 
   auth:
-    image: magistrala/auth:${MG_RELEASE_TAG}
+    image: ghcr.io/absmach/magistrala/auth:${MG_RELEASE_TAG}
     container_name: magistrala-auth
     depends_on:
       - auth-db
@@ -212,7 +212,7 @@ services:
       - magistrala-things-redis-volume:/data
 
   things:
-    image: magistrala/things:${MG_RELEASE_TAG}
+    image: ghcr.io/absmach/magistrala/things:${MG_RELEASE_TAG}
     container_name: magistrala-things
     depends_on:
       - things-db
@@ -416,7 +416,7 @@ services:
       - magistrala-base-net
 
   mqtt-adapter:
-    image: magistrala/mqtt:${MG_RELEASE_TAG}
+    image: ghcr.io/absmach/magistrala/mqtt:${MG_RELEASE_TAG}
     container_name: magistrala-mqtt
     depends_on:
       - things

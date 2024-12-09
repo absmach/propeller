@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/absmach/magistrala/pkg/jaeger"
 	"github.com/absmach/magistrala/pkg/prometheus"
@@ -14,6 +15,7 @@ import (
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/manager/api"
 	"github.com/absmach/propeller/manager/middleware"
+	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
 	"go.opentelemetry.io/otel/trace"
@@ -24,11 +26,17 @@ import (
 const svcName = "manager"
 
 type Config struct {
-	LogLevel   string
-	OTELURL    url.URL
-	TraceRatio float64
-	Server     server.Config
-	InstanceID string
+	LogLevel    string
+	OTELURL     url.URL
+	TraceRatio  float64
+	Server      server.Config
+	InstanceID  string
+	ChannelID   string
+	ThingID     string
+	ThingKey    string
+	MQTTAddress string
+	MQTTQOS     uint8
+	MQTTTimeout time.Duration
 }
 
 func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
@@ -62,12 +70,23 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	}
 	tracer := tp.Tracer(svcName)
 
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQOS, svcName, cfg.ThingID, cfg.ThingKey, cfg.MQTTTimeout, logger)
+	if err != nil {
+		return fmt.Errorf("failed to initialize mqtt pubsub: %s", err.Error())
+	}
+
+	propletDB := storage.NewInMemoryStorage()
+
+	if err := manager.Subscribe(ctx, cfg.ChannelID, mqttPubSub, propletDB, logger); err != nil {
+		return fmt.Errorf("failed to subscribe to manager channel: %s", err.Error())
+	}
+
 	svc := manager.NewService(
 		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
+		propletDB,
 		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
+		mqttPubSub,
 	)
 	svc = middleware.Logging(logger, svc)
 	svc = middleware.Tracing(tracer, svc)

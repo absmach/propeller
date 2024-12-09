@@ -5,8 +5,8 @@ import (
 	_ "embed"
 	"log"
 
-	"github.com/absmach/propeller/task"
 	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/task"
 	"github.com/google/uuid"
 )
 

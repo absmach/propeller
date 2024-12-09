@@ -26,6 +26,10 @@ func (s *inMemoryStorage) Create(_ context.Context, key string, value interface{
 	s.Lock()
 	defer s.Unlock()
 
+	if _, ok := s.data[key]; ok {
+		return errors.ErrEntityExists
+	}
+
 	s.data[key] = value
 
 	return nil
