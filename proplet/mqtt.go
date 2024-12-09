@@ -1,6 +1,7 @@
 package proplet
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
@@ -9,19 +10,19 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// NewMQTTClient initializes a new MQTT client with LWT and starts liveliness updates.
+// NewMQTTClient initializes a new MQTT client with LWT and liveliness updates.
 func NewMQTTClient(config *Config) (mqtt.Client, error) {
 	if err := validateConfig(config); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Last Will and Testament payload
+	// Prepare LWT payload
 	lwtPayload := fmt.Sprintf(`{"status":"offline","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
 	if lwtPayload == "" {
 		return nil, fmt.Errorf("failed to prepare MQTT last will payload: %w", pkgerrors.ErrMQTTWillPayloadFailed)
 	}
 
-	// MQTT client options
+	// Set MQTT client options
 	opts := mqtt.NewClientOptions().
 		AddBroker(config.BrokerURL).
 		SetClientID(fmt.Sprintf("Proplet-%s", config.PropletID)).
@@ -30,7 +31,6 @@ func NewMQTTClient(config *Config) (mqtt.Client, error) {
 		SetCleanSession(true).
 		SetWill(fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID), lwtPayload, 0, false)
 
-	// Handlers for connection events
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
 		fmt.Printf("MQTT connection lost: %v\n", err)
 	})
@@ -39,7 +39,6 @@ func NewMQTTClient(config *Config) (mqtt.Client, error) {
 		fmt.Println("MQTT reconnecting...")
 	})
 
-	// Create and connect the client
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	if token.Wait() && token.Error() != nil {
@@ -86,10 +85,9 @@ func PublishDiscovery(client mqtt.Client, config *Config) error {
 	token := client.Publish(topic, 0, false, payload)
 	token.Wait()
 	if token.Error() != nil {
-		return fmt.Errorf("failed to publish discovery message to topic '%s': %w", topic, pkgerrors.ErrPublishDiscovery)
+		return fmt.Errorf("failed to publish discovery message: %w", token.Error())
 	}
-
-	fmt.Printf("Discovery message published to topic '%s'\n", topic)
+	fmt.Printf("Published discovery message to topic '%s'\n", topic)
 	return nil
 }
 
@@ -103,7 +101,54 @@ func startLivelinessUpdates(client mqtt.Client, config *Config) {
 		if token.Error() != nil {
 			fmt.Printf("Failed to publish liveliness: %v\n", token.Error())
 		}
-
 		time.Sleep(10 * time.Second)
 	}
+}
+
+// SubscribeToTopics subscribes to relevant MQTT topics for commands and registry interaction.
+func SubscribeToTopics(client mqtt.Client, config *Config, commandHandler, registryHandler mqtt.MessageHandler) error {
+	controlTopic := fmt.Sprintf("channels/%s/messages/control/manager", config.ChannelID)
+	if token := client.Subscribe(controlTopic, 0, commandHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to control topic: %w", token.Error())
+	}
+
+	registryTopic := fmt.Sprintf("channels/%s/messages/registry/proplet", config.ChannelID)
+	if token := client.Subscribe(registryTopic, 0, registryHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to registry topic: %w", token.Error())
+	}
+
+	fmt.Println("Subscribed to control and registry topics.")
+	return nil
+}
+
+// PublishFetchRequest sends a fetch request to the Registry Proxy.
+func PublishFetchRequest(client mqtt.Client, channelID string, appName string) error {
+	topic := fmt.Sprintf("channels/%s/messages/registry/proplet/fetch", channelID)
+	payload := map[string]string{"app_name": appName}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal fetch request payload: %w", err)
+	}
+
+	token := client.Publish(topic, 0, false, data)
+	token.Wait()
+	if token.Error() != nil {
+		return fmt.Errorf("failed to publish fetch request: %w", token.Error())
+	}
+
+	fmt.Printf("Published fetch request for app '%s' to topic '%s'\n", appName, topic)
+	return nil
+}
+
+// SubscribeToRegistryChunks subscribes to the Registry Proxy's response topic for chunks.
+func SubscribeToRegistryChunks(client mqtt.Client, channelID string, handler mqtt.MessageHandler) error {
+	topic := fmt.Sprintf("channels/%s/messages/registry/server", channelID)
+	token := client.Subscribe(topic, 0, handler)
+	token.Wait()
+	if token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to registry server topic: %w", token.Error())
+	}
+
+	fmt.Printf("Subscribed to registry server chunks on topic '%s'\n", topic)
+	return nil
 }
