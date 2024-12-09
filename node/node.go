@@ -8,7 +8,7 @@ type Role uint8
 
 const (
 	ManagerRole Role = iota
-	WorkerRole
+	PropletRole
 )
 
 type Node struct {

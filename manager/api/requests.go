@@ -2,15 +2,15 @@ package api
 
 import (
 	"github.com/absmach/magistrala/pkg/apiutil"
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
-type workerReq struct {
-	worker.Worker `json:",inline"`
+type propletReq struct {
+	proplet.Proplet `json:",inline"`
 }
 
-func (w *workerReq) validate() error {
+func (w *propletReq) validate() error {
 	return nil
 }
 

@@ -10,105 +10,105 @@ import (
 	"github.com/go-kit/kit/endpoint"
 )
 
-func createWorkerEndpoint(svc manager.Service) endpoint.Endpoint {
+func createPropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		req, ok := request.(workerReq)
+		req, ok := request.(propletReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
-			return workerResponse{}, errors.Join(apiutil.ErrValidation, err)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		node, err := svc.CreateWorker(ctx, req.Worker)
+		proplet, err := svc.CreateProplet(ctx, req.Proplet)
 		if err != nil {
-			return workerResponse{}, err
+			return propletResponse{}, err
 		}
 
-		return workerResponse{
-			Worker: node,
+		return propletResponse{
+			Proplet: proplet,
 		}, nil
 	}
 }
 
-func listWorkersEndpoint(svc manager.Service) endpoint.Endpoint {
+func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req, ok := request.(listEntityReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return listpropletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
-			return listWorkerResponse{}, errors.Join(apiutil.ErrValidation, err)
+			return listpropletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		nodes, err := svc.ListWorkers(ctx, req.offset, req.limit)
+		proplets, err := svc.ListProplets(ctx, req.offset, req.limit)
 		if err != nil {
-			return listWorkerResponse{}, err
+			return listpropletResponse{}, err
 		}
 
-		return listWorkerResponse{
-			WorkerPage: nodes,
+		return listpropletResponse{
+			PropletPage: proplets,
 		}, nil
 	}
 }
 
-func getWorkerEndpoint(svc manager.Service) endpoint.Endpoint {
+func getPropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req, ok := request.(entityReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
-			return workerResponse{}, errors.Join(apiutil.ErrValidation, err)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		node, err := svc.GetWorker(ctx, req.id)
+		node, err := svc.GetProplet(ctx, req.id)
 		if err != nil {
-			return workerResponse{}, err
+			return propletResponse{}, err
 		}
 
-		return workerResponse{
-			Worker: node,
+		return propletResponse{
+			Proplet: node,
 		}, nil
 	}
 }
 
-func updateWorkerEndpoint(svc manager.Service) endpoint.Endpoint {
+func updatePropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
-		req, ok := request.(workerReq)
+		req, ok := request.(propletReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
-			return workerResponse{}, errors.Join(apiutil.ErrValidation, err)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		node, err := svc.UpdateWorker(ctx, req.Worker)
+		proplet, err := svc.UpdateProplet(ctx, req.Proplet)
 		if err != nil {
-			return workerResponse{}, err
+			return propletResponse{}, err
 		}
 
-		return workerResponse{
-			Worker: node,
+		return propletResponse{
+			Proplet: proplet,
 		}, nil
 	}
 }
 
-func deleteWorkerEndpoint(svc manager.Service) endpoint.Endpoint {
+func deletePropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req, ok := request.(entityReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
-			return workerResponse{}, errors.Join(apiutil.ErrValidation, err)
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		if err := svc.DeleteWorker(ctx, req.id); err != nil {
-			return workerResponse{}, err
+		if err := svc.DeleteProplet(ctx, req.id); err != nil {
+			return propletResponse{}, err
 		}
 
-		return workerResponse{
+		return propletResponse{
 			deleted: true,
 		}, nil
 	}
@@ -140,7 +140,7 @@ func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req, ok := request.(listEntityReq)
 		if !ok {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
 		if err := req.validate(); err != nil {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)

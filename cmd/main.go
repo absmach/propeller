@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
+	"github.com/absmach/propeller/proplet"
 	"github.com/google/uuid"
 )
 
@@ -30,7 +30,7 @@ func main() {
 
 	log.Printf("task: %s\n", t.Name)
 
-	w := worker.NewWasmWorker("Wasm-Worker-1")
+	w := proplet.NewWasmProplet("Wasm-Proplet-1")
 	if err := w.StartTask(ctx, t); err != nil {
 		log.Println(err)
 	}

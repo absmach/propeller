@@ -1,29 +1,29 @@
 package scheduler
 
 import (
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
 type roundRobin struct {
-	LastWorker int
+	LastProplet int
 }
 
 func NewRoundRobin() Scheduler {
 	return &roundRobin{
-		LastWorker: 0,
+		LastProplet: 0,
 	}
 }
 
-func (r *roundRobin) SelectWorker(t task.Task, workers []worker.Worker) (worker.Worker, error) {
-	if len(workers) == 0 {
-		return worker.Worker{}, ErrNoWorker
+func (r *roundRobin) SelectProplet(t task.Task, proplets []proplet.Proplet) (proplet.Proplet, error) {
+	if len(proplets) == 0 {
+		return proplet.Proplet{}, ErrNoproplet
 	}
-	if len(workers) == 1 {
-		return workers[0], nil
+	if len(proplets) == 1 {
+		return proplets[0], nil
 	}
 
-	r.LastWorker = (r.LastWorker + 1) % len(workers)
+	r.LastProplet = (r.LastProplet + 1) % len(proplets)
 
-	return workers[r.LastWorker], nil
+	return proplets[r.LastProplet], nil
 }

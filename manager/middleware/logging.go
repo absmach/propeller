@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/manager"
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
 type loggingMiddleware struct {
@@ -22,47 +22,47 @@ func Logging(logger *slog.Logger, svc manager.Service) manager.Service {
 	}
 }
 
-func (lm *loggingMiddleware) CreateWorker(ctx context.Context, w worker.Worker) (resp worker.Worker, err error) {
+func (lm *loggingMiddleware) CreateProplet(ctx context.Context, w proplet.Proplet) (resp proplet.Proplet, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
-			slog.Group("worker",
+			slog.Group("proplet",
 				slog.String("name", w.Name),
 			),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Save worker failed", args...)
+			lm.logger.Warn("Save proplet failed", args...)
 
 			return
 		}
-		lm.logger.Info("Save worker completed successfully", args...)
+		lm.logger.Info("Save proplet completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.CreateWorker(ctx, w)
+	return lm.svc.CreateProplet(ctx, w)
 }
 
-func (lm *loggingMiddleware) GetWorker(ctx context.Context, id string) (resp worker.Worker, err error) {
+func (lm *loggingMiddleware) GetProplet(ctx context.Context, id string) (resp proplet.Proplet, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
-			slog.Group("worker",
+			slog.Group("proplet",
 				slog.String("id", id),
 			),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Get worker failed", args...)
+			lm.logger.Warn("Get proplet failed", args...)
 
 			return
 		}
-		lm.logger.Info("Get worker completed successfully", args...)
+		lm.logger.Info("Get proplet completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.GetWorker(ctx, id)
+	return lm.svc.GetProplet(ctx, id)
 }
 
-func (lm *loggingMiddleware) ListWorkers(ctx context.Context, offset, limit uint64) (resp worker.WorkerPage, err error) {
+func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (resp proplet.PropletPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
@@ -71,58 +71,58 @@ func (lm *loggingMiddleware) ListWorkers(ctx context.Context, offset, limit uint
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("List workers failed", args...)
+			lm.logger.Warn("List proplets failed", args...)
 
 			return
 		}
-		lm.logger.Info("List workers completed successfully", args...)
+		lm.logger.Info("List proplets completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.ListWorkers(ctx, offset, limit)
+	return lm.svc.ListProplets(ctx, offset, limit)
 }
 
-func (lm *loggingMiddleware) UpdateWorker(ctx context.Context, t worker.Worker) (resp worker.Worker, err error) {
+func (lm *loggingMiddleware) UpdateProplet(ctx context.Context, t proplet.Proplet) (resp proplet.Proplet, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
-			slog.Group("worker",
+			slog.Group("proplet",
 				slog.String("name", resp.Name),
 				slog.String("id", t.ID),
 			),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Update worker failed", args...)
+			lm.logger.Warn("Update proplet failed", args...)
 
 			return
 		}
-		lm.logger.Info("Update worker completed successfully", args...)
+		lm.logger.Info("Update proplet completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.UpdateWorker(ctx, t)
+	return lm.svc.UpdateProplet(ctx, t)
 }
 
-func (lm *loggingMiddleware) DeleteWorker(ctx context.Context, id string) (err error) {
+func (lm *loggingMiddleware) DeleteProplet(ctx context.Context, id string) (err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
-			slog.Group("worker",
+			slog.Group("proplet",
 				slog.String("id", id),
 			),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Delete worker failed", args...)
+			lm.logger.Warn("Delete proplet failed", args...)
 
 			return
 		}
-		lm.logger.Info("Delete worker completed successfully", args...)
+		lm.logger.Info("Delete proplet completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.DeleteWorker(ctx, id)
+	return lm.svc.DeleteProplet(ctx, id)
 }
 
-func (lm *loggingMiddleware) SelectWorker(ctx context.Context, t task.Task) (w worker.Worker, err error) {
+func (lm *loggingMiddleware) SelectProplet(ctx context.Context, t task.Task) (w proplet.Proplet, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
@@ -130,21 +130,21 @@ func (lm *loggingMiddleware) SelectWorker(ctx context.Context, t task.Task) (w w
 				slog.String("name", t.Name),
 				slog.String("id", t.ID),
 			),
-			slog.Group("worker",
+			slog.Group("proplet",
 				slog.String("name", w.Name),
 				slog.String("id", w.ID),
 			),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Select worker failed", args...)
+			lm.logger.Warn("Select proplet failed", args...)
 
 			return
 		}
-		lm.logger.Info("Select worker completed successfully", args...)
+		lm.logger.Info("Select proplet completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.SelectWorker(ctx, t)
+	return lm.svc.SelectProplet(ctx, t)
 }
 
 func (lm *loggingMiddleware) CreateTask(ctx context.Context, t task.Task) (resp task.Task, err error) {

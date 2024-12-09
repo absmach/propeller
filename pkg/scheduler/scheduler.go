@@ -3,12 +3,12 @@ package scheduler
 import (
 	"errors"
 
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
-var ErrNoWorker = errors.New("no worker was provided")
+var ErrNoproplet = errors.New("no proplet was provided")
 
 type Scheduler interface {
-	SelectWorker(t task.Task, workers []worker.Worker) (worker.Worker, error)
+	SelectProplet(t task.Task, proplets []proplet.Proplet) (proplet.Proplet, error)
 }

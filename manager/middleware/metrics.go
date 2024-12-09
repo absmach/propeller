@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/manager"
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 	"github.com/go-kit/kit/metrics"
 )
 
@@ -26,58 +26,58 @@ func Metrics(counter metrics.Counter, latency metrics.Histogram, svc manager.Ser
 	}
 }
 
-func (mm *metricsMiddleware) CreateWorker(ctx context.Context, w worker.Worker) (worker.Worker, error) {
+func (mm *metricsMiddleware) CreateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "create-worker").Add(1)
-		mm.latency.With("method", "create-worker").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "create-proplet").Add(1)
+		mm.latency.With("method", "create-proplet").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.CreateWorker(ctx, w)
+	return mm.svc.CreateProplet(ctx, w)
 }
 
-func (mm *metricsMiddleware) GetWorker(ctx context.Context, id string) (worker.Worker, error) {
+func (mm *metricsMiddleware) GetProplet(ctx context.Context, id string) (proplet.Proplet, error) {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "get-worker").Add(1)
-		mm.latency.With("method", "get-worker").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "get-proplet").Add(1)
+		mm.latency.With("method", "get-proplet").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.GetWorker(ctx, id)
+	return mm.svc.GetProplet(ctx, id)
 }
 
-func (mm *metricsMiddleware) ListWorkers(ctx context.Context, offset, limit uint64) (worker.WorkerPage, error) {
+func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "list-workers").Add(1)
-		mm.latency.With("method", "list-workers").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "list-proplets").Add(1)
+		mm.latency.With("method", "list-proplets").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.ListWorkers(ctx, offset, limit)
+	return mm.svc.ListProplets(ctx, offset, limit)
 }
 
-func (mm *metricsMiddleware) UpdateWorker(ctx context.Context, w worker.Worker) (worker.Worker, error) {
+func (mm *metricsMiddleware) UpdateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "update-worker").Add(1)
-		mm.latency.With("method", "update-worker").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "update-proplet").Add(1)
+		mm.latency.With("method", "update-proplet").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.UpdateWorker(ctx, w)
+	return mm.svc.UpdateProplet(ctx, w)
 }
 
-func (mm *metricsMiddleware) DeleteWorker(ctx context.Context, id string) error {
+func (mm *metricsMiddleware) DeleteProplet(ctx context.Context, id string) error {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "delete-worker").Add(1)
-		mm.latency.With("method", "delete-worker").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "delete-proplet").Add(1)
+		mm.latency.With("method", "delete-proplet").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.DeleteWorker(ctx, id)
+	return mm.svc.DeleteProplet(ctx, id)
 }
 
-func (mm *metricsMiddleware) SelectWorker(ctx context.Context, t task.Task) (worker.Worker, error) {
+func (mm *metricsMiddleware) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
 	defer func(begin time.Time) {
-		mm.counter.With("method", "select-worker").Add(1)
-		mm.latency.With("method", "select-worker").Observe(time.Since(begin).Seconds())
+		mm.counter.With("method", "select-proplet").Add(1)
+		mm.latency.With("method", "select-proplet").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.SelectWorker(ctx, t)
+	return mm.svc.SelectProplet(ctx, t)
 }
 
 func (mm *metricsMiddleware) CreateTask(ctx context.Context, t task.Task) (task.Task, error) {

@@ -25,38 +25,38 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		kithttp.ServerErrorEncoder(apiutil.LoggingErrorEncoder(logger, api.EncodeError)),
 	}
 
-	mux.Route("/workers", func(r chi.Router) {
+	mux.Route("/proplets", func(r chi.Router) {
 		r.Post("/", otelhttp.NewHandler(kithttp.NewServer(
-			createWorkerEndpoint(svc),
-			decodeCreateWorkerReq,
+			createPropletEndpoint(svc),
+			decodeCreatePropletReq,
 			api.EncodeResponse,
 			opts...,
-		), "create-worker").ServeHTTP)
+		), "create-proplet").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
-			listWorkersEndpoint(svc),
+			listPropletsEndpoint(svc),
 			decodeListEntityReq,
 			api.EncodeResponse,
 			opts...,
-		), "list-workers").ServeHTTP)
-		r.Route("/{workerID}", func(r chi.Router) {
+		), "list-proplets").ServeHTTP)
+		r.Route("/{propletID}", func(r chi.Router) {
 			r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
-				getWorkerEndpoint(svc),
-				decodeEntityReq("workerID"),
+				getPropletEndpoint(svc),
+				decodeEntityReq("propletID"),
 				api.EncodeResponse,
 				opts...,
-			), "get-worker").ServeHTTP)
+			), "get-proplet").ServeHTTP)
 			r.Put("/", otelhttp.NewHandler(kithttp.NewServer(
-				updateWorkerEndpoint(svc),
-				decodeWorkerTaskReq,
+				updatePropletEndpoint(svc),
+				decodePropletTaskReq,
 				api.EncodeResponse,
 				opts...,
-			), "update-worker").ServeHTTP)
+			), "update-proplet").ServeHTTP)
 			r.Delete("/", otelhttp.NewHandler(kithttp.NewServer(
-				deleteWorkerEndpoint(svc),
-				decodeEntityReq("workerID"),
+				deletePropletEndpoint(svc),
+				decodeEntityReq("propletID"),
 				api.EncodeResponse,
 				opts...,
-			), "delete-worker").ServeHTTP)
+			), "delete-proplet").ServeHTTP)
 		})
 	})
 
@@ -101,11 +101,11 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 	return mux
 }
 
-func decodeCreateWorkerReq(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeCreatePropletReq(_ context.Context, r *http.Request) (interface{}, error) {
 	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
 		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
 	}
-	var req workerReq
+	var req propletReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)
 	}
@@ -113,15 +113,15 @@ func decodeCreateWorkerReq(_ context.Context, r *http.Request) (interface{}, err
 	return req, nil
 }
 
-func decodeWorkerTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
+func decodePropletTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
 	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
 		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
 	}
-	var req workerReq
+	var req propletReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)
 	}
-	req.Worker.ID = chi.URLParam(r, "workerID")
+	req.Proplet.ID = chi.URLParam(r, "propletID")
 
 	return req, nil
 }

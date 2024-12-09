@@ -1,4 +1,4 @@
-package worker
+package proplet
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-var _ Service = (*worker)(nil)
+var _ Service = (*proplet)(nil)
 
-type worker struct {
+type proplet struct {
 	mu        sync.Mutex
 	Name      string
 	DB        map[string]task.Task
@@ -22,8 +22,8 @@ type worker struct {
 	functions map[string]api.Function
 }
 
-func NewWasmWorker(name string) *worker {
-	return &worker{
+func NewWasmProplet(name string) *proplet {
+	return &proplet{
 		Name:      name,
 		DB:        make(map[string]task.Task),
 		TaskCount: 0,
@@ -32,7 +32,7 @@ func NewWasmWorker(name string) *worker {
 	}
 }
 
-func (w *worker) StartTask(ctx context.Context, t task.Task) error {
+func (w *proplet) StartTask(ctx context.Context, t task.Task) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (w *worker) StartTask(ctx context.Context, t task.Task) error {
 	return nil
 }
 
-func (w *worker) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
+func (w *proplet) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -83,7 +83,7 @@ func (w *worker) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
 	return result, nil
 }
 
-func (w *worker) StopTask(ctx context.Context, taskID string) error {
+func (w *proplet) StopTask(ctx context.Context, taskID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -92,7 +92,7 @@ func (w *worker) StopTask(ctx context.Context, taskID string) error {
 	return r.Close(ctx)
 }
 
-func (w *worker) RemoveTask(_ context.Context, taskID string) error {
+func (w *proplet) RemoveTask(_ context.Context, taskID string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

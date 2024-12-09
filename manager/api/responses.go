@@ -4,24 +4,24 @@ import (
 	"net/http"
 
 	"github.com/absmach/magistrala"
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
 var (
-	_ magistrala.Response = (*workerResponse)(nil)
-	_ magistrala.Response = (*listWorkerResponse)(nil)
+	_ magistrala.Response = (*propletResponse)(nil)
+	_ magistrala.Response = (*listpropletResponse)(nil)
 	_ magistrala.Response = (*taskResponse)(nil)
 	_ magistrala.Response = (*listTaskResponse)(nil)
 )
 
-type workerResponse struct {
-	worker.Worker
+type propletResponse struct {
+	proplet.Proplet
 	created bool
 	deleted bool
 }
 
-func (w workerResponse) Code() int {
+func (w propletResponse) Code() int {
 	if w.created {
 		return http.StatusCreated
 	}
@@ -32,7 +32,7 @@ func (w workerResponse) Code() int {
 	return http.StatusOK
 }
 
-func (w workerResponse) Headers() map[string]string {
+func (w propletResponse) Headers() map[string]string {
 	if w.created {
 		return map[string]string{
 			"Location": "/tasks/" + w.ID,
@@ -42,23 +42,23 @@ func (w workerResponse) Headers() map[string]string {
 	return map[string]string{}
 }
 
-func (w workerResponse) Empty() bool {
+func (w propletResponse) Empty() bool {
 	return false
 }
 
-type listWorkerResponse struct {
-	worker.WorkerPage
+type listpropletResponse struct {
+	proplet.PropletPage
 }
 
-func (l listWorkerResponse) Code() int {
+func (l listpropletResponse) Code() int {
 	return http.StatusOK
 }
 
-func (l listWorkerResponse) Headers() map[string]string {
+func (l listpropletResponse) Headers() map[string]string {
 	return map[string]string{}
 }
 
-func (l listWorkerResponse) Empty() bool {
+func (l listpropletResponse) Empty() bool {
 	return false
 }
 

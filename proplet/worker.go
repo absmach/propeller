@@ -1,4 +1,4 @@
-package worker
+package proplet
 
 import (
 	"context"
@@ -13,15 +13,15 @@ type Service interface {
 	RemoveTask(ctx context.Context, taskID string) error
 }
 
-type Worker struct {
+type Proplet struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	TaskCount uint64 `json:"task_count"`
 }
 
-type WorkerPage struct {
-	Offset  uint64   `json:"offset"`
-	Limit   uint64   `json:"limit"`
-	Total   uint64   `json:"total"`
-	Workers []Worker `json:"workers"`
+type PropletPage struct {
+	Offset   uint64    `json:"offset"`
+	Limit    uint64    `json:"limit"`
+	Total    uint64    `json:"total"`
+	Proplets []Proplet `json:"proplets"`
 }

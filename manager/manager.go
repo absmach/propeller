@@ -3,17 +3,17 @@ package manager
 import (
 	"context"
 
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 )
 
 type Service interface {
-	CreateWorker(ctx context.Context, worker worker.Worker) (worker.Worker, error)
-	GetWorker(ctx context.Context, workerID string) (worker.Worker, error)
-	ListWorkers(ctx context.Context, offset, limit uint64) (worker.WorkerPage, error)
-	UpdateWorker(ctx context.Context, worker worker.Worker) (worker.Worker, error)
-	DeleteWorker(ctx context.Context, workerID string) error
-	SelectWorker(ctx context.Context, task task.Task) (worker.Worker, error)
+	CreateProplet(ctx context.Context, proplet proplet.Proplet) (proplet.Proplet, error)
+	GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error)
+	ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error)
+	UpdateProplet(ctx context.Context, proplet proplet.Proplet) (proplet.Proplet, error)
+	DeleteProplet(ctx context.Context, propletID string) error
+	SelectProplet(ctx context.Context, task task.Task) (proplet.Proplet, error)
 
 	CreateTask(ctx context.Context, task task.Task) (task.Task, error)
 	GetTask(ctx context.Context, taskID string) (task.Task, error)

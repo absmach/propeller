@@ -7,90 +7,90 @@ import (
 	"github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
-	"github.com/absmach/propeller/worker"
 	"github.com/google/uuid"
 )
 
 type service struct {
-	tasksDB      storage.Storage
-	workersDB    storage.Storage
-	workerTaskDB storage.Storage
-	taskWorkerDB storage.Storage
-	scheduler    scheduler.Scheduler
+	tasksDB        storage.Storage
+	propletsDB     storage.Storage
+	propletsTaskDB storage.Storage
+	taskPropletDB  storage.Storage
+	scheduler      scheduler.Scheduler
 }
 
 func NewService(
-	tasksDB, workersDB, workerTaskDB, taskWorkerDB storage.Storage,
+	tasksDB, propletsDB, propletsTaskDB, taskPropletDB storage.Storage,
 	s scheduler.Scheduler,
 ) Service {
 	return &service{
-		tasksDB:      tasksDB,
-		workersDB:    workersDB,
-		workerTaskDB: workerTaskDB,
-		taskWorkerDB: taskWorkerDB,
-		scheduler:    s,
+		tasksDB:        tasksDB,
+		propletsDB:     propletsDB,
+		propletsTaskDB: propletsTaskDB,
+		taskPropletDB:  taskPropletDB,
+		scheduler:      s,
 	}
 }
 
-func (svc *service) CreateWorker(ctx context.Context, w worker.Worker) (worker.Worker, error) {
+func (svc *service) CreateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
 	w.ID = uuid.New().String()
-	if err := svc.workersDB.Create(ctx, w.ID, w); err != nil {
-		return worker.Worker{}, err
+	if err := svc.propletsDB.Create(ctx, w.ID, w); err != nil {
+		return proplet.Proplet{}, err
 	}
 
 	return w, nil
 }
 
-func (svc *service) GetWorker(ctx context.Context, workerID string) (worker.Worker, error) {
-	data, err := svc.workersDB.Get(ctx, workerID)
+func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
+	data, err := svc.propletsDB.Get(ctx, propletID)
 	if err != nil {
-		return worker.Worker{}, err
+		return proplet.Proplet{}, err
 	}
-	w, ok := data.(worker.Worker)
+	w, ok := data.(proplet.Proplet)
 	if !ok {
-		return worker.Worker{}, errors.ErrInvalidData
+		return proplet.Proplet{}, errors.ErrInvalidData
 	}
 
 	return w, nil
 }
 
-func (svc *service) ListWorkers(ctx context.Context, offset, limit uint64) (worker.WorkerPage, error) {
-	data, total, err := svc.workersDB.List(ctx, offset, limit)
+func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
+	data, total, err := svc.propletsDB.List(ctx, offset, limit)
 	if err != nil {
-		return worker.WorkerPage{}, err
+		return proplet.PropletPage{}, err
 	}
-	workers := make([]worker.Worker, total)
+	proplets := make([]proplet.Proplet, total)
 	for i := range data {
-		w, ok := data[i].(worker.Worker)
+		w, ok := data[i].(proplet.Proplet)
 		if !ok {
-			return worker.WorkerPage{}, errors.ErrInvalidData
+			return proplet.PropletPage{}, errors.ErrInvalidData
 		}
-		workers[i] = w
+		proplets[i] = w
 	}
 
-	return worker.WorkerPage{
-		Offset:  offset,
-		Limit:   limit,
-		Total:   total,
-		Workers: workers,
+	return proplet.PropletPage{
+		Offset:   offset,
+		Limit:    limit,
+		Total:    total,
+		Proplets: proplets,
 	}, nil
 }
 
-func (svc *service) UpdateWorker(ctx context.Context, w worker.Worker) (worker.Worker, error) {
-	if err := svc.workersDB.Update(ctx, w.ID, w); err != nil {
-		return worker.Worker{}, err
+func (svc *service) UpdateProplet(ctx context.Context, w proplet.Proplet) (proplet.Proplet, error) {
+	if err := svc.propletsDB.Update(ctx, w.ID, w); err != nil {
+		return proplet.Proplet{}, err
 	}
 
 	return w, nil
 }
 
-func (svc *service) DeleteWorker(ctx context.Context, workerID string) error {
-	return svc.workersDB.Delete(ctx, workerID)
+func (svc *service) DeleteProplet(ctx context.Context, propletID string) error {
+	return svc.propletsDB.Delete(ctx, propletID)
 }
 
-func (svc *service) SelectWorker(_ context.Context, t task.Task) (worker.Worker, error) {
-	return svc.scheduler.SelectWorker(t, nil)
+func (svc *service) SelectProplet(_ context.Context, t task.Task) (proplet.Proplet, error) {
+	return svc.scheduler.SelectProplet(t, nil)
 }
 
 func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, error) {
