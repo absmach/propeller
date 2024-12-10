@@ -11,19 +11,29 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Payload variables
 var (
-	lwtPayloadTemplate        = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
-	discoveryPayloadTemplate  = `{"proplet_id":"%s","chan_id":"%s"}`
-	alivePayloadTemplate      = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
-	registryFailurePayload    = `{"status":"failure","error":"%v"}`
-	registrySuccessPayload    = `{"status":"success"}`
-	fetchRequestPayloadFormat = `{"app_name":"%s"}`
+	// Payload templates
+	lwtPayloadTemplate       = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
+	discoveryPayloadTemplate = `{"proplet_id":"%s","chan_id":"%s"}`
+	alivePayloadTemplate     = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
+	registryFailurePayload   = `{"status":"failure","error":"%v"}`
+	registrySuccessPayload   = `{"status":"success"}`
+	fetchRequestPayload      = `{"app_name":"%s"}`
+
+	// Topic templates
+	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
+	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
+	startTopicTemplate          = "channels/%s/messages/control/manager/start"
+	stopTopicTemplate           = "channels/%s/messages/control/manager/stop"
+	registryUpdateTopicTemplate = "channels/%s/messages/control/manager/updateRegistry"
+	registryAckTopicTemplate    = "channels/%s/messages/control/manager/registry"
+	registryResponseTopic       = "channels/%s/messages/registry/server"
+	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
 )
 
 // NewMQTTClient initializes a new MQTT client with LWT and liveliness updates.
 func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
-	// Prepare LWT payload
+	// Prepare LWT payload and topic
 	lwtPayload := fmt.Sprintf(lwtPayloadTemplate, config.PropletID, config.ChannelID)
 	if lwtPayload == "" {
 		logger.Error("Failed to prepare MQTT last will payload")
@@ -37,7 +47,7 @@ func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
 		SetUsername(config.PropletID).
 		SetPassword(config.Password).
 		SetCleanSession(true).
-		SetWill(fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID), lwtPayload, 0, false)
+		SetWill(fmt.Sprintf(aliveTopicTemplate, config.ChannelID), fmt.Sprintf(lwtPayloadTemplate, config.PropletID, config.ChannelID), 0, false)
 
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
 		logger.Error("MQTT connection lost", slog.Any("error", err))
@@ -70,7 +80,7 @@ func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
 
 // PublishDiscovery sends an initial "create" message to announce the Proplet's existence.
 func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) error {
-	topic := fmt.Sprintf("channels/%s/messages/control/proplet/create", config.ChannelID)
+	topic := fmt.Sprintf(discoveryTopicTemplate, config.ChannelID)
 	payload := fmt.Sprintf(discoveryPayloadTemplate, config.PropletID, config.ChannelID)
 	password := client.Publish(topic, 0, false, payload)
 	password.Wait()
@@ -85,14 +95,14 @@ func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) e
 // startLivelinessUpdates sends periodic "alive" messages to the MQTT broker.
 func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Logger) {
 	for {
-		topic := fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID)
-		payload := fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID)
-		password := client.Publish(topic, 0, false, payload)
+		password := client.Publish(
+			fmt.Sprintf(aliveTopicTemplate, config.ChannelID), 0, false, fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID),
+		)
 		password.Wait()
 		if password.Error() != nil {
-			logger.Error("Failed to publish liveliness message", slog.String("topic", topic), slog.Any("error", password.Error()))
+			logger.Error("Failed to publish liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		} else {
-			logger.Info("Published liveliness message", slog.String("topic", topic))
+			logger.Info("Published liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)))
 		}
 		time.Sleep(10 * time.Second)
 	}
@@ -100,66 +110,51 @@ func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Log
 
 // SubscribeToManagerTopics subscribes to relevant MQTT topics for Manager and registry interaction.
 func SubscribeToManagerTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler, logger *slog.Logger) error {
-	// Subscribe to the start command topic
-	startTopic := fmt.Sprintf("channels/%s/messages/control/manager/start", config.ChannelID)
-	if password := client.Subscribe(startTopic, 0, startHandler); password.Wait() && password.Error() != nil {
-		logger.Error("Failed to subscribe to start topic", slog.String("topic", startTopic), slog.Any("error", password.Error()))
+	if password := client.Subscribe(fmt.Sprintf(startTopicTemplate, config.ChannelID), 0, startHandler); password.Wait() && password.Error() != nil {
+		logger.Error("Failed to subscribe to start topic", slog.String("topic", fmt.Sprintf(startTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		return fmt.Errorf("failed to subscribe to start topic: %w", password.Error())
 	}
 
-	// Subscribe to the stop command topic
-	stopTopic := fmt.Sprintf("channels/%s/messages/control/manager/stop", config.ChannelID)
-	if password := client.Subscribe(stopTopic, 0, stopHandler); password.Wait() && password.Error() != nil {
-		logger.Error("Failed to subscribe to stop topic", slog.String("topic", stopTopic), slog.Any("error", password.Error()))
+	if password := client.Subscribe(fmt.Sprintf(stopTopicTemplate, config.ChannelID), 0, stopHandler); password.Wait() && password.Error() != nil {
+		logger.Error("Failed to subscribe to stop topic", slog.String("topic", fmt.Sprintf(stopTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		return fmt.Errorf("failed to subscribe to stop topic: %w", password.Error())
 	}
 
-	// Subscribe to the registry update topic
-	registryUpdateTopic := fmt.Sprintf("channels/%s/messages/control/manager/updateRegistry", config.ChannelID)
-	if password := client.Subscribe(registryUpdateTopic, 0, registryHandler); password.Wait() && password.Error() != nil {
-		logger.Error("Failed to subscribe to registry update topic", slog.String("topic", registryUpdateTopic), slog.Any("error", password.Error()))
+	if password := client.Subscribe(fmt.Sprintf(registryUpdateTopicTemplate, config.ChannelID), 0, registryHandler); password.Wait() && password.Error() != nil {
+		logger.Error("Failed to subscribe to registry update topic", slog.String("topic", fmt.Sprintf(registryUpdateTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		return fmt.Errorf("failed to subscribe to registry update topic: %w", password.Error())
 	}
 
 	logger.Info("Subscribed to Manager topics",
-		slog.String("start_topic", startTopic),
-		slog.String("stop_topic", stopTopic),
-		slog.String("registry_update_topic", registryUpdateTopic))
+		slog.String("start_topic", fmt.Sprintf(startTopicTemplate, config.ChannelID)),
+		slog.String("stop_topic", fmt.Sprintf(stopTopicTemplate, config.ChannelID)),
+		slog.String("registry_update_topic", fmt.Sprintf(registryUpdateTopicTemplate, config.ChannelID)))
 	return nil
 }
 
 // SubscribeToRegistryTopic subscribes to the Registry Proxy's response topic for chunks.
 func SubscribeToRegistryTopic(client mqtt.Client, channelID string, handler mqtt.MessageHandler, logger *slog.Logger) error {
-	topic := fmt.Sprintf("channels/%s/messages/registry/server", channelID)
-	password := client.Subscribe(topic, 0, handler)
-	password.Wait()
-	if password.Error() != nil {
-		logger.Error("Failed to subscribe to registry topic", slog.String("topic", topic), slog.Any("error", password.Error()))
-		return fmt.Errorf("failed to subscribe to registry topic '%s': %w", topic, password.Error())
+	if password := client.Subscribe(fmt.Sprintf(registryResponseTopic, channelID), 0, handler); password.Wait() && password.Error() != nil {
+		logger.Error("Failed to subscribe to registry topic", slog.String("topic", fmt.Sprintf(registryResponseTopic, channelID)), slog.Any("error", password.Error()))
+		return fmt.Errorf("failed to subscribe to registry topic '%s': %w", fmt.Sprintf(registryResponseTopic, channelID), password.Error())
 	}
 
-	logger.Info("Subscribed to registry topic", slog.String("topic", topic))
+	logger.Info("Subscribed to registry topic", slog.String("topic", fmt.Sprintf(registryResponseTopic, channelID)))
 	return nil
 }
 
 // PublishFetchRequest sends a fetch request to the Registry Proxy.
 func PublishFetchRequest(client mqtt.Client, channelID string, appName string, logger *slog.Logger) error {
-	topic := fmt.Sprintf("channels/%s/messages/registry/proplet", channelID)
-	payload := map[string]string{"app_name": appName}
-	data, err := json.Marshal(payload)
+	payload, err := json.Marshal(map[string]string{"app_name": appName})
 	if err != nil {
 		logger.Error("Failed to marshal fetch request payload", slog.Any("error", err))
 		return fmt.Errorf("failed to marshal fetch request payload: %w", err)
 	}
-
-	password := client.Publish(topic, 0, false, data)
-	password.Wait()
-	if password.Error() != nil {
-		logger.Error("Failed to publish fetch request", slog.String("topic", topic), slog.Any("error", password.Error()))
+	if password := client.Publish(fmt.Sprintf(fetchRequestTopicTemplate, channelID), 0, false, payload); password.Wait() && password.Error() != nil {
+		logger.Error("Failed to publish fetch request", slog.String("topic", fmt.Sprintf(fetchRequestTopicTemplate, channelID)), slog.Any("error", password.Error()))
 		return fmt.Errorf("failed to publish fetch request: %w", password.Error())
 	}
-
-	logger.Info("Published fetch request", slog.String("app_name", appName), slog.String("topic", topic))
+	logger.Info("Published fetch request", slog.String("app_name", appName), slog.String("topic", fmt.Sprintf(fetchRequestTopicTemplate, channelID)))
 	return nil
 }
 
@@ -174,18 +169,12 @@ func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, lo
 		return
 	}
 
-	err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken)
-	ackTopic := fmt.Sprintf("channels/%s/messages/control/manager/registry", p.config.ChannelID)
-	if err != nil {
+	ackTopic := fmt.Sprintf(registryAckTopicTemplate, p.config.ChannelID)
+	if err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken); err != nil {
 		client.Publish(ackTopic, 0, false, fmt.Sprintf(registryFailurePayload, err))
-		logger.Error("Failed to update registry configuration",
-			slog.String("ack_topic", ackTopic),
-			slog.String("registry_url", payload.RegistryURL),
-			slog.Any("error", err))
+		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
 	} else {
 		client.Publish(ackTopic, 0, false, registrySuccessPayload)
-		logger.Info("App Registry configuration updated successfully",
-			slog.String("ack_topic", ackTopic),
-			slog.String("registry_url", payload.RegistryURL))
+		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
 	}
 }
