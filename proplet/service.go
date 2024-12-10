@@ -53,14 +53,14 @@ func (p *PropletService) Run(ctx context.Context) error {
 		p.config,
 		p.handleStartCommand,
 		p.handleStopCommand,
-		p.handleRegistryUpdate,
+		p.registryUpdate,
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
 	}
 
-	if err := SubscribeToRegistryTopics(
+	if err := SubscribeToRegistryTopic(
 		p.mqttClient,
-		p.config,
+		p.config.ChannelID,
 		p.handleChunk,
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Registry topics: %w", err)

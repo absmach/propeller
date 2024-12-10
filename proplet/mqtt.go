@@ -131,13 +131,16 @@ func SubscribeToManagerTopics(client mqtt.Client, config *Config, startHandler, 
 	return nil
 }
 
-func SubscribeToRegistryTopics(client mqtt.Client, config *Config, chunkHandler mqtt.MessageHandler) error {
-	chunkTopic := fmt.Sprintf("channels/%s/messages/registry/server", config.ChannelID)
-	if token := client.Subscribe(chunkTopic, 0, chunkHandler); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("failed to subscribe to chunk topic: %w", token.Error())
+// SubscribeToRegistryTopic subscribes to the Registry Proxy's response topic for chunks.
+func SubscribeToRegistryTopic(client mqtt.Client, channelID string, handler mqtt.MessageHandler) error {
+	topic := fmt.Sprintf("channels/%s/messages/registry/server", channelID)
+	token := client.Subscribe(topic, 0, handler)
+	token.Wait()
+	if token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to registry topic '%s': %w", topic, token.Error())
 	}
 
-	fmt.Printf("Subscribed to Registry topics:\n - Chunk: '%s'\n", chunkTopic)
+	fmt.Printf("Subscribed to registry topic: '%s'\n", topic)
 	return nil
 }
 
@@ -160,20 +163,7 @@ func PublishFetchRequest(client mqtt.Client, channelID string, appName string) e
 	return nil
 }
 
-// SubscribeToRegistryChunks subscribes to the Registry Proxy's response topic for chunks.
-func SubscribeToRegistryChunks(client mqtt.Client, channelID string, handler mqtt.MessageHandler) error {
-	topic := fmt.Sprintf("channels/%s/messages/registry/server", channelID)
-	token := client.Subscribe(topic, 0, handler)
-	token.Wait()
-	if token.Error() != nil {
-		return fmt.Errorf("failed to subscribe to registry server topic: %w", token.Error())
-	}
-
-	fmt.Printf("Subscribed to registry server chunks on topic '%s'\n", topic)
-	return nil
-}
-
-func (p *PropletService) handleRegistryUpdate(client mqtt.Client, msg mqtt.Message) {
+func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message) {
 	var payload struct {
 		RegistryURL   string `json:"registry_url"`
 		RegistryToken string `json:"registry_token"`
