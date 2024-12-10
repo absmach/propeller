@@ -13,10 +13,6 @@ import (
 
 // NewMQTTClient initializes a new MQTT client with LWT and liveliness updates.
 func NewMQTTClient(config *Config) (mqtt.Client, error) {
-	if err := validateConfig(config); err != nil {
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
-	}
-
 	// Prepare LWT payload
 	lwtPayload := fmt.Sprintf(`{"status":"offline","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
 	if lwtPayload == "" {
