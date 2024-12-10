@@ -1,7 +1,6 @@
-package proplet
+package repository
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,21 +13,25 @@ import (
 const livelinessInterval = 10 * time.Second
 
 var (
-	// Payload templates
+	// Exported Payload Templates
+	RegistryFailurePayload = `{"status":"failure","error":"%v"}`
+	RegistrySuccessPayload = `{"status":"success"}`
+
+	// Exported Topic Templates
+	RegistryAckTopicTemplate = "channels/%s/messages/control/manager/registry"
+
+	// Unexported Payload Templates
 	lwtPayloadTemplate       = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
 	discoveryPayloadTemplate = `{"proplet_id":"%s","chan_id":"%s"}`
 	alivePayloadTemplate     = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
-	registryFailurePayload   = `{"status":"failure","error":"%v"}`
-	registrySuccessPayload   = `{"status":"success"}`
 	fetchRequestPayload      = `{"app_name":"%s"}`
 
-	// Topic templates
+	// Unexported Topic Templates
 	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
 	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
 	startTopicTemplate          = "channels/%s/messages/control/manager/start"
 	stopTopicTemplate           = "channels/%s/messages/control/manager/stop"
 	registryUpdateTopicTemplate = "channels/%s/messages/control/manager/updateRegistry"
-	registryAckTopicTemplate    = "channels/%s/messages/control/manager/registry"
 	registryResponseTopic       = "channels/%s/messages/registry/server"
 	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
 )
@@ -158,25 +161,4 @@ func PublishFetchRequest(client mqtt.Client, channelID string, appName string, l
 	}
 	logger.Info("Published fetch request", slog.String("app_name", appName), slog.String("topic", fmt.Sprintf(fetchRequestTopicTemplate, channelID)))
 	return nil
-}
-
-// registryUpdate processes registry update commands.
-func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var payload struct {
-		RegistryURL   string `json:"registry_url"`
-		RegistryToken string `json:"registry_token"`
-	}
-	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
-		logger.Error("Invalid registry update payload", slog.Any("error", err))
-		return
-	}
-
-	ackTopic := fmt.Sprintf(registryAckTopicTemplate, p.config.ChannelID)
-	if err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken); err != nil {
-		client.Publish(ackTopic, 0, false, fmt.Sprintf(registryFailurePayload, err))
-		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
-	} else {
-		client.Publish(ackTopic, 0, false, registrySuccessPayload)
-		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
-	}
 }

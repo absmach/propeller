@@ -1,4 +1,4 @@
-package proplet
+package repository
 
 import (
 	"encoding/json"

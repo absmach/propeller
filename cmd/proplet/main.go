@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/proplet"
+	config "github.com/absmach/propeller/proplet/repository"
 )
 
 const registryTimeout = 5 * time.Second
@@ -42,19 +43,19 @@ func main() {
 	hasWASMFile := *wasmFilePath != ""
 
 	// Load configuration
-	config, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
+	cfg, err := config.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
 		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	// Check Registry connectivity if URL is provided
-	if config.RegistryURL != "" {
-		if err := checkRegistryConnectivity(config.RegistryURL, logger); err != nil {
-			logger.Error("Failed connectivity check for Registry URL", slog.String("url", config.RegistryURL), slog.Any("error", err))
+	if cfg.RegistryURL != "" {
+		if err := checkRegistryConnectivity(cfg.RegistryURL, logger); err != nil {
+			logger.Error("Failed connectivity check for Registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
 			os.Exit(1)
 		}
-		logger.Info("Registry connectivity verified", slog.String("url", config.RegistryURL))
+		logger.Info("Registry connectivity verified", slog.String("url", cfg.RegistryURL))
 	}
 
 	// Load WASM binary if provided
@@ -69,13 +70,13 @@ func main() {
 	}
 
 	// Handle fallback case for empty registry URL and binary
-	if config.RegistryURL == "" && wasmBinary == nil {
+	if cfg.RegistryURL == "" && wasmBinary == nil {
 		logger.Error("Neither a registry URL nor a WASM binary file was provided")
 		os.Exit(1)
 	}
 
 	// Initialize and run the service
-	service, err := proplet.NewService(ctx, config, wasmBinary, logger)
+	service, err := proplet.NewService(ctx, cfg, wasmBinary, logger)
 	if err != nil {
 		logger.Error("Error initializing service", slog.Any("error", err))
 		os.Exit(1)

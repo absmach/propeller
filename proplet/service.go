@@ -11,12 +11,12 @@ import (
 	"time"
 
 	api "github.com/absmach/propeller/proplet/api"
-
+	config "github.com/absmach/propeller/proplet/repository"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 type PropletService struct {
-	config        *Config
+	config        *config.Config
 	mqttClient    mqtt.Client
 	runtime       *WazeroRuntime
 	wasmBinary    []byte
@@ -34,8 +34,8 @@ type ChunkPayload struct {
 }
 
 // NewService initializes the Proplet service.
-func NewService(ctx context.Context, config *Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
-	mqttClient, err := NewMQTTClient(config, logger)
+func NewService(ctx context.Context, cfg *config.Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
+	mqttClient, err := config.NewMQTTClient(cfg, logger) // Using the package alias `config`
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
@@ -43,7 +43,7 @@ func NewService(ctx context.Context, config *Config, wasmBinary []byte, logger *
 	runtime := NewWazeroRuntime(ctx)
 
 	return &PropletService{
-		config:        config,
+		config:        cfg,
 		mqttClient:    mqttClient,
 		runtime:       runtime,
 		wasmBinary:    wasmBinary,
@@ -54,7 +54,7 @@ func NewService(ctx context.Context, config *Config, wasmBinary []byte, logger *
 
 // Run starts the PropletService and subscribes to relevant topics.
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	if err := SubscribeToManagerTopics(
+	if err := config.SubscribeToManagerTopics(
 		p.mqttClient,
 		p.config,
 		func(client mqtt.Client, msg mqtt.Message) {
@@ -71,7 +71,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
 	}
 
-	if err := SubscribeToRegistryTopic(
+	if err := config.SubscribeToRegistryTopic(
 		p.mqttClient,
 		p.config.ChannelID,
 		func(client mqtt.Client, msg mqtt.Message) {
@@ -116,7 +116,7 @@ func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, log
 
 	// Publish fetch request to the Registry Proxy only if Registry URL is available
 	if p.config.RegistryURL != "" {
-		err := PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName, logger)
+		err := config.PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName, logger)
 		if err != nil {
 			logger.Error("Failed to publish fetch request", slog.String("app_name", req.AppName), slog.Any("error", err))
 			return
@@ -274,4 +274,25 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 
 	fmt.Printf("App Registry updated and persisted: %s\n", registryURL)
 	return nil
+}
+
+// registryUpdate processes registry update commands.
+func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+	var payload struct {
+		RegistryURL   string `json:"registry_url"`
+		RegistryToken string `json:"registry_token"`
+	}
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		logger.Error("Invalid registry update payload", slog.Any("error", err))
+		return
+	}
+
+	ackTopic := fmt.Sprintf(config.RegistryAckTopicTemplate, p.config.ChannelID)
+	if err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken); err != nil {
+		client.Publish(ackTopic, 0, false, fmt.Sprintf(config.RegistryFailurePayload, err))
+		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
+	} else {
+		client.Publish(ackTopic, 0, false, config.RegistrySuccessPayload)
+		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
+	}
 }
