@@ -184,7 +184,7 @@ func (p *PropletService) handleRegistryUpdate(client mqtt.Client, msg mqtt.Messa
 	}
 
 	err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken)
-	ackTopic := fmt.Sprintf("channels/%s/messages/control/manager/ackRegistryUpdate", p.config.ChannelID)
+	ackTopic := fmt.Sprintf("channels/%s/messages/control/manager/registry", p.config.ChannelID)
 	if err != nil {
 		client.Publish(ackTopic, 0, false, fmt.Sprintf(`{"status":"failure","error":"%v"}`, err))
 		fmt.Printf("Failed to update registry configuration: %v\n", err)
