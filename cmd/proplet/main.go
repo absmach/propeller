@@ -43,9 +43,9 @@ func main() {
 	hasWASMFile := *wasmFilePath != ""
 
 	// Load configuration
-	cfg, err := config.LoadConfig("proplet/config.json", hasWASMFile)
+	cfg, err := config.LoadConfig("proplet/repository/config.json", hasWASMFile)
 	if err != nil {
-		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
+		logger.Error("Failed to load configuration", slog.String("path", "proplet/repository/config.json"), slog.Any("error", err))
 		os.Exit(1)
 	}
 
