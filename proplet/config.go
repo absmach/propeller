@@ -10,7 +10,7 @@ import (
 // Config holds configuration for the MQTT client.
 type Config struct {
 	BrokerURL     string `json:"broker_url"`
-	Token         string `json:"token"`
+	Password      string `json:"password"`
 	PropletID     string `json:"proplet_id"`
 	ChannelID     string `json:"channel_id"`
 	RegistryURL   string `json:"registry_url"`
@@ -47,8 +47,8 @@ func (c *Config) Validate(hasWASMFile bool) error {
 		return fmt.Errorf("invalid broker_url '%s': %w", c.BrokerURL, err)
 	}
 
-	if c.Token == "" {
-		return fmt.Errorf("missing required field: token")
+	if c.Password == "" {
+		return fmt.Errorf("missing required field: password")
 	}
 
 	if c.PropletID == "" {
