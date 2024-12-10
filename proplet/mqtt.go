@@ -11,10 +11,20 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+// Payload variables
+var (
+	lwtPayloadTemplate        = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
+	discoveryPayloadTemplate  = `{"proplet_id":"%s","chan_id":"%s"}`
+	alivePayloadTemplate      = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
+	registryFailurePayload    = `{"status":"failure","error":"%v"}`
+	registrySuccessPayload    = `{"status":"success"}`
+	fetchRequestPayloadFormat = `{"app_name":"%s"}`
+)
+
 // NewMQTTClient initializes a new MQTT client with LWT and liveliness updates.
 func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
 	// Prepare LWT payload
-	lwtPayload := fmt.Sprintf(`{"status":"offline","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
+	lwtPayload := fmt.Sprintf(lwtPayloadTemplate, config.PropletID, config.ChannelID)
 	if lwtPayload == "" {
 		logger.Error("Failed to prepare MQTT last will payload")
 		return nil, fmt.Errorf("failed to prepare MQTT last will payload: %w", pkgerrors.ErrMQTTWillPayloadFailed)
@@ -61,7 +71,7 @@ func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
 // PublishDiscovery sends an initial "create" message to announce the Proplet's existence.
 func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) error {
 	topic := fmt.Sprintf("channels/%s/messages/control/proplet/create", config.ChannelID)
-	payload := fmt.Sprintf(`{"proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
+	payload := fmt.Sprintf(discoveryPayloadTemplate, config.PropletID, config.ChannelID)
 	password := client.Publish(topic, 0, false, payload)
 	password.Wait()
 	if password.Error() != nil {
@@ -76,7 +86,7 @@ func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) e
 func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Logger) {
 	for {
 		topic := fmt.Sprintf("channels/%s/messages/control/proplet/alive", config.ChannelID)
-		payload := fmt.Sprintf(`{"status":"alive","proplet_id":"%s","chan_id":"%s"}`, config.PropletID, config.ChannelID)
+		payload := fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID)
 		password := client.Publish(topic, 0, false, payload)
 		password.Wait()
 		if password.Error() != nil {
@@ -167,13 +177,13 @@ func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, lo
 	err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken)
 	ackTopic := fmt.Sprintf("channels/%s/messages/control/manager/registry", p.config.ChannelID)
 	if err != nil {
-		client.Publish(ackTopic, 0, false, fmt.Sprintf(`{"status":"failure","error":"%v"}`, err))
+		client.Publish(ackTopic, 0, false, fmt.Sprintf(registryFailurePayload, err))
 		logger.Error("Failed to update registry configuration",
 			slog.String("ack_topic", ackTopic),
 			slog.String("registry_url", payload.RegistryURL),
 			slog.Any("error", err))
 	} else {
-		client.Publish(ackTopic, 0, false, `{"status":"success"}`)
+		client.Publish(ackTopic, 0, false, registrySuccessPayload)
 		logger.Info("App Registry configuration updated successfully",
 			slog.String("ack_topic", ackTopic),
 			slog.String("registry_url", payload.RegistryURL))
