@@ -32,7 +32,7 @@ func main() {
 	}()
 
 	// Initialize and run the Proplet service
-	service, err := initializeProplet(ctx, "proplet/config.json", logger)
+	service, err := newService(ctx, "proplet/config.json", logger)
 	if err != nil {
 		logger.Error("Error initializing Proplet", slog.Any("error", err))
 		os.Exit(1)
@@ -56,7 +56,8 @@ func configureLogger(level string) *slog.Logger {
 	return slog.New(logHandler)
 }
 
-func initializeProplet(ctx context.Context, configPath string, logger *slog.Logger) (*proplet.PropletService, error) {
+func newService(ctx context.Context, configPath string, logger *slog.Logger) (*proplet.PropletService, error) {
+	logger.Info("Loading configuration", slog.String("path", configPath))
 	config, err := proplet.LoadConfig(configPath)
 	if err != nil {
 		logger.Error("Failed to load configuration", slog.String("path", configPath), slog.Any("error", err))
@@ -71,6 +72,7 @@ func initializeProplet(ctx context.Context, configPath string, logger *slog.Logg
 		return nil, fmt.Errorf("failed connectivity check for App Registry: %w", err)
 	}
 
+	logger.Info("Initializing Proplet service")
 	propletService, err := proplet.NewPropletService(ctx, config)
 	if err != nil {
 		logger.Error("Failed to initialize Proplet", slog.Any("error", err))
