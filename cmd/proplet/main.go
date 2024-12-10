@@ -14,6 +14,8 @@ import (
 	"github.com/absmach/propeller/proplet"
 )
 
+const registryTimeout = 5 * time.Second
+
 func main() {
 	// Parse the WASM file path from command-line arguments
 	wasmFilePath := flag.String("file", "", "Path to the WASM file")
@@ -107,9 +109,7 @@ func loadWASMFile(path string, logger *slog.Logger) ([]byte, error) {
 }
 
 func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
+	client := &http.Client{Timeout: registryTimeout}
 
 	logger.Info("Checking registry connectivity", slog.String("url", registryURL))
 	resp, err := client.Get(registryURL)

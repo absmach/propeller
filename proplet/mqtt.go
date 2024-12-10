@@ -11,6 +11,8 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+const livelinessInterval = 10 * time.Second
+
 var (
 	// Payload templates
 	lwtPayloadTemplate       = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
@@ -95,19 +97,16 @@ func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) e
 // startLivelinessUpdates sends periodic "alive" messages to the MQTT broker.
 func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Logger) {
 	for {
-		password := client.Publish(
-			fmt.Sprintf(aliveTopicTemplate, config.ChannelID), 0, false, fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID),
-		)
+		password := client.Publish(fmt.Sprintf(aliveTopicTemplate, config.ChannelID), 0, false, fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID))
 		password.Wait()
 		if password.Error() != nil {
 			logger.Error("Failed to publish liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		} else {
 			logger.Info("Published liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)))
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(livelinessInterval)
 	}
 }
-
 // SubscribeToManagerTopics subscribes to relevant MQTT topics for Manager and registry interaction.
 func SubscribeToManagerTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler, logger *slog.Logger) error {
 	if password := client.Subscribe(fmt.Sprintf(startTopicTemplate, config.ChannelID), 0, startHandler); password.Wait() && password.Error() != nil {
