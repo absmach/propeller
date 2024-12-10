@@ -7,17 +7,16 @@ import (
 	"log"
 	"time"
 
-	"github.com/absmach/propeller/proxy"
+	"github.com/absmach/propeller/proxy/config"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 type RegistryClient struct {
-	client      mqtt.Client
-	config      *proxy.MQTTProxyConfig
-	messageChan chan string
+	client mqtt.Client
+	config *config.MQTTProxyConfig
 }
 
-func NewMQTTClient(config *proxy.MQTTProxyConfig) (*RegistryClient, error) {
+func NewMQTTClient(config *config.MQTTProxyConfig) (*RegistryClient, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(config.BrokerURL).
 		SetClientID(fmt.Sprintf("Proplet-%s", config.PropletID)).
@@ -38,13 +37,10 @@ func NewMQTTClient(config *proxy.MQTTProxyConfig) (*RegistryClient, error) {
 
 	client := mqtt.NewClient(opts)
 
-	regClient := &RegistryClient{
-		client:      client,
-		config:      config,
-		messageChan: make(chan string, 1),
-	}
-
-	return regClient, nil
+	return &RegistryClient{
+		client: client,
+		config: config,
+	}, nil
 }
 
 func (c *RegistryClient) Connect(ctx context.Context) error {
@@ -59,10 +55,11 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	return c.subscribe(ctx)
+	return nil
 }
 
-func (c *RegistryClient) subscribe(ctx context.Context) error {
+func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
+	// Subscribe to container requests
 	subTopic := fmt.Sprintf("channels/%s/message/registry/proplet", c.config.ChannelID)
 
 	handler := func(client mqtt.Client, msg mqtt.Message) {
@@ -76,17 +73,17 @@ func (c *RegistryClient) subscribe(ctx context.Context) error {
 
 		err := json.Unmarshal(data, &payLoad)
 		if err != nil {
-			log.Fatalf("failed unmarshalling")
+			log.Printf("failed unmarshalling: %v", err)
 			return
 		}
-		packageName := payLoad.Appname
+
 		select {
-		case c.messageChan <- packageName:
-			log.Printf("Received package name: %s", packageName)
+		case containerChan <- payLoad.Appname:
+			log.Printf("Received container request: %s", payLoad.Appname)
 		case <-ctx.Done():
 			return
 		default:
-			log.Println("Package name channel full, dropping message")
+			log.Println("Channel full, dropping container request")
 		}
 	}
 
@@ -98,8 +95,8 @@ func (c *RegistryClient) subscribe(ctx context.Context) error {
 	return nil
 }
 
-// PublishOCIContainer publishes OCI container information
-func (c *RegistryClient) PublishOCIContainer(ctx context.Context, containerData []byte) error {
+// PublishContainer publishes container data to the server channel
+func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []byte) error {
 	pubTopic := fmt.Sprintf("channels/%s/messages/registry/server", c.config.ChannelID)
 
 	token := c.client.Publish(pubTopic, 1, false, containerData)
@@ -107,20 +104,11 @@ func (c *RegistryClient) PublishOCIContainer(ctx context.Context, containerData 
 	select {
 	case <-token.Done():
 		if err := token.Error(); err != nil {
-			return fmt.Errorf("failed to publish OCI container: %w", err)
+			return fmt.Errorf("failed to publish container: %w", err)
 		}
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
-	}
-}
-
-func (c *RegistryClient) WaitForPackageName(ctx context.Context) (string, error) {
-	select {
-	case packageName := <-c.messageChan:
-		return packageName, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
 	}
 }
 
