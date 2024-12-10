@@ -2,23 +2,23 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"time"
 
+	"github.com/absmach/propeller/proxy/config"
 	orasHTTP "github.com/absmach/propeller/proxy/http"
 	"github.com/absmach/propeller/proxy/mqtt"
-	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
 type ProxyService struct {
-	orasconfig orasHTTP.Config
-	mqttClient mqtt.RegistryClient
+	orasconfig    orasHTTP.Config
+	mqttClient    *mqtt.RegistryClient
+	logger        *slog.Logger
+	containerChan chan string
+	dataChan      chan []byte
 }
 
-func NewService(ctx context.Context, cfg *MQTTProxyConfig, logger *slog.Logger) (*ProxyService, error) {
+func NewService(ctx context.Context, cfg *config.MQTTProxyConfig, logger *slog.Logger) (*ProxyService, error) {
 	mqttClient, err := mqtt.NewMQTTClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
@@ -30,104 +30,68 @@ func NewService(ctx context.Context, cfg *MQTTProxyConfig, logger *slog.Logger) 
 	}
 
 	return &ProxyService{
-		orasconfig: *config,
-		mqttClient: mqttClient,
+		orasconfig:    *config,
+		mqttClient:    mqttClient,
+		logger:        logger,
+		containerChan: make(chan string, 1),
+		dataChan:      make(chan []byte, 1),
 	}, nil
 }
 
-func Stream(ctx context.Context, in, out net.Conn, h Handler) error {
+func (s *ProxyService) Start(ctx context.Context) error {
 	errs := make(chan error, 2)
 
-	go streamHTTP(ctx, in, out, h, errs)
-	go streamMQTT(ctx, out, in, h, errs)
+	if err := s.mqttClient.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
+	}
+	defer s.mqttClient.Disconnect(ctx)
 
-	err := <-errs
-
-	disconnectErr := h.Disconnect(ctx)
-
-	return errors.Join(err, disconnectErr)
-}
-
-func streamHTTP(ctx context.Context, _, w net.Conn, h Handler, errs chan error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// setup to OCI
-	c, err := orasHTTP.Init()
-	if err != nil {
-		errs <- err
-		return
+	if err := s.mqttClient.Subscribe(ctx, s.containerChan); err != nil {
+		return fmt.Errorf("failed to subscribe to container requests: %w", err)
 	}
 
-	// check continously for the expected name
+	go s.streamHTTP(ctx, errs)
+	go s.streamMQTT(ctx, errs)
+
+	return <-errs
+}
+
+func (s *ProxyService) streamHTTP(ctx context.Context, errs chan error) {
 	for {
 		select {
 		case <-ctx.Done():
 			errs <- ctx.Err()
 			return
-		default:
-			data, err := c.FetchFromReg(ctx)
+		case containerName := <-s.containerChan:
+			data, err := s.orasconfig.FetchFromReg(ctx, containerName)
 			if err != nil {
-				errs <- err
-				return
+				s.logger.Error("failed to fetch container", "container", containerName, "error", err)
+				continue
 			}
 
-			if err = h.Connect(ctx); err != nil {
-				errs <- err
-				return
-			}
-
-			if _, err = w.Write(data); err != nil {
-				errs <- err
+			select {
+			case s.dataChan <- data:
+				s.logger.Info("sent container data to MQTT stream", "container", containerName)
+			case <-ctx.Done():
+				errs <- ctx.Err()
 				return
 			}
 		}
 	}
 }
 
-func streamMQTT(ctx context.Context, r, w net.Conn, h Handler, errs chan error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
+func (s *ProxyService) streamMQTT(ctx context.Context, errs chan error) {
 	for {
 		select {
 		case <-ctx.Done():
 			errs <- ctx.Err()
-		default:
-			pkt, err := packets.ReadPacket(r)
-			if err != nil {
-				errs <- err
-				return
+			return
+		case data := <-s.dataChan:
+			if err := s.mqttClient.PublishContainer(ctx, data); err != nil {
+				s.logger.Error("failed to publish container data", "error", err)
+				continue
 			}
-
-			switch p := pkt.(type) {
-			case *packets.PublishPacket:
-				topics := p.TopicName
-				if err = h.Publish(ctx, &topics, &p.Payload); err != nil {
-					disconnectPkt := packets.NewControlPacket(packets.Disconnect).(*packets.DisconnectPacket)
-					if wErr := disconnectPkt.Write(w); wErr != nil {
-						err = errors.Join(err, wErr)
-					}
-					errs <- fmt.Errorf("MQTT publish error: %w", err)
-					return
-				}
-
-			case *packets.ConnectPacket:
-				if err = h.Connect(ctx); err != nil {
-					errs <- fmt.Errorf("MQTT connection error: %w", err)
-					return
-				}
-
-			case *packets.DisconnectPacket:
-				errs <- h.Disconnect(ctx)
-				return
-			}
-
-			if err := pkt.Write(w); err != nil {
-				errs <- err
-				return
-			}
+			s.logger.Info("published container data")
 		}
-
 	}
 }

@@ -1,4 +1,4 @@
-package proxy
+package config
 
 type MQTTProxyConfig struct {
 	BrokerURL string `json:"broker_url"`
