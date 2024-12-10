@@ -10,7 +10,11 @@ import (
 	"sync"
 	"time"
 
-	api "github.com/absmach/propeller/proplet/api"
+	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	"github.com/tetratelabs/wazero"
+	wazeroapi "github.com/tetratelabs/wazero/api"
+
+	propletapi "github.com/absmach/propeller/proplet/api"
 	config "github.com/absmach/propeller/proplet/repository"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -33,6 +37,13 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
+// WazeroRuntime manages the Wazero runtime and running Wasm modules.
+type WazeroRuntime struct {
+	runtime wazero.Runtime
+	modules map[string]wazeroapi.Module
+	mutex   sync.Mutex
+}
+
 // NewService initializes the Proplet service.
 func NewService(ctx context.Context, cfg *config.Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
 	mqttClient, err := config.NewMQTTClient(cfg, logger) // Using the package alias `config`
@@ -50,6 +61,14 @@ func NewService(ctx context.Context, cfg *config.Config, wasmBinary []byte, logg
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
 	}, nil
+}
+
+// NewWazeroRuntime initializes a new WazeroRuntime instance.
+func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
+	return &WazeroRuntime{
+		runtime: wazero.NewRuntime(ctx),
+		modules: make(map[string]wazeroapi.Module),
+	}
 }
 
 // Run starts the PropletService and subscribes to relevant topics.
@@ -88,7 +107,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req api.StartRequest
+	var req propletapi.StartRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid start command payload", slog.Any("error", err))
 		return
@@ -149,7 +168,7 @@ func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, log
 
 // handleStopCommand processes the stop command from the Manager.
 func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req api.StopRequest
+	var req propletapi.StopRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid stop command payload", slog.Any("error", err))
 		return
@@ -295,4 +314,60 @@ func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, lo
 		client.Publish(ackTopic, 0, false, config.RegistrySuccessPayload)
 		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
 	}
+}
+
+// StartApp instantiates and starts a Wasm module.
+func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (wazeroapi.Function, error) {
+	if appName == "" {
+		return nil, fmt.Errorf("start app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+	if len(wasmBinary) == 0 {
+		return nil, fmt.Errorf("start app: Wasm binary is empty: %w", pkgerrors.ErrInvalidValue)
+	}
+	if functionName == "" {
+		return nil, fmt.Errorf("start app: functionName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	if _, exists := w.modules[appName]; exists {
+		return nil, fmt.Errorf("start app: app '%s' is already running: %w", appName, pkgerrors.ErrAppAlreadyRunning)
+	}
+
+	module, err := w.runtime.Instantiate(ctx, wasmBinary)
+	if err != nil {
+		return nil, fmt.Errorf("start app: failed to instantiate Wasm module for app '%s': %w", appName, pkgerrors.ErrModuleInstantiation)
+	}
+
+	function := module.ExportedFunction(functionName)
+	if function == nil {
+		_ = module.Close(ctx)
+		return nil, fmt.Errorf("start app: function '%s' not found in Wasm module for app '%s': %w", functionName, appName, pkgerrors.ErrFunctionNotFound)
+	}
+
+	w.modules[appName] = module
+	return function, nil
+}
+
+// StopApp stops and removes a running Wasm module.
+func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
+	if appName == "" {
+		return fmt.Errorf("stop app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
+	}
+
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	module, exists := w.modules[appName]
+	if !exists {
+		return fmt.Errorf("stop app: app '%s' is not running: %w", appName, pkgerrors.ErrAppNotRunning)
+	}
+
+	if err := module.Close(ctx); err != nil {
+		return fmt.Errorf("stop app: failed to stop app '%s': %w", appName, pkgerrors.ErrModuleStopFailed)
+	}
+
+	delete(w.modules, appName)
+	return nil
 }
