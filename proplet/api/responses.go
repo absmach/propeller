@@ -1,4 +1,4 @@
-package proplet
+package api
 
 import (
 	"fmt"

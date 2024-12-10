@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	api "github.com/absmach/propeller/proplet/api"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -85,8 +87,8 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	return nil
 }
 
-func (p *PropletService) handleStartCommand(client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req StartRequest
+func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+	var req api.StartRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid start command payload", slog.Any("error", err))
 		return
@@ -146,8 +148,8 @@ func (p *PropletService) handleStartCommand(client mqtt.Client, msg mqtt.Message
 }
 
 // handleStopCommand processes the stop command from the Manager.
-func (p *PropletService) handleStopCommand(client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req StopRequest
+func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+	var req api.StopRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid stop command payload", slog.Any("error", err))
 		return
@@ -165,7 +167,7 @@ func (p *PropletService) handleStopCommand(client mqtt.Client, msg mqtt.Message,
 }
 
 // handleChunk processes Wasm chunks from the Registry Proxy.
-func (p *PropletService) handleChunk(client mqtt.Client, msg mqtt.Message) {
+func (p *PropletService) handleChunk(_ mqtt.Client, msg mqtt.Message) {
 	var chunk ChunkPayload
 	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
 		fmt.Printf("Failed to unmarshal chunk payload: %v\n", err)
