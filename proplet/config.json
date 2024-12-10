@@ -3,6 +3,6 @@
   "token": "example-token",
   "proplet_id": "proplet-1",
   "channel_id": "channel-1",
-  "registry_url": "https://example3.com/registry",
-  "registry_token": "example-registry-token"
+  "registry_url": "",
+  "registry_token": ""
 }

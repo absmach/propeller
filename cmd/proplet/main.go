@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,10 +12,13 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/proplet"
-	"log/slog"
 )
 
 func main() {
+	// Parse the WASM file path from command-line arguments
+	wasmFilePath := flag.String("file", "", "Path to the WASM file")
+	flag.Parse()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -31,15 +36,51 @@ func main() {
 		cancel()
 	}()
 
-	// Initialize and run the Proplet service
-	service, err := newService(ctx, "proplet/config.json", logger)
+	// Check if a WASM file is provided
+	hasWASMFile := *wasmFilePath != ""
+
+	// Load configuration
+	config, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
-		logger.Error("Error initializing Proplet", slog.Any("error", err))
+		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	// Check Registry connectivity if URL is provided
+	if config.RegistryURL != "" {
+		if err := checkRegistryConnectivity(config.RegistryURL, logger); err != nil {
+			logger.Error("Failed connectivity check for Registry URL", slog.String("url", config.RegistryURL), slog.Any("error", err))
+			os.Exit(1)
+		}
+		logger.Info("Registry connectivity verified", slog.String("url", config.RegistryURL))
+	}
+
+	// Load WASM binary if provided
+	var wasmBinary []byte
+	if hasWASMFile {
+		wasmBinary, err = loadWASMFile(*wasmFilePath, logger)
+		if err != nil {
+			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", *wasmFilePath), slog.Any("error", err))
+			os.Exit(1)
+		}
+		logger.Info("WASM binary loaded at startup", slog.Int("size_bytes", len(wasmBinary)))
+	}
+
+	// Handle fallback case for empty registry URL and binary
+	if config.RegistryURL == "" && wasmBinary == nil {
+		logger.Error("Neither a registry URL nor a WASM binary file was provided")
+		os.Exit(1)
+	}
+
+	// Initialize and run the service
+	service, err := proplet.NewService(ctx, config, wasmBinary, logger)
+	if err != nil {
+		logger.Error("Error initializing service", slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	if err := service.Run(ctx); err != nil {
-		logger.Error("Error running Proplet", slog.Any("error", err))
+		logger.Error("Error running service", slog.Any("error", err))
 	}
 }
 
@@ -56,34 +97,15 @@ func configureLogger(level string) *slog.Logger {
 	return slog.New(logHandler)
 }
 
-func newService(ctx context.Context, configPath string, logger *slog.Logger) (*proplet.PropletService, error) {
-	logger.Info("Loading configuration", slog.String("path", configPath))
-	config, err := proplet.LoadConfig(configPath)
+func loadWASMFile(path string, logger *slog.Logger) ([]byte, error) {
+	logger.Info("Loading WASM file", slog.String("path", path))
+	wasmBytes, err := os.ReadFile(path)
 	if err != nil {
-		logger.Error("Failed to load configuration", slog.String("path", configPath), slog.Any("error", err))
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
+		return nil, fmt.Errorf("failed to read WASM file: %w", err)
 	}
-
-	logger.Info("Configuration loaded", slog.String("registry_url", config.RegistryURL))
-
-	// Check connectivity to configured OCI Registry
-	if err := checkRegistryConnectivity(config.RegistryURL, logger); err != nil {
-		logger.Error("Failed connectivity check for App Registry", slog.String("url", config.RegistryURL), slog.Any("error", err))
-		return nil, fmt.Errorf("failed connectivity check for App Registry: %w", err)
-	}
-
-	logger.Info("Initializing Proplet service")
-	propletService, err := proplet.NewPropletService(ctx, config)
-	if err != nil {
-		logger.Error("Failed to initialize Proplet", slog.Any("error", err))
-		return nil, fmt.Errorf("failed to initialize Proplet: %w", err)
-	}
-
-	logger.Info("Proplet initialized successfully", slog.String("registry_url", config.RegistryURL))
-	return propletService, nil
+	return wasmBytes, nil
 }
 
-// checkRegistryConnectivity tests if the Registry URL is reachable.
 func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
 	client := &http.Client{
 		Timeout: 5 * time.Second,

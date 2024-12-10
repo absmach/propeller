@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"sync"
@@ -16,6 +17,7 @@ type PropletService struct {
 	config        *Config
 	mqttClient    mqtt.Client
 	runtime       *WazeroRuntime
+	wasmBinary    []byte
 	chunks        map[string][][]byte
 	chunkMetadata map[string]*ChunkPayload
 	chunksMutex   sync.Mutex
@@ -29,18 +31,20 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-// NewPropletService initializes the Proplet service.
-func NewPropletService(ctx context.Context, config *Config) (*PropletService, error) {
+// NewService initializes the Proplet service.
+func NewService(ctx context.Context, config *Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
 	mqttClient, err := NewMQTTClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
 
 	runtime := NewWazeroRuntime(ctx)
+
 	return &PropletService{
 		config:        config,
 		mqttClient:    mqttClient,
 		runtime:       runtime,
+		wasmBinary:    wasmBinary,
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
 	}, nil
@@ -80,33 +84,55 @@ func (p *PropletService) handleStartCommand(client mqtt.Client, msg mqtt.Message
 
 	fmt.Printf("Received start command for app '%s'\n", req.AppName)
 
-	// Publish fetch request to the Registry Proxy
-	err := PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName)
-	if err != nil {
-		fmt.Printf("Failed to publish fetch request: %v\n", err)
+	// If WASM binary is preloaded, deploy it
+	if p.wasmBinary != nil {
+		fmt.Printf("Using preloaded WASM binary for app '%s'\n", req.AppName)
+		function, err := p.runtime.StartApp(context.Background(), req.AppName, p.wasmBinary, "main")
+		if err != nil {
+			fmt.Printf("Failed to start app '%s': %v\n", err)
+			return
+		}
+
+		_, err = function.Call(context.Background())
+		if err != nil {
+			fmt.Printf("Error executing app '%s': %v\n", err)
+		} else {
+			fmt.Printf("App '%s' started successfully\n", req.AppName)
+		}
 		return
 	}
 
-	// Wait for chunks to be received and assembled
-	go func() {
-		fmt.Printf("Waiting for chunks for app '%s'...\n", req.AppName)
-
-		// Poll for chunk completion
-		for {
-			p.chunksMutex.Lock()
-			metadata, exists := p.chunkMetadata[req.AppName]
-			receivedChunks := len(p.chunks[req.AppName])
-			p.chunksMutex.Unlock()
-
-			if exists && receivedChunks == metadata.TotalChunks {
-				fmt.Printf("All chunks received for app '%s'. Deploying...\n", req.AppName)
-				go p.deployAndRunApp(req.AppName)
-				break
-			}
-
-			time.Sleep(1 * time.Second) // Avoid tight polling
+	// Publish fetch request to the Registry Proxy only if Registry URL is available
+	if p.config.RegistryURL != "" {
+		err := PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName)
+		if err != nil {
+			fmt.Printf("Failed to publish fetch request: %v\n", err)
+			return
 		}
-	}()
+
+		// Wait for chunks to be received and assembled
+		go func() {
+			fmt.Printf("Waiting for chunks for app '%s'...\n", req.AppName)
+
+			// Poll for chunk completion
+			for {
+				p.chunksMutex.Lock()
+				metadata, exists := p.chunkMetadata[req.AppName]
+				receivedChunks := len(p.chunks[req.AppName])
+				p.chunksMutex.Unlock()
+
+				if exists && receivedChunks == metadata.TotalChunks {
+					fmt.Printf("All chunks received for app '%s'. Deploying...\n", req.AppName)
+					go p.deployAndRunApp(req.AppName)
+					break
+				}
+
+				time.Sleep(5 * time.Second) // Avoid tight polling
+			}
+		}()
+	} else {
+		fmt.Printf("Registry URL is empty, and no binary provided for app '%s'\n", req.AppName)
+	}
 }
 
 // handleStopCommand processes the stop command from the Manager.
