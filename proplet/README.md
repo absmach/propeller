@@ -24,8 +24,6 @@ Once all chunks are received, as determined by comparing the number of received 
 
 The assembled Wasm binary is passed to the Wazero runtime for instantiation and execution, where the specified function (e.g., `main`) in the Wasm module is invoked.
 
----
-
 ### **Runtime Functions: StartApp**
 
 The `StartApp` function in `runtime.go` handles the instantiation and execution of Wasm modules. It:
@@ -38,8 +36,6 @@ The `StartApp` function in `runtime.go` handles the instantiation and execution 
 6. **Store the Module in the Runtime**: Saves the instantiated module in the `modules` map for tracking running applications.
 7. **Release Mutex Lock**: Unlocks the runtime after the module is added to the map.
 8. **Return the Exported Function**: Returns the Wasm function for execution.
-
----
 
 #### 6. **Log Success or Errors**
 
@@ -59,8 +55,6 @@ The MQTT message payload is unmarshaled into a `StopRequest` structure containin
 
 The `StopApp` method in the Wazero runtime is invoked, which checks if the application is running, closes the corresponding Wasm module, and removes the application from the runtime's internal tracking.
 
----
-
 ### **Runtime Functions: StopApp**
 
 The `StopApp` function in `runtime.go` stops and cleans up a running Wasm module. It:
@@ -72,50 +66,156 @@ The `StopApp` function in `runtime.go` stops and cleans up a running Wasm module
 5. **Remove the App from Runtime**: Deletes the app entry from the `modules` map to update the runtime's state.
 6. **Release Mutex Lock**: Unlocks the runtime after the app has been removed from the map.
 
----
-
 #### 3. **Log Success or Errors**
 
 A success message is logged with the text `"App '<AppName>' stopped successfully."` if the application stops successfully. If the application is not running or an error occurs during the stop operation, detailed error information is logged.
 
 ---
 
-### **Proplet Topics Overview**
+The Manager knows which Proplet is on which channel through the following mechanisms:
 
-#### 1. **On Creation (Startup Notification)**
+1. **Startup Notification (`create` topic):**
 
-- **Topic**: `channels/$MANAGER_CHANNEL_ID/messages/control/proplet/create`
-- **Payload**:
+   When a Proplet starts, it publishes a message on the topic:
+
+   ```bash
+   channels/$MANAGER_CHANNEL_ID/messages/control/proplet/create
+   ```
+
+   The payload of this message includes the `PropletID` and `ChannelID`, notifying the Manager about the mapping of Proplet IDs to their respective channels:
+
+   ```json
+   {
+     "PropletID": "{PropletID}",
+     "ChanID": "{ChannelID}"
+   }
+   ```
+
+2. **Liveliness Updates (`alive` topic):**
+
+   To ensure that the Proplet is still active, it periodically publishes messages on the topic:
+
+   ```bash
+   channels/$MANAGER_CHANNEL_ID/messages/control/proplet/alive
+   ```
+
+   The payload contains the same `PropletID` and `ChannelID` information. This helps the Manager maintain an updated map of active Proplets and their channels:
+
+   ```json
+   {
+     "status": "alive",
+     "PropletID": "{PropletID}",
+     "ChanID": "{ChannelID}"
+   }
+   ```
+
+3. **Last Will & Testament (LWT):**
+
+   If the Proplet goes offline unexpectedly, the MQTT broker automatically publishes a message on the same `alive` topic with a payload indicating the Proplet's offline status:
+
+   ```json
+   {
+     "status": "offline",
+     "PropletID": "{PropletID}",
+     "ChanID": "{ChannelID}"
+   }
+   ```
+
+These mechanisms ensure that the Manager is always aware of the active Proplets and their corresponding channels. The Manager can utilize this data to send specific control commands or monitor the Proplets effectively.
+
+---
+
+### **Registry Workflow**
+
+1. **Proplet Fetches Wasm Binary:**
+
+   - Publishes a fetch request on the `proplet` topic.
+   - Waits for chunks on the `server` topic.
+
+2. **Proplet Handles Registry Updates:**
+   - Subscribes to the `updateRegistry` topic.
+   - Updates the registry configuration upon receiving a valid payload.
+   - Publishes the status (success or failure) to the `registry` topic.
+
+#### 1. **Fetch Request**
+
+The Proplet uses this topic to request Wasm binary chunks for a specific application from the Registry Proxy.
+
+- **Topic**:
+
+  ```bash
+  channels/$CHANNEL_ID/messages/registry/proplet
+  ```
+
+- Payload is a JSON object containing the name of the application (`app_name`) for which the WebAssembly (Wasm) binary chunks are requested:
+
   ```json
   {
-    "PropletID": "{PropletID}",
-    "ChanID": "{ChannelID}"
+    "app_name": "{AppName}"
   }
   ```
-- **Purpose**: Notifies the Manager when a Proplet comes online.
 
-#### 2. **Liveliness Updates**
+#### 2. **Image Chunks Delivery**
 
-- **Topic**: `channels/$MANAGER_CHANNEL_ID/messages/control/proplet/alive`
-- **Interval**: Every 10 seconds.
-- **Payload**:
+The Registry Proxy publishes Wasm binary chunks to this topic for the Proplet to assemble into a complete binary. The Proplet monitors this topic to receive the chunks sequentially.
+
+- **Topic**:
+
+  ```bash
+  channels/$CHANNEL_ID/messages/registry/server
+  ```
+
+- Payload is a JSON object representing a single chunk of the requested Wasm binary:
+
   ```json
   {
-    "PropletID": "{PropletID}",
-    "ChanID": "{ChannelID}"
+    "app_name": "{AppName}",
+    "chunk_idx": {ChunkIndex},
+    "total_chunks": {TotalChunks},
+    "data": "{Base64EncodedChunkData}"
   }
   ```
-- **Purpose**: Indicates the active and healthy state of the Proplet.
 
-#### 3. **Last Will & Testament (LWT)**
+#### 3. **Registry Configuration Update**
 
-- **Topic**: `channels/$MANAGER_CHANNEL_ID/messages/control/proplet/alive`
-- **Payload**:
+- Allows the Manager to update the Proplet's registry configuration dynamically.
+
+  ```bash
+  channels/$CHANNEL_ID/messages/control/manager/updateRegistry
+  ```
+
+- Payload is a JSON object containing the new registry URL and token for updating the Proplet's registry configuration:
+
   ```json
   {
-    "status": "offline",
-    "PropletID": "{PropletID}",
-    "ChanID": "{ChannelID}"
+    "registry_url": "{NewRegistryURL}",
+    "registry_token": "{NewRegistryToken}"
   }
   ```
-- **Purpose**: Automatically notifies the Manager when a Proplet goes offline, as triggered by the MQTT broker.
+
+#### 4. **Acknowledgment for Registry Updates**
+
+- The Proplet uses this topic to acknowledge whether the registry configuration update was successful or failed.
+
+  ```bash
+  channels/$CHANNEL_ID/messages/control/manager/registry
+  ```
+
+- Payload is a JSON object indicating the success or failure of a registry update:
+
+  - Success:
+
+    ```json
+    {
+      "status": "success"
+    }
+    ```
+
+  - Failure:
+
+    ```json
+    {
+      "status": "failure",
+      "error": "{ErrorMessage}"
+    }
+    ```
