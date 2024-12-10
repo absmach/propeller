@@ -2,9 +2,13 @@ package manager
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/absmach/propeller/pkg/errors"
+	"github.com/0x6flab/namegenerator"
+	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
@@ -14,8 +18,14 @@ import (
 )
 
 const (
-	defOffset = 0
-	defLimit  = 100
+	defOffset         = 0
+	defLimit          = 100
+	aliveHistoryLimit = 10
+)
+
+var (
+	baseTopic = "channels/%s/messages"
+	namegen   = namegenerator.NewGenerator()
 )
 
 type service struct {
@@ -23,16 +33,24 @@ type service struct {
 	propletsDB    storage.Storage
 	taskPropletDB storage.Storage
 	scheduler     scheduler.Scheduler
-	publisher     mqtt.PubSub
+	baseTopic     string
+	pubsub        mqtt.PubSub
+	logger        *slog.Logger
 }
 
-func NewService(tasksDB, propletsDB, taskPropletDB storage.Storage, s scheduler.Scheduler, publisher mqtt.PubSub) Service {
+func NewService(
+	tasksDB, propletsDB, taskPropletDB storage.Storage,
+	s scheduler.Scheduler, pubsub mqtt.PubSub,
+	channelID string, logger *slog.Logger,
+) Service {
 	return &service{
 		tasksDB:       tasksDB,
 		propletsDB:    propletsDB,
 		taskPropletDB: taskPropletDB,
 		scheduler:     s,
-		publisher:     publisher,
+		baseTopic:     fmt.Sprintf(baseTopic, channelID),
+		pubsub:        pubsub,
+		logger:        logger,
 	}
 }
 
@@ -43,7 +61,7 @@ func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.P
 	}
 	w, ok := data.(proplet.Proplet)
 	if !ok {
-		return proplet.Proplet{}, errors.ErrInvalidData
+		return proplet.Proplet{}, pkgerrors.ErrInvalidData
 	}
 	w.SetAlive()
 
@@ -59,7 +77,7 @@ func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (pro
 	for i := range data {
 		w, ok := data[i].(proplet.Proplet)
 		if !ok {
-			return proplet.PropletPage{}, errors.ErrInvalidData
+			return proplet.PropletPage{}, pkgerrors.ErrInvalidData
 		}
 		w.SetAlive()
 		proplets[i] = w
@@ -100,7 +118,7 @@ func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, erro
 	}
 	t, ok := data.(task.Task)
 	if !ok {
-		return task.Task{}, errors.ErrInvalidData
+		return task.Task{}, pkgerrors.ErrInvalidData
 	}
 
 	return t, nil
@@ -116,7 +134,7 @@ func (svc *service) ListTasks(ctx context.Context, offset, limit uint64) (task.T
 	for i := range data {
 		t, ok := data[i].(task.Task)
 		if !ok {
-			return task.TaskPage{}, errors.ErrInvalidData
+			return task.TaskPage{}, pkgerrors.ErrInvalidData
 		}
 
 		tasks[i] = t
@@ -154,7 +172,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	}
 
 	topic := "channels/" + p.ID + "/messages/control/manager/start"
-	if err := svc.publisher.Publish(ctx, topic, t); err != nil {
+	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
 		return err
 	}
 
@@ -182,7 +200,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	}
 	propellerID, ok := data.(string)
 	if !ok {
-		return errors.ErrInvalidData
+		return pkgerrors.ErrInvalidData
 	}
 	p, err := svc.GetProplet(ctx, propellerID)
 	if err != nil {
@@ -190,7 +208,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	}
 
 	topic := "channels/" + p.ID + "/messages/control/manager/stop"
-	if err := svc.publisher.Publish(ctx, topic, t); err != nil {
+	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
 		return err
 	}
 
@@ -200,6 +218,78 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 
 	p.TaskCount--
 	if err := svc.propletsDB.Update(ctx, p.ID, p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) Subscribe(ctx context.Context) error {
+	topic := svc.baseTopic + "/#"
+
+	if err := svc.pubsub.Subscribe(ctx, topic, svc.handle(ctx)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		switch topic {
+		case svc.baseTopic + "/control/proplet/create":
+			if err := svc.createPropletHandler(ctx, msg); err != nil {
+				return err
+			}
+			svc.logger.InfoContext(ctx, "successfully created proplet")
+		case svc.baseTopic + "/control/proplet/alive":
+			return svc.updateLivenessHandler(ctx, msg)
+		}
+
+		return nil
+	}
+}
+
+func (svc *service) createPropletHandler(ctx context.Context, msg map[string]interface{}) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+
+	p := proplet.Proplet{
+		ID:   propletID,
+		Name: namegen.Generate(),
+	}
+	if err := svc.propletsDB.Create(ctx, p.ID, p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]interface{}) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+
+	p, err := svc.GetProplet(ctx, propletID)
+	if err != nil {
+		return err
+	}
+
+	p.Alive = true
+	p.AliveHistory = append(p.AliveHistory, time.Now())
+	if len(p.AliveHistory) > aliveHistoryLimit {
+		p.AliveHistory = p.AliveHistory[1:]
+	}
+	if err := svc.propletsDB.Update(ctx, propletID, p); err != nil {
 		return err
 	}
 

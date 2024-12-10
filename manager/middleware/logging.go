@@ -225,3 +225,20 @@ func (lm *loggingMiddleware) StopTask(ctx context.Context, id string) (err error
 
 	return lm.svc.StopTask(ctx, id)
 }
+
+func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Subscribe to MQTT topic failed", args...)
+
+			return
+		}
+		lm.logger.Info("Subscribe to MQTT topic completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.Subscribe(ctx)
+}

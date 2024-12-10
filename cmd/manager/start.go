@@ -75,23 +75,23 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 		return fmt.Errorf("failed to initialize mqtt pubsub: %s", err.Error())
 	}
 
-	propletDB := storage.NewInMemoryStorage()
-
-	if err := manager.Subscribe(ctx, cfg.ChannelID, mqttPubSub, propletDB, logger); err != nil {
-		return fmt.Errorf("failed to subscribe to manager channel: %s", err.Error())
-	}
-
 	svc := manager.NewService(
 		storage.NewInMemoryStorage(),
-		propletDB,
+		storage.NewInMemoryStorage(),
 		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
+		cfg.ChannelID,
+		logger,
 	)
 	svc = middleware.Logging(logger, svc)
 	svc = middleware.Tracing(tracer, svc)
 	counter, latency := prometheus.MakeMetrics(svcName, "api")
 	svc = middleware.Metrics(counter, latency, svc)
+
+	if err := svc.Subscribe(ctx); err != nil {
+		return fmt.Errorf("failed to subscribe to manager channel: %s", err.Error())
+	}
 
 	hs := httpserver.NewServer(ctx, cancel, svcName, cfg.Server, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
 

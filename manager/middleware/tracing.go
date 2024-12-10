@@ -117,3 +117,10 @@ func (tm *tracing) StopTask(ctx context.Context, id string) (err error) {
 
 	return tm.svc.StopTask(ctx, id)
 }
+
+func (tm *tracing) Subscribe(ctx context.Context) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "subscribe")
+	defer span.End()
+
+	return tm.svc.Subscribe(ctx)
+}

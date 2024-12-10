@@ -19,4 +19,6 @@ type Service interface {
 	DeleteTask(ctx context.Context, taskID string) error
 	StartTask(ctx context.Context, taskID string) error
 	StopTask(ctx context.Context, taskID string) error
+
+	Subscribe(ctx context.Context) error
 }

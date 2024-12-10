@@ -1,3 +1,5 @@
+github.com/0x6flab/namegenerator v1.4.0 h1:QnkI813SZsI/hYnKD9pg3mkIlcYzCx0N4hnzb0YYME4=
+github.com/0x6flab/namegenerator v1.4.0/go.mod h1:2sQzXuS6dX/KEwWtB6GJU729O3m4gBdD5oAU8hd0SyY=
 github.com/VividCortex/gohistogram v1.0.0 h1:6+hBz+qvs0JOrrNhhmR7lFxo5sINxBCGXrdtl/UvroE=
 github.com/VividCortex/gohistogram v1.0.0/go.mod h1:Pf5mBqqDxYaXu3hDrrU+w6nw50o/4+TcAqDqk/vUH7g=
 github.com/absmach/magistrala v0.15.1 h1:3Bk2hlyWcV591LxPYwlvRcyCXTfuZ1g/EkNmU+o3NNQ=

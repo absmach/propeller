@@ -115,3 +115,12 @@ func (mm *metricsMiddleware) StopTask(ctx context.Context, id string) error {
 
 	return mm.svc.StopTask(ctx, id)
 }
+
+func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "subscribe").Add(1)
+		mm.latency.With("method", "subscribe").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.Subscribe(ctx)
+}
