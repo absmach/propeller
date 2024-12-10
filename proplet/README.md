@@ -2,6 +2,8 @@
 
 ### **Start Command Flow**
 
+The start command is sent by the Manager to the Proplet on the topic `channels/$CHANNEL_ID/messages/control/manager/start`
+
 #### 1. **Parse the Start Command**
 
 The MQTT message payload is unmarshaled into a `StartRequest` structure containing the `AppName` and any required parameters for the application. If the payload is invalid or `AppName` is missing, an error is logged, and no further action is taken.
@@ -26,9 +28,7 @@ The assembled Wasm binary is passed to the Wazero runtime for instantiation and 
 
 ### **Runtime Functions: StartApp**
 
-The `StartApp` function in `runtime.go` handles the instantiation and execution of Wasm modules.
-
-#### **Step-by-Step Explanation**
+The `StartApp` function in `runtime.go` handles the instantiation and execution of Wasm modules. It:
 
 1. **Validate Input Parameters**: Ensures `appName`, `wasmBinary`, and `functionName` are provided and valid. Errors are returned if any parameter is missing or invalid.
 2. **Acquire Mutex Lock**: Locks the runtime to ensure thread-safe access to the `modules` map.
@@ -49,6 +49,8 @@ A success message is logged if the application starts successfully, while detail
 
 ### **Stop Command Flow**
 
+The stop command is sent by the Manager to the Proplet on the topic `channels/$CHANNEL_ID/messages/control/manager/stop`
+
 #### 1. **Parse the Stop Command**
 
 The MQTT message payload is unmarshaled into a `StopRequest` structure containing the `AppName` of the application to stop. If the payload is invalid or `AppName` is missing, an error is logged, and no further action is taken.
@@ -61,9 +63,7 @@ The `StopApp` method in the Wazero runtime is invoked, which checks if the appli
 
 ### **Runtime Functions: StopApp**
 
-The `StopApp` function in `runtime.go` stops and cleans up a running Wasm module.
-
-#### **Step-by-Step Explanation**
+The `StopApp` function in `runtime.go` stops and cleans up a running Wasm module. It:
 
 1. **Validate Input Parameters**: Checks if `appName` is provided. If missing, an error is returned.
 2. **Acquire Mutex Lock**: Locks the runtime to ensure thread-safe access to the `modules` map.
