@@ -2,10 +2,10 @@ package http
 
 import (
 	"context"
+	"fmt"
+	"io"
 
 	"github.com/caarlos0/env/v11"
-	oras "oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content/oci"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
@@ -16,7 +16,7 @@ const tag = "latest"
 var envPrefix = "ORAS_"
 
 type Config struct {
-	Root         string `env:"ROOT"         envDefault:"/tmp/oras_oci_folder"`
+	RegistryURL  string `env:"REGISTRY_URL" envDefault:"localhost:5000"`
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
 	Username     string `env:"USERNAME"     envDefault:""`
 	Password     string `env:"PASSWORD"     envDefault:""`
@@ -31,38 +31,40 @@ func Init() (*Config, error) {
 	return &config, nil
 }
 
-func (c *Config) FetchFromReg(ctx context.Context, regURL, filePath string) ([]byte, error) {
-	store, err := oci.New(c.Root)
-	if err != nil {
-		return nil, err
-	}
+func (c *Config) FetchFromReg(ctx context.Context, containerName string) ([]byte, error) {
+	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
 
-	repo, err := remote.NewRepository(regURL + filePath)
+	repo, err := remote.NewRepository(fullPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create repository for %s: %w", containerName, err)
 	}
 
 	if c.Authenticate {
 		repo.Client = &auth.Client{
 			Client: retry.DefaultClient,
 			Cache:  auth.NewCache(),
-			Credential: auth.StaticCredential(regURL, auth.Credential{
+			Credential: auth.StaticCredential(c.RegistryURL, auth.Credential{
 				Username: c.Username,
 				Password: c.Password,
 			}),
 		}
 	}
 
-	manifestDescriptor, err := oras.Copy(ctx, repo, tag, store, tag, oras.DefaultCopyOptions)
+	descriptor, err := repo.Resolve(ctx, tag)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve manifest for %s: %w", containerName, err)
 	}
 
-	reader, err := store.Fetch(ctx, manifestDescriptor)
+	reader, err := repo.Fetch(ctx, descriptor)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch blob for %s: %w", containerName, err)
 	}
 	defer reader.Close()
 
-	return manifestDescriptor.Data, nil
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read blob for %s: %w", containerName, err)
+	}
+
+	return data, nil
 }
