@@ -16,36 +16,39 @@ const tag = "latest"
 var envPrefix = "ORAS_"
 
 type Config struct {
-	Root         string `env:"ROOT"         envDefault:""`
-	RegURL       string `env:"REG_URL"      envDefault:""`
-	UserRepo     string `env:"USER_REPO"    envDefault:""`
+	Root         string `env:"ROOT"         envDefault:"/tmp/oras_oci_folder"`
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
 	Username     string `env:"USERNAME"     envDefault:""`
 	Password     string `env:"PASSWORD"     envDefault:""`
 }
 
-func FetchFromOCI(ctx context.Context) ([]byte, error) {
+func Init() (*Config, error) {
 	config := Config{}
 	if err := env.ParseWithOptions(&config, env.Options{Prefix: envPrefix}); err != nil {
 		return nil, err
 	}
-	store, err := oci.New(config.Root)
+
+	return &config, nil
+}
+
+func (c *Config) FetchFromReg(ctx context.Context, regURL, filePath string) ([]byte, error) {
+	store, err := oci.New(c.Root)
 	if err != nil {
 		return nil, err
 	}
 
-	repo, err := remote.NewRepository(config.RegURL + config.UserRepo)
+	repo, err := remote.NewRepository(regURL + filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	if config.Authenticate {
+	if c.Authenticate {
 		repo.Client = &auth.Client{
 			Client: retry.DefaultClient,
 			Cache:  auth.NewCache(),
-			Credential: auth.StaticCredential(config.RegURL, auth.Credential{
-				Username: config.Username,
-				Password: config.Password,
+			Credential: auth.StaticCredential(regURL, auth.Credential{
+				Username: c.Username,
+				Password: c.Password,
 			}),
 		}
 	}
@@ -54,6 +57,12 @@ func FetchFromOCI(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	reader, err := store.Fetch(ctx, manifestDescriptor)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
 
 	return manifestDescriptor.Data, nil
 }

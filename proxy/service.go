@@ -4,12 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
 	orasHTTP "github.com/absmach/propeller/proxy/http"
+	"github.com/absmach/propeller/proxy/mqtt"
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
+
+type ProxyService struct {
+	orasconfig orasHTTP.Config
+	mqttClient mqtt.RegistryClient
+}
+
+func NewService(ctx context.Context, cfg *MQTTProxyConfig, logger *slog.Logger) (*ProxyService, error) {
+	mqttClient, err := mqtt.NewMQTTClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
+	}
+
+	config, err := orasHTTP.Init()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize oras http client: %w", err)
+	}
+
+	return &ProxyService{
+		orasconfig: *config,
+		mqttClient: mqttClient,
+	}, nil
+}
 
 func Stream(ctx context.Context, in, out net.Conn, h Handler) error {
 	errs := make(chan error, 2)
@@ -28,13 +52,21 @@ func streamHTTP(ctx context.Context, _, w net.Conn, h Handler, errs chan error) 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// setup to OCI
+	c, err := orasHTTP.Init()
+	if err != nil {
+		errs <- err
+		return
+	}
+
+	// check continously for the expected name
 	for {
 		select {
 		case <-ctx.Done():
 			errs <- ctx.Err()
 			return
 		default:
-			data, err := orasHTTP.FetchFromOCI(ctx)
+			data, err := c.FetchFromReg(ctx)
 			if err != nil {
 				errs <- err
 				return
