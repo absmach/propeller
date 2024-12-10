@@ -1,7 +1,8 @@
 {
-    "brokerURL": "mqtt://localhost:1883",
-    "token": "example-token",
-    "propletID": "proplet-1",
-    "channelID": "channel-1"
-  }
-  
+  "brokerURL": "mqtt://localhost:1883",
+  "token": "example-token",
+  "propletID": "proplet-1",
+  "channelID": "channel-1",
+  "registryURL": "https://example3.com/registry",
+  "registryToken": "example-registry-token"
+}

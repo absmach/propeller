@@ -9,10 +9,12 @@ import (
 
 // Config holds configuration for the MQTT client.
 type Config struct {
-	BrokerURL string `json:"brokerURL"`
-	Token     string `json:"token"`
-	PropletID string `json:"propletID"`
-	ChannelID string `json:"channelID"`
+	BrokerURL     string `json:"brokerURL"`
+	Token         string `json:"token"`
+	PropletID     string `json:"propletID"`
+	ChannelID     string `json:"channelID"`
+	RegistryURL   string `json:"registryURL"`
+	RegistryToken string `json:"registryToken"`
 }
 
 // LoadConfig loads and validates the configuration from a JSON file.
@@ -43,6 +45,12 @@ func (c *Config) Validate() error {
 	}
 	if _, err := url.ParseRequestURI(c.BrokerURL); err != nil {
 		return fmt.Errorf("invalid broker URL '%s': %w", c.BrokerURL, err)
+	}
+	if c.RegistryURL == "" {
+		return fmt.Errorf("missing App Registry URL")
+	}
+	if _, err := url.ParseRequestURI(c.RegistryURL); err != nil {
+		return fmt.Errorf("invalid registry URL '%s': %w", c.RegistryURL, err)
 	}
 	return nil
 }

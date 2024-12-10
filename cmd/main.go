@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/absmach/propeller/proplet"
 )
@@ -41,10 +43,35 @@ func initializeProplet(ctx context.Context, configPath string) (*proplet.Proplet
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Check connectivity to App Registry
+	if err := checkRegistryConnectivity(config.RegistryURL); err != nil {
+		return nil, fmt.Errorf("failed connectivity check for App Registry: %w", err)
+	}
+
 	propletService, err := proplet.NewPropletService(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Proplet: %w", err)
 	}
 
+	fmt.Printf("App Registry configured: %s\n", config.RegistryURL)
 	return propletService, nil
+}
+
+// checkRegistryConnectivity tests if the Registry URL is reachable.
+func checkRegistryConnectivity(registryURL string) error {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Get(registryURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to registry URL '%s': %w", registryURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("registry URL '%s' returned status: %s", registryURL, resp.Status)
+	}
+
+	return nil
 }

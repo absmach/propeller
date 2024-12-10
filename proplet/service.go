@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -46,16 +48,22 @@ func NewPropletService(ctx context.Context, config *Config) (*PropletService, er
 
 // Run starts the PropletService and subscribes to relevant topics.
 func (p *PropletService) Run(ctx context.Context) error {
-	// Subscribe to Manager command topics (start and stop) and registry topic
-	err := SubscribeToTopics(
+	if err := SubscribeToManagerTopics(
 		p.mqttClient,
 		p.config,
 		p.handleStartCommand,
 		p.handleStopCommand,
+		p.handleRegistryUpdate,
+	); err != nil {
+		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
+	}
+
+	if err := SubscribeToRegistryTopics(
+		p.mqttClient,
+		p.config,
 		p.handleChunk,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to MQTT topics: %w", err)
+	); err != nil {
+		return fmt.Errorf("failed to subscribe to Registry topics: %w", err)
 	}
 
 	fmt.Println("Proplet service is running.")
@@ -204,5 +212,28 @@ func (c *ChunkPayload) Validate() error {
 	if len(c.Data) == 0 {
 		return fmt.Errorf("chunk validation: data is empty")
 	}
+	return nil
+}
+
+func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, registryToken string) error {
+	if registryURL == "" {
+		return fmt.Errorf("registry URL cannot be empty")
+	}
+	if _, err := url.ParseRequestURI(registryURL); err != nil {
+		return fmt.Errorf("invalid registry URL '%s': %w", registryURL, err)
+	}
+
+	p.config.RegistryURL = registryURL
+	p.config.RegistryToken = registryToken
+
+	configData, err := json.MarshalIndent(p.config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize updated config: %w", err)
+	}
+	if err := os.WriteFile("proplet/config.json", configData, 0644); err != nil {
+		return fmt.Errorf("failed to write updated config to file: %w", err)
+	}
+
+	fmt.Printf("App Registry updated and persisted: %s\n", registryURL)
 	return nil
 }

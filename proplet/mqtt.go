@@ -1,6 +1,7 @@
 package proplet
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -106,7 +107,7 @@ func startLivelinessUpdates(client mqtt.Client, config *Config) {
 }
 
 // SubscribeToTopics subscribes to relevant MQTT topics for Manager and registry interaction.
-func SubscribeToTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler) error {
+func SubscribeToManagerTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler) error {
 	// Subscribe to the start command topic
 	startTopic := fmt.Sprintf("channels/%s/messages/control/manager/start", config.ChannelID)
 	if token := client.Subscribe(startTopic, 0, startHandler); token.Wait() && token.Error() != nil {
@@ -119,13 +120,24 @@ func SubscribeToTopics(client mqtt.Client, config *Config, startHandler, stopHan
 		return fmt.Errorf("failed to subscribe to stop topic: %w", token.Error())
 	}
 
-	// Subscribe to the registry topic for image chunks
-	registryTopic := fmt.Sprintf("channels/%s/messages/registry/server", config.ChannelID)
-	if token := client.Subscribe(registryTopic, 0, registryHandler); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("failed to subscribe to registry topic: %w", token.Error())
+	// Subscribe to the registry update topic
+	registryUpdateTopic := fmt.Sprintf("channels/%s/messages/control/manager/updateRegistry", config.ChannelID)
+	if token := client.Subscribe(registryUpdateTopic, 0, registryHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to registry update topic: %w", token.Error())
 	}
 
-	fmt.Printf("Subscribed to start topic '%s', stop topic '%s', and registry topic '%s'\n", startTopic, stopTopic, registryTopic)
+	fmt.Printf("Subscribed to Manager topics:\n - Start: '%s'\n - Stop: '%s'\n - Registry Update: '%s'\n",
+		startTopic, stopTopic, registryUpdateTopic)
+	return nil
+}
+
+func SubscribeToRegistryTopics(client mqtt.Client, config *Config, chunkHandler mqtt.MessageHandler) error {
+	chunkTopic := fmt.Sprintf("channels/%s/messages/registry/server", config.ChannelID)
+	if token := client.Subscribe(chunkTopic, 0, chunkHandler); token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to chunk topic: %w", token.Error())
+	}
+
+	fmt.Printf("Subscribed to Registry topics:\n - Chunk: '%s'\n", chunkTopic)
 	return nil
 }
 
@@ -159,4 +171,25 @@ func SubscribeToRegistryChunks(client mqtt.Client, channelID string, handler mqt
 
 	fmt.Printf("Subscribed to registry server chunks on topic '%s'\n", topic)
 	return nil
+}
+
+func (p *PropletService) handleRegistryUpdate(client mqtt.Client, msg mqtt.Message) {
+	var payload struct {
+		RegistryURL   string `json:"registry_url"`
+		RegistryToken string `json:"registry_token"`
+	}
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		fmt.Printf("Invalid registry update payload: %v\n", err)
+		return
+	}
+
+	err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken)
+	ackTopic := fmt.Sprintf("channels/%s/messages/control/manager/ackRegistryUpdate", p.config.ChannelID)
+	if err != nil {
+		client.Publish(ackTopic, 0, false, fmt.Sprintf(`{"status":"failure","error":"%v"}`, err))
+		fmt.Printf("Failed to update registry configuration: %v\n", err)
+	} else {
+		client.Publish(ackTopic, 0, false, `{"status":"success"}`)
+		fmt.Println("App Registry configuration updated successfully.")
+	}
 }
