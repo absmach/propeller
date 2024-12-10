@@ -2,88 +2,140 @@ package mqtt
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
-	"net"
+	"log"
+	"time"
 
 	"github.com/absmach/propeller/proxy"
-	"golang.org/x/sync/errgroup"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-type Proxy struct {
-	config  proxy.Config
-	handler proxy.Handler
-	logger  *slog.Logger
-	dialer  net.Dialer
+type RegistryClient struct {
+	client      mqtt.Client
+	config      *proxy.MQTTProxyConfig
+	messageChan chan string
 }
 
-func New(config proxy.Config, handler proxy.Handler, logger *slog.Logger) *Proxy {
-	return &Proxy{
-		config:  config,
-		handler: handler,
-		logger:  logger,
+func NewMQTTClient(config *proxy.MQTTProxyConfig) (*RegistryClient, error) {
+	opts := mqtt.NewClientOptions().
+		AddBroker(config.BrokerURL).
+		SetClientID(fmt.Sprintf("Proplet-%s", config.PropletID)).
+		SetUsername(config.PropletID).
+		SetPassword(config.Password).
+		SetCleanSession(true).
+		SetAutoReconnect(true).
+		SetConnectTimeout(10 * time.Second).
+		SetMaxReconnectInterval(1 * time.Minute)
+
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		log.Printf("MQTT connection lost: %v\n", err)
+	})
+
+	opts.SetReconnectingHandler(func(client mqtt.Client, options *mqtt.ClientOptions) {
+		log.Println("MQTT reconnecting...")
+	})
+
+	client := mqtt.NewClient(opts)
+
+	regClient := &RegistryClient{
+		client:      client,
+		config:      config,
+		messageChan: make(chan string, 1),
 	}
+
+	return regClient, nil
 }
 
-func (p Proxy) accept(ctx context.Context, l net.Listener) {
-	for {
+func (c *RegistryClient) Connect(ctx context.Context) error {
+	token := c.client.Connect()
+
+	select {
+	case <-token.Done():
+		if err := token.Error(); err != nil {
+			return fmt.Errorf("MQTT connection failed: %w", err)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	return c.subscribe(ctx)
+}
+
+func (c *RegistryClient) subscribe(ctx context.Context) error {
+	subTopic := fmt.Sprintf("channels/%s/message/registry/proplet", c.config.ChannelID)
+
+	handler := func(client mqtt.Client, msg mqtt.Message) {
+		data := msg.Payload()
+
+		var payLoad = struct {
+			Appname string `json:"app_name"`
+		}{
+			Appname: "",
+		}
+
+		err := json.Unmarshal(data, &payLoad)
+		if err != nil {
+			log.Fatalf("failed unmarshalling")
+			return
+		}
+		packageName := payLoad.Appname
 		select {
+		case c.messageChan <- packageName:
+			log.Printf("Received package name: %s", packageName)
 		case <-ctx.Done():
 			return
 		default:
-			conn, err := l.Accept()
-			if err != nil {
-				p.logger.Warn("Accept error " + err.Error())
-				continue
-			}
-			p.logger.Info("Accepted new client")
-			go p.handle(ctx, conn)
+			log.Println("Package name channel full, dropping message")
 		}
 	}
-}
 
-func (p Proxy) handle(ctx context.Context, inbound net.Conn) {
-	defer p.close(inbound)
-	outbound, err := p.dialer.Dial("tcp", p.config.Target)
-	if err != nil {
-		p.logger.Error("Cannot connect to remote broker " + p.config.Target + " due to: " + err.Error())
-		return
+	token := c.client.Subscribe(subTopic, 1, handler)
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("failed to subscribe to %s: %w", subTopic, err)
 	}
-	defer p.close(outbound)
-
-	if err = proxy.Stream(ctx, inbound, outbound, p.handler); err != io.EOF {
-		p.logger.Warn(err.Error())
-	}
-}
-
-// Listen of the server, this will block.
-func (p Proxy) Listen(ctx context.Context) error {
-	l, err := net.Listen("tcp", p.config.Address)
-	if err != nil {
-		return err
-	}
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		p.accept(ctx, l)
-		return nil
-	})
-
-	g.Go(func() error {
-		<-ctx.Done()
-		return l.Close()
-	})
-	if err := g.Wait(); err != nil {
-		p.logger.Info(fmt.Sprintf("MQTT proxy server at %s", p.config.Address), slog.String("error", err.Error()))
-	} 
 
 	return nil
 }
 
-func (p Proxy) close(conn net.Conn) {
-	if err := conn.Close(); err != nil {
-		p.logger.Warn(fmt.Sprintf("Error closing connection %s", err.Error()))
+// PublishOCIContainer publishes OCI container information
+func (c *RegistryClient) PublishOCIContainer(ctx context.Context, containerData []byte) error {
+	pubTopic := fmt.Sprintf("channels/%s/messages/registry/server", c.config.ChannelID)
+
+	token := c.client.Publish(pubTopic, 1, false, containerData)
+
+	select {
+	case <-token.Done():
+		if err := token.Error(); err != nil {
+			return fmt.Errorf("failed to publish OCI container: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *RegistryClient) WaitForPackageName(ctx context.Context) (string, error) {
+	select {
+	case packageName := <-c.messageChan:
+		return packageName, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (c *RegistryClient) Disconnect(ctx context.Context) error {
+	disconnectChan := make(chan error, 1)
+
+	go func() {
+		c.client.Disconnect(250)
+		disconnectChan <- nil
+	}()
+
+	select {
+	case err := <-disconnectChan:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
