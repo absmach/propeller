@@ -79,7 +79,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := service.Run(ctx); err != nil {
+	if err := service.Run(ctx, logger); err != nil {
 		logger.Error("Error running service", slog.Any("error", err))
 	}
 }
