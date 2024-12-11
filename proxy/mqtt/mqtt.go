@@ -11,6 +11,12 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+const (
+	connTimeout    = 10
+	reconnTimeout  = 1
+	disconnTimeout = 250
+)
+
 type RegistryClient struct {
 	client mqtt.Client
 	config *config.MQTTProxyConfig
@@ -24,8 +30,8 @@ func NewMQTTClient(cfg *config.MQTTProxyConfig) (*RegistryClient, error) {
 		SetPassword(cfg.Password).
 		SetCleanSession(true).
 		SetAutoReconnect(true).
-		SetConnectTimeout(10 * time.Second).
-		SetMaxReconnectInterval(1 * time.Minute)
+		SetConnectTimeout(connTimeout * time.Second).
+		SetMaxReconnectInterval(reconnTimeout * time.Minute)
 
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
 		log.Printf("MQTT connection lost: %v\n", err)
@@ -72,6 +78,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 		err := json.Unmarshal(data, &payLoad)
 		if err != nil {
 			log.Printf("failed unmarshalling: %v", err)
+
 			return
 		}
 
@@ -103,6 +110,7 @@ func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []b
 		if err := token.Error(); err != nil {
 			return fmt.Errorf("failed to publish container: %w", err)
 		}
+
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -112,9 +120,11 @@ func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []b
 func (c *RegistryClient) Disconnect(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
+
 		return ctx.Err()
 	default:
-		c.client.Disconnect(250)
+		c.client.Disconnect(disconnTimeout)
+
 		return nil
 	}
 }

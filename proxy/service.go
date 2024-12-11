@@ -45,11 +45,13 @@ func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 		select {
 		case <-ctx.Done():
 			errs <- ctx.Err()
+
 			return
 		case containerName := <-s.containerChan:
 			data, err := s.orasconfig.FetchFromReg(ctx, containerName)
 			if err != nil {
 				s.logger.Error("failed to fetch container", "container", containerName, "error", err)
+
 				continue
 			}
 
@@ -58,6 +60,7 @@ func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 				s.logger.Info("sent container data to MQTT stream", "container", containerName)
 			case <-ctx.Done():
 				errs <- ctx.Err()
+
 				return
 			}
 		}
@@ -69,10 +72,12 @@ func (s *ProxyService) StreamMQTT(ctx context.Context, errs chan error) {
 		select {
 		case <-ctx.Done():
 			errs <- ctx.Err()
+
 			return
 		case data := <-s.dataChan:
 			if err := s.mqttClient.PublishContainer(ctx, data); err != nil {
 				s.logger.Error("failed to publish container data", "error", err)
+
 				continue
 			}
 			s.logger.Info("published container data")
