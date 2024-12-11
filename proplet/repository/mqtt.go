@@ -13,20 +13,20 @@ import (
 const livelinessInterval = 10 * time.Second
 
 var (
-	// Exported Payload Templates
+	// Exported Payload Templates.
 	RegistryFailurePayload = `{"status":"failure","error":"%v"}`
 	RegistrySuccessPayload = `{"status":"success"}`
 
-	// Exported Topic Templates
+	// Exported Topic Templates.
 	RegistryAckTopicTemplate = "channels/%s/messages/control/manager/registry"
 
-	// Unexported Payload Templates
+	// Unexported Payload Templates.
 	lwtPayloadTemplate       = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
 	discoveryPayloadTemplate = `{"proplet_id":"%s","chan_id":"%s"}`
 	alivePayloadTemplate     = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
 	fetchRequestPayload      = `{"app_name":"%s"}`
 
-	// Unexported Topic Templates
+	// Unexported Topic Templates.
 	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
 	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
 	startTopicTemplate          = "channels/%s/messages/control/manager/start"

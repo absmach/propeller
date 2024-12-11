@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -90,7 +91,7 @@ func main() {
 func configureLogger(level string) *slog.Logger {
 	var logLevel slog.Level
 	if err := logLevel.UnmarshalText([]byte(level)); err != nil {
-		fmt.Printf("Invalid log level: %s. Defaulting to info.\n", level)
+		log.Printf("Invalid log level: %s. Defaulting to info.\n", level)
 		logLevel = slog.LevelInfo
 	}
 

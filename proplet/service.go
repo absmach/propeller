@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/url"
 	"os"
@@ -11,12 +12,11 @@ import (
 	"time"
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	"github.com/tetratelabs/wazero"
-	wazeroapi "github.com/tetratelabs/wazero/api"
-
 	propletapi "github.com/absmach/propeller/proplet/api"
 	config "github.com/absmach/propeller/proplet/repository"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/tetratelabs/wazero"
+	wazeroapi "github.com/tetratelabs/wazero/api"
 )
 
 type PropletService struct {
@@ -245,13 +245,13 @@ func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logg
 func (p *PropletService) handleChunk(_ mqtt.Client, msg mqtt.Message) {
 	var chunk ChunkPayload
 	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
-		fmt.Printf("Failed to unmarshal chunk payload: %v\n", err)
+		log.Printf("Failed to unmarshal chunk payload: %v", err)
 		return
 	}
 
 	// Validate the chunk payload
 	if err := chunk.Validate(); err != nil {
-		fmt.Printf("Invalid chunk payload: %v\n", err)
+		log.Printf("Invalid chunk payload: %v\n", err)
 		return
 	}
 
@@ -267,18 +267,18 @@ func (p *PropletService) handleChunk(_ mqtt.Client, msg mqtt.Message) {
 	// Append chunk data
 	p.chunks[chunk.AppName] = append(p.chunks[chunk.AppName], chunk.Data)
 
-	fmt.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
+	log.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
 
 	// Check if all chunks are received
 	if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
-		fmt.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
+		log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
 		go p.deployAndRunApp(chunk.AppName)
 	}
 }
 
 // deployAndRunApp assembles, deploys, and starts the Wasm app.
 func (p *PropletService) deployAndRunApp(appName string) {
-	fmt.Printf("Assembling chunks for app '%s'\n", appName)
+	log.Printf("Assembling chunks for app '%s'\n", appName)
 
 	// Safely retrieve and delete chunks
 	p.chunksMutex.Lock()
@@ -292,17 +292,17 @@ func (p *PropletService) deployAndRunApp(appName string) {
 	// Deploy and start the app
 	function, err := p.runtime.StartApp(context.Background(), appName, wasmBinary, "main")
 	if err != nil {
-		fmt.Printf("Failed to start app '%s': %v\n", appName, err)
+		log.Printf("Failed to start app '%s': %v\n", appName, err)
 		return
 	}
 
 	_, err = function.Call(context.Background())
 	if err != nil {
-		fmt.Printf("Failed to execute app '%s': %v\n", appName, err)
+		log.Printf("Failed to execute app '%s': %v\n", appName, err)
 		return
 	}
 
-	fmt.Printf("App '%s' started successfully\n", appName)
+	log.Printf("App '%s' started successfully\n", appName)
 }
 
 // assembleChunks assembles the Wasm binary from chunks.
@@ -343,11 +343,11 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 	if err != nil {
 		return fmt.Errorf("failed to serialize updated config: %w", err)
 	}
-	if err := os.WriteFile("proplet/config.json", configData, 0644); err != nil {
+	if err := os.WriteFile("proplet/config.json", configData, 0o644); err != nil {
 		return fmt.Errorf("failed to write updated config to file: %w", err)
 	}
 
-	fmt.Printf("App Registry updated and persisted: %s\n", registryURL)
+	log.Printf("App Registry updated and persisted: %s\n", registryURL)
 	return nil
 }
 
