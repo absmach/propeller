@@ -6,7 +6,7 @@ import (
 
 type MQTTProxyConfig struct {
 	BrokerURL string `env:"BROKER_URL" envDefault:""`
-	Password  string `env:"PASSWORD" envDefault:""`
+	Password  string `env:"PASSWORD"   envDefault:""`
 	PropletID string `env:"PROPLET_ID" envDefault:""`
 	ChannelID string `env:"CHANNEL_ID" envDefault:""`
 }
