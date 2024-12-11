@@ -25,7 +25,7 @@ const (
 )
 
 type PropletService struct {
-	config        *Config
+	config        Config
 	mqttClient    mqtt.Client
 	runtime       *WazeroRuntime
 	wasmBinary    []byte
@@ -110,7 +110,7 @@ func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 	return nil
 }
 
-func NewService(ctx context.Context, cfg *Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
+func NewService(ctx context.Context, cfg Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
 	mqttClient, err := NewMQTTClient(cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)

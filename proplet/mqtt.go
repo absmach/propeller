@@ -28,7 +28,7 @@ var (
 	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
 )
 
-func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
+func NewMQTTClient(config Config, logger *slog.Logger) (mqtt.Client, error) {
 	lwtPayload := fmt.Sprintf(lwtPayloadTemplate, config.PropletID, config.ChannelID)
 	if lwtPayload == "" {
 		logger.Error("Failed to prepare MQTT last will payload")
@@ -73,7 +73,7 @@ func NewMQTTClient(config *Config, logger *slog.Logger) (mqtt.Client, error) {
 	return client, nil
 }
 
-func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) error {
+func PublishDiscovery(client mqtt.Client, config Config, logger *slog.Logger) error {
 	topic := fmt.Sprintf(discoveryTopicTemplate, config.ChannelID)
 	payload := fmt.Sprintf(discoveryPayloadTemplate, config.PropletID, config.ChannelID)
 	password := client.Publish(topic, 0, false, payload)
@@ -88,7 +88,7 @@ func PublishDiscovery(client mqtt.Client, config *Config, logger *slog.Logger) e
 	return nil
 }
 
-func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Logger) {
+func startLivelinessUpdates(client mqtt.Client, config Config, logger *slog.Logger) {
 	ticker := time.NewTicker(livelinessInterval)
 	defer ticker.Stop()
 
@@ -103,7 +103,7 @@ func startLivelinessUpdates(client mqtt.Client, config *Config, logger *slog.Log
 	}
 }
 
-func SubscribeToManagerTopics(client mqtt.Client, config *Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler, logger *slog.Logger) error {
+func SubscribeToManagerTopics(client mqtt.Client, config Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler, logger *slog.Logger) error {
 	if password := client.Subscribe(fmt.Sprintf(startTopicTemplate, config.ChannelID), 0, startHandler); password.Wait() && password.Error() != nil {
 		logger.Error("Failed to subscribe to start topic", slog.String("topic", fmt.Sprintf(startTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 

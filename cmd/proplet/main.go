@@ -17,8 +17,14 @@ import (
 
 const registryTimeout = 30 * time.Second
 
+var (
+	wasmFilePath string
+	wasmBinary   []byte
+	logLevel     slog.Level
+)
+
 func main() {
-	wasmFilePath := flag.String("file", "", "Path to the WASM file")
+	flag.StringVar(&wasmFilePath, "file", "", "Path to the WASM file")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,7 +43,7 @@ func main() {
 		cancel()
 	}()
 
-	hasWASMFile := *wasmFilePath != ""
+	hasWASMFile := wasmFilePath != ""
 
 	cfg, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
@@ -53,11 +59,10 @@ func main() {
 		logger.Info("Registry connectivity verified", slog.String("url", cfg.RegistryURL))
 	}
 
-	var wasmBinary []byte
 	if hasWASMFile {
-		wasmBinary, err = loadWASMFile(*wasmFilePath, logger)
+		wasmBinary, err = loadWASMFile(wasmFilePath, logger)
 		if err != nil {
-			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", *wasmFilePath), slog.Any("error", err))
+			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", wasmFilePath), slog.Any("error", err))
 			os.Exit(1)
 		}
 		logger.Info("WASM binary loaded at startup", slog.Int("size_bytes", len(wasmBinary)))
@@ -80,7 +85,6 @@ func main() {
 }
 
 func configureLogger(level string) *slog.Logger {
-	var logLevel slog.Level
 	if err := logLevel.UnmarshalText([]byte(level)); err != nil {
 		log.Printf("Invalid log level: %s. Defaulting to info.\n", level)
 		logLevel = slog.LevelInfo
@@ -107,7 +111,7 @@ func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), registryTimeout)
 	defer cancel()
 
-	client := &http.Client{}
+	client := http.Client{}
 
 	logger.Info("Checking registry connectivity", slog.String("url", registryURL))
 
