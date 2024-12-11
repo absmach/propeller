@@ -16,8 +16,8 @@ const tag = "latest"
 type HTTPProxyConfig struct {
 	RegistryURL  string `env:"REGISTRY_URL" envDefault:"localhost:5000"`
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
-	Username     string `env:"USERNAME" envDefault:""`
-	Password     string `env:"PASSWORD" envDefault:""`
+	Username     string `env:"USERNAME"     envDefault:""`
+	Password     string `env:"PASSWORD"     envDefault:""`
 }
 
 func LoadHTTPConfig(opts env.Options) (*HTTPProxyConfig, error) {

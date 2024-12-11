@@ -69,7 +69,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 
-		var payLoad = struct {
+		payLoad := struct {
 			Appname string `json:"app_name"`
 		}{
 			Appname: "",
