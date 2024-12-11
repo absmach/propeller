@@ -3,12 +3,14 @@ package errors
 import "errors"
 
 var (
+	ErrNotFound              = errors.New("not found")
+	ErrEmptyKey              = errors.New("empty key")
+	ErrInvalidData           = errors.New("invalid data type")
+	ErrEntityExists          = errors.New("entity already exists")
 	ErrMissingValue          = errors.New("missing required value")
 	ErrInvalidValue          = errors.New("invalid value provided")
-	ErrNotFound              = errors.New("resource not found")
 	ErrTimeout               = errors.New("operation timed out")
 	ErrInternal              = errors.New("internal server error")
-	ErrInvalidData           = errors.New("invalid data format")
 	ErrMQTTConnectionFailed  = errors.New("failed to connect to MQTT broker")
 	ErrMQTTInvalidBrokerURL  = errors.New("invalid MQTT broker URL")
 	ErrMQTTWillPayloadFailed = errors.New("failed to set MQTT last will payload")
@@ -33,6 +35,4 @@ var (
 	ErrPublishDiscovery      = errors.New("failed to publish discovery message")
 	ErrMissingChannelID      = errors.New("ChannelID is missing in the configuration")
 	ErrMissingPropletID      = errors.New("PropletID is missing in the configuration")
-	ErrEmptyKey              = errors.New("empty key")
-	ErrEntityExists          = errors.New("entity already exists")
 )
