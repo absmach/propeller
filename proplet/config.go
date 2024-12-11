@@ -2,7 +2,6 @@ package proplet
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -38,50 +37,38 @@ func LoadConfig(filepath string, hasWASMFile bool) (Config, error) {
 }
 
 func (c Config) Validate(hasWASMFile bool) error {
-	if err := validateField(c.BrokerURL, "broker_url"); err != nil {
-		return err
+	if c.BrokerURL == "" {
+		return fmt.Errorf("broker_url is required")
 	}
-	if err := validateURL(c.BrokerURL); err != nil {
-		return err
+	if _, err := url.Parse(c.BrokerURL); err != nil {
+		return fmt.Errorf("broker_url is not a valid URL: %w", err)
+	}
+	if c.Password == "" {
+		return fmt.Errorf("password is required")
+	}
+	if c.PropletID == "" {
+		return fmt.Errorf("proplet_id is required")
+	}
+	if c.ChannelID == "" {
+		return fmt.Errorf("channel_id is required")
 	}
 
-	if err := validateField(c.Password, "password"); err != nil {
-		return err
-	}
-
-	if err := validateField(c.PropletID, "proplet_id"); err != nil {
-		return err
-	}
-
-	if err := validateField(c.ChannelID, "channel_id"); err != nil {
-		return err
+	if !hasWASMFile {
+		if c.RegistryURL == "" {
+			return fmt.Errorf("registry_url is required when not using a WASM file")
+		}
+		if c.RegistryToken == "" {
+			return fmt.Errorf("registry_token is required when not using a WASM file")
+		}
 	}
 
 	if c.RegistryURL != "" {
-		if err := validateURL(c.RegistryURL); err != nil {
-			return err
+		if _, err := url.Parse(c.RegistryURL); err != nil {
+			return fmt.Errorf("registry_url is not a valid URL: %w", err)
 		}
-	}
-	if c.RegistryToken != "" {
-		if err := validateField(c.RegistryToken, "registry_token"); err != nil {
-			return err
+		if c.RegistryToken == "" {
+			return fmt.Errorf("registry_token is required when a registry_url is provided")
 		}
-	}
-
-	return nil
-}
-
-func validateField(field, fieldName string) error {
-	if field == "" {
-		return errors.New("missing required field: " + fieldName)
-	}
-
-	return nil
-}
-
-func validateURL(field string) error {
-	if _, err := url.ParseRequestURI(field); err != nil {
-		return fmt.Errorf("invalid URL '%s': %w", field, err)
 	}
 
 	return nil
