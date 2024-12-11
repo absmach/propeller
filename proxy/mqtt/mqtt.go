@@ -17,6 +17,7 @@ type RegistryClient struct {
 }
 
 func NewMQTTClient(config *config.MQTTProxyConfig) (*RegistryClient, error) {
+	fmt.Printf("config is %+v\n", config)
 	opts := mqtt.NewClientOptions().
 		AddBroker(config.BrokerURL).
 		SetClientID(fmt.Sprintf("Proplet-%s", config.PropletID)).
@@ -59,9 +60,8 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 }
 
 func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
-	// Subscribe to container requests
 	subTopic := fmt.Sprintf("channels/%s/message/registry/proplet", c.config.ChannelID)
-
+	fmt.Printf("subtopic is %+v\n", subTopic)
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 

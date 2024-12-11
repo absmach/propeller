@@ -6,31 +6,25 @@ import (
 	"log/slog"
 
 	"github.com/absmach/propeller/proxy/config"
-	orasHTTP "github.com/absmach/propeller/proxy/http"
 	"github.com/absmach/propeller/proxy/mqtt"
 )
 
 type ProxyService struct {
-	orasconfig    orasHTTP.Config
+	orasconfig    *config.HTTPProxyConfig
 	mqttClient    *mqtt.RegistryClient
 	logger        *slog.Logger
 	containerChan chan string
 	dataChan      chan []byte
 }
 
-func NewService(ctx context.Context, cfg *config.MQTTProxyConfig, logger *slog.Logger) (*ProxyService, error) {
-	mqttClient, err := mqtt.NewMQTTClient(cfg)
+func NewService(ctx context.Context, cfgM *config.MQTTProxyConfig, cfgH *config.HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
+	mqttClient, err := mqtt.NewMQTTClient(cfgM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
 
-	config, err := orasHTTP.Init()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize oras http client: %w", err)
-	}
-
 	return &ProxyService{
-		orasconfig:    *config,
+		orasconfig:    cfgH,
 		mqttClient:    mqttClient,
 		logger:        logger,
 		containerChan: make(chan string, 1),
@@ -38,25 +32,18 @@ func NewService(ctx context.Context, cfg *config.MQTTProxyConfig, logger *slog.L
 	}, nil
 }
 
-func (s *ProxyService) Start(ctx context.Context) error {
-	errs := make(chan error, 2)
-
-	if err := s.mqttClient.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
-	}
-	defer s.mqttClient.Disconnect(ctx)
-
-	if err := s.mqttClient.Subscribe(ctx, s.containerChan); err != nil {
-		return fmt.Errorf("failed to subscribe to container requests: %w", err)
-	}
-
-	go s.streamHTTP(ctx, errs)
-	go s.streamMQTT(ctx, errs)
-
-	return <-errs
+// MQTTClient returns the MQTT client
+func (s *ProxyService) MQTTClient() *mqtt.RegistryClient {
+	return s.mqttClient
 }
 
-func (s *ProxyService) streamHTTP(ctx context.Context, errs chan error) {
+// ContainerChan returns the container channel
+func (s *ProxyService) ContainerChan() chan string {
+	return s.containerChan
+}
+
+// StreamHTTP handles the HTTP stream processing
+func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -80,7 +67,8 @@ func (s *ProxyService) streamHTTP(ctx context.Context, errs chan error) {
 	}
 }
 
-func (s *ProxyService) streamMQTT(ctx context.Context, errs chan error) {
+// StreamMQTT handles the MQTT stream processing
+func (s *ProxyService) StreamMQTT(ctx context.Context, errs chan error) {
 	for {
 		select {
 		case <-ctx.Done():
