@@ -32,17 +32,14 @@ func NewService(ctx context.Context, cfgM *config.MQTTProxyConfig, cfgH *config.
 	}, nil
 }
 
-// MQTTClient returns the MQTT client
 func (s *ProxyService) MQTTClient() *mqtt.RegistryClient {
 	return s.mqttClient
 }
 
-// ContainerChan returns the container channel
 func (s *ProxyService) ContainerChan() chan string {
 	return s.containerChan
 }
 
-// StreamHTTP handles the HTTP stream processing
 func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 	for {
 		select {
@@ -67,7 +64,6 @@ func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 	}
 }
 
-// StreamMQTT handles the MQTT stream processing
 func (s *ProxyService) StreamMQTT(ctx context.Context, errs chan error) {
 	for {
 		select {

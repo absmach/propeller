@@ -16,13 +16,12 @@ type RegistryClient struct {
 	config *config.MQTTProxyConfig
 }
 
-func NewMQTTClient(config *config.MQTTProxyConfig) (*RegistryClient, error) {
-	fmt.Printf("config is %+v\n", config)
+func NewMQTTClient(cfg *config.MQTTProxyConfig) (*RegistryClient, error) {
 	opts := mqtt.NewClientOptions().
-		AddBroker(config.BrokerURL).
-		SetClientID(fmt.Sprintf("Proplet-%s", config.PropletID)).
-		SetUsername(config.PropletID).
-		SetPassword(config.Password).
+		AddBroker(cfg.BrokerURL).
+		SetClientID(fmt.Sprintf("Proplet-%s", cfg.PropletID)).
+		SetUsername(cfg.PropletID).
+		SetPassword(cfg.Password).
 		SetCleanSession(true).
 		SetAutoReconnect(true).
 		SetConnectTimeout(10 * time.Second).
@@ -40,7 +39,7 @@ func NewMQTTClient(config *config.MQTTProxyConfig) (*RegistryClient, error) {
 
 	return &RegistryClient{
 		client: client,
-		config: config,
+		config: cfg,
 	}, nil
 }
 
@@ -61,7 +60,6 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 
 func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
 	subTopic := fmt.Sprintf("channels/%s/message/registry/proplet", c.config.ChannelID)
-	fmt.Printf("subtopic is %+v\n", subTopic)
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 
@@ -95,7 +93,6 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 	return nil
 }
 
-// PublishContainer publishes container data to the server channel
 func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []byte) error {
 	pubTopic := fmt.Sprintf("channels/%s/messages/registry/server", c.config.ChannelID)
 
@@ -113,17 +110,11 @@ func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []b
 }
 
 func (c *RegistryClient) Disconnect(ctx context.Context) error {
-	disconnectChan := make(chan error, 1)
-
-	go func() {
-		c.client.Disconnect(250)
-		disconnectChan <- nil
-	}()
-
 	select {
-	case err := <-disconnectChan:
-		return err
 	case <-ctx.Done():
 		return ctx.Err()
+	default:
+		c.client.Disconnect(250)
+		return nil
 	}
 }

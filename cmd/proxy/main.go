@@ -24,13 +24,11 @@ func main() {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Loading .env file to environment
 	err := godotenv.Load()
 	if err != nil {
 		panic(err)
@@ -44,18 +42,16 @@ func main() {
 
 	cfgH, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
 	if err != nil {
-		logger.Error("Failed to load HTTP configuration",  slog.Any("error", err))
+		logger.Error("Failed to load HTTP configuration", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	// Create proxy service
-	service, err := proxy.NewService(ctx, cfgM,cfgH, logger)
+	service, err := proxy.NewService(ctx, cfgM, cfgH, logger)
 	if err != nil {
 		logger.Error("failed to create proxy service", "error", err)
 		os.Exit(1)
 	}
 
-	// Start the service
 	go func() {
 		if err := start(ctx, service); err != nil {
 			logger.Error("service error", "error", err)
@@ -63,7 +59,6 @@ func main() {
 		}
 	}()
 
-	// Wait for signal
 	<-sigChan
 	cancel()
 }
