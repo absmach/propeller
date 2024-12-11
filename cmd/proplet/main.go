@@ -55,46 +55,32 @@ func run() error {
 
 	cfg, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
-		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
-
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	if cfg.RegistryURL != "" {
-		if err := checkRegistryConnectivity(cfg.RegistryURL, logger); err != nil {
-			logger.Error("Failed connectivity check for Registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
-
+		if err := checkRegistryConnectivity(cfg.RegistryURL); err != nil {
 			return fmt.Errorf("registry connectivity check failed: %w", err)
 		}
-		logger.Info("Registry connectivity verified", slog.String("url", cfg.RegistryURL))
 	}
 
 	if hasWASMFile {
-		wasmBinary, err = loadWASMFile(wasmFilePath, logger)
+		wasmBinary, err = loadWASMFile(wasmFilePath)
 		if err != nil {
-			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", wasmFilePath), slog.Any("error", err))
-
 			return fmt.Errorf("failed to load WASM file: %w", err)
 		}
-		logger.Info("WASM binary loaded at startup", slog.Int("size_bytes", len(wasmBinary)))
 	}
 
 	if cfg.RegistryURL == "" && wasmBinary == nil {
-		logger.Error("Neither a registry URL nor a WASM binary file was provided")
-
 		return errors.New("missing registry URL and WASM binary file")
 	}
 
 	service, err := proplet.NewService(ctx, cfg, wasmBinary, logger)
 	if err != nil {
-		logger.Error("Error initializing service", slog.Any("error", err))
-
 		return fmt.Errorf("service initialization error: %w", err)
 	}
 
 	if err := service.Run(ctx, logger); err != nil {
-		logger.Error("Error running service", slog.Any("error", err))
-
 		return fmt.Errorf("service run error: %w", err)
 	}
 
@@ -114,8 +100,7 @@ func configureLogger(level string) *slog.Logger {
 	return slog.New(logHandler)
 }
 
-func loadWASMFile(path string, logger *slog.Logger) ([]byte, error) {
-	logger.Info("Loading WASM file", slog.String("path", path))
+func loadWASMFile(path string) ([]byte, error) {
 	wasmBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read WASM file: %w", err)
@@ -124,36 +109,25 @@ func loadWASMFile(path string, logger *slog.Logger) ([]byte, error) {
 	return wasmBytes, nil
 }
 
-func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
+func checkRegistryConnectivity(registryURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), registryTimeout)
 	defer cancel()
 
 	client := http.Client{}
-
-	logger.Info("Checking registry connectivity", slog.String("url", registryURL))
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, http.NoBody)
 	if err != nil {
-		logger.Error("Failed to create HTTP request", slog.String("url", registryURL), slog.Any("error", err))
-
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("Failed to connect to registry", slog.String("url", registryURL), slog.Any("error", err))
-
 		return fmt.Errorf("failed to connect to registry URL '%s': %w", registryURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("Registry returned unexpected status", slog.String("url", registryURL), slog.Int("status_code", resp.StatusCode))
-
 		return fmt.Errorf("registry URL '%s' returned status: %s", registryURL, resp.Status)
 	}
-
-	logger.Info("Registry connectivity verified", slog.String("url", registryURL))
 
 	return nil
 }
