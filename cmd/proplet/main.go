@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -24,6 +25,13 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	flag.StringVar(&wasmFilePath, "file", "", "Path to the WASM file")
 	flag.Parse()
 
@@ -48,13 +56,15 @@ func main() {
 	cfg, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
 		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
-		os.Exit(1)
+
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	if cfg.RegistryURL != "" {
 		if err := checkRegistryConnectivity(cfg.RegistryURL, logger); err != nil {
 			logger.Error("Failed connectivity check for Registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
-			os.Exit(1)
+
+			return fmt.Errorf("registry connectivity check failed: %w", err)
 		}
 		logger.Info("Registry connectivity verified", slog.String("url", cfg.RegistryURL))
 	}
@@ -63,25 +73,32 @@ func main() {
 		wasmBinary, err = loadWASMFile(wasmFilePath, logger)
 		if err != nil {
 			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", wasmFilePath), slog.Any("error", err))
-			os.Exit(1)
+
+			return fmt.Errorf("failed to load WASM file: %w", err)
 		}
 		logger.Info("WASM binary loaded at startup", slog.Int("size_bytes", len(wasmBinary)))
 	}
 
 	if cfg.RegistryURL == "" && wasmBinary == nil {
 		logger.Error("Neither a registry URL nor a WASM binary file was provided")
-		os.Exit(1)
+
+		return errors.New("missing registry URL and WASM binary file")
 	}
 
 	service, err := proplet.NewService(ctx, cfg, wasmBinary, logger)
 	if err != nil {
 		logger.Error("Error initializing service", slog.Any("error", err))
-		os.Exit(1)
+
+		return fmt.Errorf("service initialization error: %w", err)
 	}
 
 	if err := service.Run(ctx, logger); err != nil {
 		logger.Error("Error running service", slog.Any("error", err))
+
+		return fmt.Errorf("service run error: %w", err)
 	}
+
+	return nil
 }
 
 func configureLogger(level string) *slog.Logger {
@@ -115,7 +132,7 @@ func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
 
 	logger.Info("Checking registry connectivity", slog.String("url", registryURL))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, http.NoBody)
 	if err != nil {
 		logger.Error("Failed to create HTTP request", slog.String("url", registryURL), slog.Any("error", err))
 
