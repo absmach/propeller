@@ -2,12 +2,12 @@ package repository
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 )
 
-// Config holds configuration for the MQTT client.
 type Config struct {
 	BrokerURL     string `json:"broker_url"`
 	Password      string `json:"password"`
@@ -17,7 +17,6 @@ type Config struct {
 	RegistryToken string `json:"registry_token"`
 }
 
-// LoadConfig loads and validates the configuration from a JSON file.
 func LoadConfig(filepath string, hasWASMFile bool) (*Config, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
@@ -38,39 +37,60 @@ func LoadConfig(filepath string, hasWASMFile bool) (*Config, error) {
 	return &config, nil
 }
 
-// Validate ensures that all required fields are set and correct.
 func (c *Config) Validate(hasWASMFile bool) error {
-	if c.BrokerURL == "" {
-		return fmt.Errorf("missing required field: broker_url")
+	if err := c.validateField(c.BrokerURL, "broker_url"); err != nil {
+		return err
 	}
-	if _, err := url.ParseRequestURI(c.BrokerURL); err != nil {
-		return fmt.Errorf("invalid broker_url '%s': %w", c.BrokerURL, err)
-	}
-
-	if c.Password == "" {
-		return fmt.Errorf("missing required field: password")
+	if err := c.validateURL(c.BrokerURL); err != nil {
+		return err
 	}
 
-	if c.PropletID == "" {
-		return fmt.Errorf("missing required field: proplet_id")
+	if err := c.validateField(c.Password, "password"); err != nil {
+		return err
 	}
 
-	if c.ChannelID == "" {
-		return fmt.Errorf("missing required field: channel_id")
+	if err := c.validateField(c.PropletID, "proplet_id"); err != nil {
+		return err
 	}
 
-	// RegistryURL is only required if no WASM file is provided
-	if c.RegistryURL == "" && !hasWASMFile {
-		return fmt.Errorf("missing required field: registry_url")
-	}
-	if c.RegistryURL != "" {
-		if _, err := url.ParseRequestURI(c.RegistryURL); err != nil {
-			return fmt.Errorf("invalid registry_url '%s': %w", c.RegistryURL, err)
-		}
+	if err := c.validateField(c.ChannelID, "channel_id"); err != nil {
+		return err
 	}
 
-	if c.RegistryToken == "" && c.RegistryURL != "" {
-		return fmt.Errorf("missing required field: registry_token")
+	if err := c.validateRegistryURL(c.RegistryURL, hasWASMFile); err != nil {
+		return err
+	}
+
+	if err := c.validateURL(c.RegistryURL); err != nil {
+		return err
+	}
+
+	if err := c.validateField(c.RegistryToken, "registry_token"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) validateField(field, fieldName string) error {
+	if field == "" {
+		return errors.New("missing required field: " + fieldName)
+	}
+
+	return nil
+}
+
+func (c *Config) validateURL(field string) error {
+	if _, err := url.ParseRequestURI(field); err != nil {
+		return fmt.Errorf("invalid URL '%s': %w", field, err)
+	}
+
+	return nil
+}
+
+func (c *Config) validateRegistryURL(registryURL string, hasWASMFile bool) error {
+	if registryURL == "" && !hasWASMFile {
+		return errors.New("missing required field: registry_url")
 	}
 
 	return nil
