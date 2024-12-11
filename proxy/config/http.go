@@ -1,4 +1,4 @@
-package http
+package config
 
 import (
 	"context"
@@ -13,25 +13,23 @@ import (
 
 const tag = "latest"
 
-var envPrefix = "ORAS_"
-
-type Config struct {
+type HTTPProxyConfig struct {
 	RegistryURL  string `env:"REGISTRY_URL" envDefault:"localhost:5000"`
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
 	Username     string `env:"USERNAME"     envDefault:""`
 	Password     string `env:"PASSWORD"     envDefault:""`
 }
 
-func Init() (*Config, error) {
-	config := Config{}
-	if err := env.ParseWithOptions(&config, env.Options{Prefix: envPrefix}); err != nil {
+func LoadHTTPConfig(opts env.Options) (*HTTPProxyConfig, error) {
+	config := HTTPProxyConfig{}
+	if err := env.ParseWithOptions(&config, opts); err != nil {
 		return nil, err
 	}
 
 	return &config, nil
 }
 
-func (c *Config) FetchFromReg(ctx context.Context, containerName string) ([]byte, error) {
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]byte, error) {
 	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
 
 	repo, err := remote.NewRepository(fullPath)
