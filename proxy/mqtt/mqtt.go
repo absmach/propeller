@@ -25,7 +25,7 @@ type RegistryClient struct {
 func NewMQTTClient(cfg *config.MQTTProxyConfig) (*RegistryClient, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(cfg.BrokerURL).
-		SetClientID(fmt.Sprintf("Proplet-%s", cfg.PropletID)).
+		SetClientID("Proplet-" + cfg.PropletID).
 		SetUsername(cfg.PropletID).
 		SetPassword(cfg.Password).
 		SetCleanSession(true).
