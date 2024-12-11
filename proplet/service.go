@@ -133,13 +133,13 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		p.mqttClient,
 		p.config,
 		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStartCommand(client, msg, logger)
+			p.handleStartCommand(ctx, client, msg, logger)
 		},
 		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStopCommand(client, msg, logger)
+			p.handleStopCommand(ctx, client, msg, logger)
 		},
 		func(client mqtt.Client, msg mqtt.Message) {
-			p.registryUpdate(client, msg, logger)
+			p.registryUpdate(ctx, client, msg, logger)
 		},
 		logger,
 	); err != nil {
@@ -150,7 +150,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		p.mqttClient,
 		p.config.ChannelID,
 		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleChunk(client, msg)
+			p.handleChunk(ctx, client, msg)
 		},
 		logger,
 	); err != nil {
@@ -163,7 +163,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	return nil
 }
 
-func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
 	var req propletapi.StartRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid start command payload", slog.Any("error", err))
@@ -175,14 +175,14 @@ func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, log
 
 	if p.wasmBinary != nil {
 		logger.Info("Using preloaded WASM binary", slog.String("app_name", req.AppName))
-		function, err := p.runtime.StartApp(context.Background(), req.AppName, p.wasmBinary, "main")
+		function, err := p.runtime.StartApp(ctx, req.AppName, p.wasmBinary, "main")
 		if err != nil {
 			logger.Error("Failed to start app", slog.String("app_name", req.AppName), slog.Any("error", err))
 
 			return
 		}
 
-		_, err = function.Call(context.Background())
+		_, err = function.Call(ctx)
 		if err != nil {
 			logger.Error("Error executing app", slog.String("app_name", req.AppName), slog.Any("error", err))
 		} else {
@@ -211,7 +211,7 @@ func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, log
 
 				if exists && receivedChunks == metadata.TotalChunks {
 					logger.Info("All chunks received, deploying app", slog.String("app_name", req.AppName))
-					go p.deployAndRunApp(req.AppName)
+					go p.deployAndRunApp(ctx, req.AppName)
 
 					break
 				}
@@ -224,7 +224,7 @@ func (p *PropletService) handleStartCommand(_ mqtt.Client, msg mqtt.Message, log
 	}
 }
 
-func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) handleStopCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
 	var req propletapi.StopRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid stop command payload", slog.Any("error", err))
@@ -234,7 +234,7 @@ func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logg
 
 	logger.Info("Received stop command", slog.String("app_name", req.AppName))
 
-	err := p.runtime.StopApp(context.Background(), req.AppName)
+	err := p.runtime.StopApp(ctx, req.AppName)
 	if err != nil {
 		logger.Error("Failed to stop app", slog.String("app_name", req.AppName), slog.Any("error", err))
 
@@ -244,7 +244,7 @@ func (p *PropletService) handleStopCommand(_ mqtt.Client, msg mqtt.Message, logg
 	logger.Info("App stopped successfully", slog.String("app_name", req.AppName))
 }
 
-func (p *PropletService) handleChunk(_ mqtt.Client, msg mqtt.Message) {
+func (p *PropletService) handleChunk(ctx context.Context, _ mqtt.Client, msg mqtt.Message) {
 	var chunk ChunkPayload
 	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
 		log.Printf("Failed to unmarshal chunk payload: %v", err)
@@ -271,11 +271,11 @@ func (p *PropletService) handleChunk(_ mqtt.Client, msg mqtt.Message) {
 
 	if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
 		log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
-		go p.deployAndRunApp(chunk.AppName)
+		go p.deployAndRunApp(ctx, chunk.AppName)
 	}
 }
 
-func (p *PropletService) deployAndRunApp(appName string) {
+func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
 	log.Printf("Assembling chunks for app '%s'\n", appName)
 
 	p.chunksMutex.Lock()
@@ -285,14 +285,14 @@ func (p *PropletService) deployAndRunApp(appName string) {
 
 	wasmBinary := assembleChunks(chunks)
 
-	function, err := p.runtime.StartApp(context.Background(), appName, wasmBinary, "main")
+	function, err := p.runtime.StartApp(ctx, appName, wasmBinary, "main")
 	if err != nil {
 		log.Printf("Failed to start app '%s': %v\n", appName, err)
 
 		return
 	}
 
-	_, err = function.Call(context.Background())
+	_, err = function.Call(ctx)
 	if err != nil {
 		log.Printf("Failed to execute app '%s': %v\n", appName, err)
 
@@ -350,7 +350,7 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 	return nil
 }
 
-func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) registryUpdate(ctx context.Context, client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
 	var payload struct {
 		RegistryURL   string `json:"registry_url"`
 		RegistryToken string `json:"registry_token"`
@@ -362,7 +362,7 @@ func (p *PropletService) registryUpdate(client mqtt.Client, msg mqtt.Message, lo
 	}
 
 	ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
-	if err := p.UpdateRegistry(context.Background(), payload.RegistryURL, payload.RegistryToken); err != nil {
+	if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
 		client.Publish(ackTopic, 0, false, fmt.Sprintf(RegistryFailurePayload, err))
 		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
 	} else {

@@ -2,6 +2,7 @@ package proplet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -37,28 +38,26 @@ func LoadConfig(filepath string, hasWASMFile bool) (Config, error) {
 }
 
 func (c Config) Validate(hasWASMFile bool) error {
-	if c.BrokerURL == "" {
-		return fmt.Errorf("broker_url is required")
+	requiredFields := map[string]string{
+		"broker_url": c.BrokerURL,
+		"password":   c.Password,
+		"proplet_id": c.PropletID,
+		"channel_id": c.ChannelID,
 	}
+
+	for fieldName, value := range requiredFields {
+		if value == "" {
+			return fmt.Errorf("%s is required", fieldName)
+		}
+	}
+
 	if _, err := url.Parse(c.BrokerURL); err != nil {
 		return fmt.Errorf("broker_url is not a valid URL: %w", err)
 	}
-	if c.Password == "" {
-		return fmt.Errorf("password is required")
-	}
-	if c.PropletID == "" {
-		return fmt.Errorf("proplet_id is required")
-	}
-	if c.ChannelID == "" {
-		return fmt.Errorf("channel_id is required")
-	}
 
 	if !hasWASMFile {
-		if c.RegistryURL == "" {
-			return fmt.Errorf("registry_url is required when not using a WASM file")
-		}
-		if c.RegistryToken == "" {
-			return fmt.Errorf("registry_token is required when not using a WASM file")
+		if c.RegistryURL == "" || c.RegistryToken == "" {
+			return errors.New("registry_url and registry_token are required when not using a WASM file")
 		}
 	}
 
@@ -67,7 +66,7 @@ func (c Config) Validate(hasWASMFile bool) error {
 			return fmt.Errorf("registry_url is not a valid URL: %w", err)
 		}
 		if c.RegistryToken == "" {
-			return fmt.Errorf("registry_token is required when a registry_url is provided")
+			return errors.New("registry_token is required when a registry_url is provided")
 		}
 	}
 
