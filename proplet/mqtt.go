@@ -89,7 +89,7 @@ func startLivelinessUpdates(client mqtt.Client, config Config, logger *slog.Logg
 		if password.Error() != nil {
 			logger.Error("Failed to publish liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
 		} else {
-			logger.Info("Published liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)))
+			logger.Info("Published liveliness message")
 		}
 	}
 }
