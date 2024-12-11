@@ -17,6 +17,7 @@ import (
 const (
 	mqttPrefix = "MQTT_"
 	httpPrefix = "HTTP_"
+	chanSize   = 2
 )
 
 func main() {
@@ -64,7 +65,7 @@ func main() {
 }
 
 func start(ctx context.Context, s *proxy.ProxyService) error {
-	errs := make(chan error, 2)
+	errs := make(chan error, chanSize)
 
 	if err := s.MQTTClient().Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
