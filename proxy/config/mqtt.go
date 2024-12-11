@@ -5,10 +5,10 @@ import (
 )
 
 type MQTTProxyConfig struct {
-	BrokerURL string `env:"BROKER_URL"     envDefault:""`
-	Password  string `env:"PASSWORD"       envDefault:""`
-	PropletID string `env:"PROPLET_ID"     envDefault:""`
-	ChannelID string `env:"CHANNEL_ID"     envDefault:""`
+	BrokerURL string `json:"broker_url"  env:"BROKER_URL"`
+	Password  string `json:"password"    env:"PASSWORD"`
+	PropletID string `json:"proplet_id"  env:"PROPLET_ID"`
+	ChannelID string `json:"channel_id"  env:"CHANNEL_ID"`
 }
 
 func LoadMQTTConfig(opts env.Options) (*MQTTProxyConfig, error) {
