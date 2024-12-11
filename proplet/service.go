@@ -141,7 +141,6 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		func(client mqtt.Client, msg mqtt.Message) {
 			p.registryUpdate(ctx, client, msg, logger)
 		},
-		logger,
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
 	}
