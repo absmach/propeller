@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/proplet"
-	config "github.com/absmach/propeller/proplet/repository"
 )
 
 const registryTimeout = 30 * time.Second
@@ -40,9 +39,9 @@ func main() {
 
 	hasWASMFile := *wasmFilePath != ""
 
-	cfg, err := config.LoadConfig("proplet/repository/config.json", hasWASMFile)
+	cfg, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
 	if err != nil {
-		logger.Error("Failed to load configuration", slog.String("path", "proplet/repository/config.json"), slog.Any("error", err))
+		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
 		os.Exit(1)
 	}
 

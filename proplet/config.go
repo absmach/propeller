@@ -1,4 +1,4 @@
-package repository
+package proplet
 
 import (
 	"encoding/json"
@@ -57,16 +57,15 @@ func (c *Config) Validate(hasWASMFile bool) error {
 		return err
 	}
 
-	if err := c.validateRegistryURL(c.RegistryURL, hasWASMFile); err != nil {
-		return err
+	if c.RegistryURL != "" {
+		if err := c.validateURL(c.RegistryURL); err != nil {
+			return err
+		}
 	}
-
-	if err := c.validateURL(c.RegistryURL); err != nil {
-		return err
-	}
-
-	if err := c.validateField(c.RegistryToken, "registry_token"); err != nil {
-		return err
+	if c.RegistryToken != "" {
+		if err := c.validateField(c.RegistryToken, "registry_token"); err != nil {
+			return err
+		}
 	}
 
 	return nil
