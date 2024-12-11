@@ -49,3 +49,5 @@ require (
 	google.golang.org/grpc v1.68.1 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect
 )
+
+require github.com/gorilla/websocket v1.5.3 // indirect
