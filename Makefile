@@ -21,7 +21,7 @@ build:
 
 install:
 	cp ${BUILD_DIR}/propellerd $(GOBIN)/propellerd
-	
+
 all: build
 
 clean:
@@ -30,8 +30,21 @@ clean:
 lint:
 	golangci-lint run  --config .golangci.yaml
 
-start-supermq:
+start-magistrala:
 	docker compose -f docker/compose.yaml up -d
 
-stop-supermq:
+stop-magistrala:
 	docker compose -f docker/compose.yaml down
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Targets:"
+	@echo "  build:         build the binary"
+	@echo "  install:       install the binary"
+	@echo "  all:           build the binary"
+	@echo "  clean:         clean the build directory"
+	@echo "  lint:          run golangci-lint"
+	@echo "  start-magistrala: start the magistrala docker compose"
+	@echo "  stop-magistrala:  stop the magistrala docker compose"
+	@echo "  help:          display this help message"
