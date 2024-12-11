@@ -21,13 +21,10 @@ var (
 )
 
 type pubsub struct {
-	address  string
-	qos      byte
-	id       string
-	username string
-	password string
-	timeout  time.Duration
-	logger   *slog.Logger
+	client  mqtt.Client
+	qos     byte
+	timeout time.Duration
+	logger  *slog.Logger
 }
 
 type Handler func(topic string, msg map[string]interface{}) error
@@ -43,14 +40,16 @@ func NewPubSub(url string, qos byte, id, username, password string, timeout time
 		return nil, errEmptyID
 	}
 
+	client, err := newClient(url, id, username, password, timeout)
+	if err != nil {
+		return nil, err
+	}
+
 	return &pubsub{
-		address:  url,
-		qos:      qos,
-		id:       id,
-		username: username,
-		password: password,
-		timeout:  timeout,
-		logger:   logger,
+		client:  client,
+		qos:     qos,
+		timeout: timeout,
+		logger:  logger,
 	}, nil
 }
 
@@ -59,16 +58,12 @@ func (ps *pubsub) Publish(ctx context.Context, topic string, msg any) error {
 		return errEmptyTopic
 	}
 
-	client, err := newClient(ps.address, ps.id, ps.username, ps.password, ps.timeout)
-	if err != nil {
-		return err
-	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	token := client.Publish(topic, ps.qos, false, data)
+	token := ps.client.Publish(topic, ps.qos, false, data)
 	if token.Error() != nil {
 		return token.Error()
 	}
@@ -85,12 +80,7 @@ func (ps *pubsub) Subscribe(ctx context.Context, topic string, handler Handler) 
 		return errEmptyTopic
 	}
 
-	client, err := newClient(ps.address, ps.id, ps.username, ps.password, ps.timeout)
-	if err != nil {
-		return err
-	}
-
-	token := client.Subscribe(topic, ps.qos, ps.mqttHandler(handler))
+	token := ps.client.Subscribe(topic, ps.qos, ps.mqttHandler(handler))
 	if token.Error() != nil {
 		return token.Error()
 	}
@@ -106,12 +96,7 @@ func (ps *pubsub) Unsubscribe(ctx context.Context, topic string) error {
 		return errEmptyTopic
 	}
 
-	client, err := newClient(ps.address, ps.id, ps.username, ps.password, ps.timeout)
-	if err != nil {
-		return err
-	}
-
-	token := client.Unsubscribe(topic)
+	token := ps.client.Unsubscribe(topic)
 	if token.Error() != nil {
 		return token.Error()
 	}
