@@ -2,6 +2,7 @@ package propellerd
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/absmach/magistrala/pkg/server"
@@ -40,7 +41,7 @@ var managerCmd = []cobra.Command{
 			}
 			ctx, cancel := context.WithCancel(cmd.Context())
 			if err := manager.StartManager(ctx, cancel, cfg); err != nil {
-				cmd.PrintErrf("failed to start manager: %s", err.Error())
+				slog.Error("failed to start manager", slog.String("error", err.Error()))
 			}
 			cancel()
 		},
