@@ -38,19 +38,22 @@ func main() {
 	cfgM, err := config.LoadMQTTConfig(env.Options{Prefix: mqttPrefix})
 	if err != nil {
 		logger.Error("Failed to load MQTT configuration", slog.Any("error", err))
-		os.Exit(1)
+
+		return
 	}
 
 	cfgH, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
 	if err != nil {
 		logger.Error("Failed to load HTTP configuration", slog.Any("error", err))
-		os.Exit(1)
+
+		return
 	}
 
 	service, err := proxy.NewService(ctx, cfgM, cfgH, logger)
 	if err != nil {
 		logger.Error("failed to create proxy service", "error", err)
-		os.Exit(1)
+
+		return
 	}
 
 	go func() {
@@ -70,7 +73,12 @@ func start(ctx context.Context, s *proxy.ProxyService) error {
 	if err := s.MQTTClient().Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
 	}
-	defer s.MQTTClient().Disconnect(ctx)
+
+	defer func() {
+		if err := s.MQTTClient().Disconnect(ctx); err != nil {
+			slog.Error("failed to disconnect MQTT client", "error", err)
+		}
+	}()
 
 	if err := s.MQTTClient().Subscribe(ctx, s.ContainerChan()); err != nil {
 		return fmt.Errorf("failed to subscribe to container requests: %w", err)
