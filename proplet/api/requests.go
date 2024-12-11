@@ -11,7 +11,7 @@ type StartRequest struct {
 	Params  []string `json:"params"`
 }
 
-func (r *StartRequest) Validate() error {
+func (r StartRequest) Validate() error {
 	if r.AppName == "" {
 		return fmt.Errorf("start request: app_name is required but missing: %w", pkgerrors.ErrMissingAppName)
 	}
@@ -23,7 +23,7 @@ type StopRequest struct {
 	AppName string `json:"app_name"`
 }
 
-func (r *StopRequest) Validate() error {
+func (r StopRequest) Validate() error {
 	if r.AppName == "" {
 		return fmt.Errorf("stop request: app_name is required but missing: %w", pkgerrors.ErrMissingAppName)
 	}
@@ -37,7 +37,7 @@ type RPCRequest struct {
 	ID     int           `json:"id"`
 }
 
-func (r *RPCRequest) Validate() error {
+func (r RPCRequest) Validate() error {
 	if r.Method == "" {
 		return fmt.Errorf("RPC request: method is required but missing: %w", pkgerrors.ErrInvalidMethod)
 	}
@@ -48,7 +48,7 @@ func (r *RPCRequest) Validate() error {
 	return nil
 }
 
-func (r *RPCRequest) ParseParams() (interface{}, error) {
+func (r RPCRequest) ParseParams() (interface{}, error) {
 	switch r.Method {
 	case "start":
 		if len(r.Params) < 1 {

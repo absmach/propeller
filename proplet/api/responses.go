@@ -11,7 +11,7 @@ type Response struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func (r *Response) Validate() error {
+func (r Response) Validate() error {
 	if r.Status == "" {
 		return fmt.Errorf("response: status is required but missing: %w", pkgerrors.ErrMissingValue)
 	}
@@ -31,7 +31,7 @@ type RPCResponse struct {
 	ID     int    `json:"id"`
 }
 
-func (r *RPCResponse) Validate() error {
+func (r RPCResponse) Validate() error {
 	if r.ID == 0 {
 		return fmt.Errorf("RPC response: ID is required but missing or zero: %w", pkgerrors.ErrMissingValue)
 	}
@@ -45,28 +45,28 @@ func (r *RPCResponse) Validate() error {
 	return nil
 }
 
-func NewSuccessResponse() *Response {
-	return &Response{
+func NewSuccessResponse() Response {
+	return Response{
 		Status: "success",
 	}
 }
 
-func NewFailureResponse(err error) *Response {
-	return &Response{
+func NewFailureResponse(err error) Response {
+	return Response{
 		Status: "failure",
 		Error:  err.Error(),
 	}
 }
 
-func NewRPCSuccessResponse(id int, result string) *RPCResponse {
-	return &RPCResponse{
+func NewRPCSuccessResponse(id int, result string) RPCResponse {
+	return RPCResponse{
 		ID:     id,
 		Result: result,
 	}
 }
 
-func NewRPCFailureResponse(id int, err error) *RPCResponse {
-	return &RPCResponse{
+func NewRPCFailureResponse(id int, err error) RPCResponse {
+	return RPCResponse{
 		ID:    id,
 		Error: err.Error(),
 	}
