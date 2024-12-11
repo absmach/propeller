@@ -38,36 +38,32 @@ func LoadConfig(filepath string, hasWASMFile bool) (Config, error) {
 }
 
 func (c Config) Validate(hasWASMFile bool) error {
-	requiredFields := map[string]string{
-		"broker_url": c.BrokerURL,
-		"password":   c.Password,
-		"proplet_id": c.PropletID,
-		"channel_id": c.ChannelID,
+	if c.BrokerURL == "" {
+		return errors.New("broker_url is required")
 	}
-
-	for fieldName, value := range requiredFields {
-		if value == "" {
-			return fmt.Errorf("%s is required", fieldName)
-		}
-	}
-
 	if _, err := url.Parse(c.BrokerURL); err != nil {
 		return fmt.Errorf("broker_url is not a valid URL: %w", err)
 	}
-
-	if !hasWASMFile {
-		if c.RegistryURL == "" || c.RegistryToken == "" {
-			return errors.New("registry_url and registry_token are required when not using a WASM file")
-		}
+	if c.Password == "" {
+		return errors.New("password is required")
 	}
-
-	if c.RegistryURL != "" {
-		if _, err := url.Parse(c.RegistryURL); err != nil {
-			return fmt.Errorf("registry_url is not a valid URL: %w", err)
-		}
-		if c.RegistryToken == "" {
-			return errors.New("registry_token is required when a registry_url is provided")
-		}
+	if c.PropletID == "" {
+		return errors.New("proplet_id is required")
+	}
+	if c.ChannelID == "" {
+		return errors.New("channel_id is required")
+	}
+	if hasWASMFile {
+		return nil
+	}
+	if c.RegistryURL == "" {
+		return errors.New("registry_url is required when not using a WASM file")
+	}
+	if _, err := url.Parse(c.RegistryURL); err != nil {
+		return fmt.Errorf("registry_url is not a valid URL: %w", err)
+	}
+	if c.RegistryToken == "" {
+		return errors.New("registry_token is required when not using a WASM file")
 	}
 
 	return nil
