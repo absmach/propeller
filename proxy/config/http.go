@@ -77,7 +77,7 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 	totalChunks := (len(data) + chunkSize - 1) / chunkSize
 
 	chunks := make([]ChunkPayload, 0, totalChunks)
-	for i := 0; i < totalChunks; i++ {
+	for i := range make([]struct{}, totalChunks) {
 		start := i * chunkSize
 		end := start + chunkSize
 		if end > len(data) {
