@@ -15,8 +15,8 @@ const (
 	connTimeout    = 10
 	reconnTimeout  = 1
 	disconnTimeout = 250
-	pubTopic      = "channels/%s/messages/registry/server"
-	subTopic      = "channels/%s/message/registry/proplet"
+	pubTopic       = "channels/%s/messages/registry/server"
+	subTopic       = "channels/%s/message/registry/proplet"
 )
 
 type RegistryClient struct {
@@ -79,6 +79,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 		err := json.Unmarshal(data, &payLoad)
 		if err != nil {
 			log.Printf("failed unmarshalling: %v", err)
+
 			return
 		}
 
@@ -86,6 +87,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 		case containerChan <- payLoad.Appname:
 			log.Printf("Received container request: %s", payLoad.Appname)
 		case <-ctx.Done():
+
 			return
 		default:
 			log.Println("Channel full, dropping container request")
@@ -113,6 +115,7 @@ func (c *RegistryClient) PublishContainer(ctx context.Context, chunk config.Chun
 		if err := token.Error(); err != nil {
 			return fmt.Errorf("failed to publish container chunk: %w", err)
 		}
+
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -125,6 +128,7 @@ func (c *RegistryClient) Disconnect(ctx context.Context) error {
 		return ctx.Err()
 	default:
 		c.client.Disconnect(disconnTimeout)
+
 		return nil
 	}
 }

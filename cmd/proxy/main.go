@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	mqttPrefix = "MQTT_"
+	mqttPrefix = "MQTT_REGISTRY_"
 	httpPrefix = "HTTP_"
 	chanSize   = 2
 )

@@ -9,6 +9,8 @@ import (
 	"github.com/absmach/propeller/proxy/mqtt"
 )
 
+const chunkBuffer = 10
+
 type ProxyService struct {
 	orasconfig    *config.HTTPProxyConfig
 	mqttClient    *mqtt.RegistryClient
@@ -28,7 +30,7 @@ func NewService(ctx context.Context, mqttCfg *config.MQTTProxyConfig, httpCfg *c
 		mqttClient:    mqttClient,
 		logger:        logger,
 		containerChan: make(chan string, 1),
-		dataChan:      make(chan config.ChunkPayload, 10), // Increased buffer for chunks
+		dataChan:      make(chan config.ChunkPayload, chunkBuffer),
 	}, nil
 }
 
