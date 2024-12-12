@@ -29,6 +29,7 @@ type PropletService struct {
 	config        Config
 	mqttService   *MQTTService
 	runtime       *WazeroRuntime
+	wasmFilePath  string
 	wasmBinary    []byte
 	chunks        map[string][][]byte
 	chunkMetadata map[string]*ChunkPayload
@@ -104,7 +105,7 @@ func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 	return nil
 }
 
-func NewService(ctx context.Context, cfg Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
+func NewService(ctx context.Context, cfg Config, wasmFilePath string, logger *slog.Logger) (*PropletService, error) {
 	mqttService, err := NewMQTTService(ctx, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
@@ -114,7 +115,7 @@ func NewService(ctx context.Context, cfg Config, wasmBinary []byte, logger *slog
 		config:        cfg,
 		mqttService:   mqttService,
 		runtime:       NewWazeroRuntime(ctx),
-		wasmBinary:    wasmBinary,
+		wasmFilePath:  wasmFilePath,
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
 	}, nil
@@ -176,6 +177,14 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 	}
 
 	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
+
+	if p.wasmBinary == nil && p.wasmFilePath != "" {
+		p.wasmBinary, err = loadWASMFile(p.wasmFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to load WASM file: %w", err)
+		}
+		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
+	}
 
 	if p.wasmBinary != nil {
 		logger.Info("Using preloaded WASM binary", slog.String("app_name", startReq.AppName))
@@ -410,4 +419,13 @@ func (p *PropletService) registryUpdate(ctx context.Context, _ string, msg map[s
 	}
 
 	return nil
+}
+
+func loadWASMFile(path string) ([]byte, error) {
+	wasmBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read WASM file: %w", err)
+	}
+
+	return wasmBytes, nil
 }
