@@ -33,6 +33,7 @@ type PubSub interface {
 	Publish(ctx context.Context, topic string, msg any) error
 	Subscribe(ctx context.Context, topic string, handler Handler) error
 	Unsubscribe(ctx context.Context, topic string) error
+	Close() error
 }
 
 func NewPubSub(url string, qos byte, id, username, password string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {

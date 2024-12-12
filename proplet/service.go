@@ -14,19 +14,19 @@ import (
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	propletapi "github.com/absmach/propeller/proplet/api"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/tetratelabs/wazero"
 	wazeroapi "github.com/tetratelabs/wazero/api"
 )
 
 const (
-	filePermissions = 0o644
-	pollingInterval = 5 * time.Second
+	filePermissions  = 0o644
+	pollingInterval  = 5 * time.Second
+	chunkWaitTimeout = 10 * time.Minute
 )
 
 type PropletService struct {
 	config        Config
-	mqttClient    mqtt.Client
+	mqttService   *MQTTService
 	runtime       *WazeroRuntime
 	wasmBinary    []byte
 	chunks        map[string][][]byte
@@ -44,13 +44,6 @@ type WazeroRuntime struct {
 	runtime wazero.Runtime
 	modules map[string]wazeroapi.Module
 	mutex   sync.Mutex
-}
-
-func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
-	return &WazeroRuntime{
-		runtime: wazero.NewRuntime(ctx),
-		modules: make(map[string]wazeroapi.Module),
-	}
 }
 
 func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (wazeroapi.Function, error) {
@@ -111,49 +104,47 @@ func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 }
 
 func NewService(ctx context.Context, cfg Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
-	mqttClient, err := NewMQTTClient(cfg, logger)
+	mqttService, err := NewMQTTService(ctx, cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
 
-	runtime := NewWazeroRuntime(ctx)
-
 	return &PropletService{
 		config:        cfg,
-		mqttClient:    mqttClient,
-		runtime:       runtime,
+		mqttService:   mqttService,
+		runtime:       NewWazeroRuntime(ctx),
 		wasmBinary:    wasmBinary,
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
 	}, nil
 }
 
+func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
+	return &WazeroRuntime{
+		runtime: wazero.NewRuntime(ctx),
+		modules: make(map[string]wazeroapi.Module),
+	}
+}
+
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	if err := SubscribeToManagerTopics(
-		p.mqttClient,
-		p.config,
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStartCommand(ctx, client, msg, logger)
+	if err := p.mqttService.SubscribeToManagerTopics(ctx,
+		func(topic string, msg map[string]interface{}) error {
+			return p.handleStartCommand(ctx, topic, msg, logger)
 		},
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStopCommand(ctx, client, msg, logger)
+		func(topic string, msg map[string]interface{}) error {
+			return p.handleStopCommand(ctx, topic, msg, logger)
 		},
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.registryUpdate(ctx, client, msg, logger)
+		func(topic string, msg map[string]interface{}) error {
+			return p.registryUpdate(ctx, topic, msg, logger)
 		},
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
 	}
 
-	if err := SubscribeToRegistryTopic(
-		p.mqttClient,
-		p.config.ChannelID,
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleChunk(ctx, client, msg)
-		},
-		logger,
-	); err != nil {
-		return fmt.Errorf("failed to subscribe to Registry topics: %w", err)
+	if err := p.mqttService.SubscribeToRegistryTopic(ctx, func(topic string, msg map[string]interface{}) error {
+		return p.handleChunk(ctx, topic, msg)
+	}); err != nil {
+		return fmt.Errorf("failed to subscribe to registry topic: %w", err)
 	}
 
 	logger.Info("Proplet service is running.")
@@ -162,12 +153,14 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	return nil
 }
 
-func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
 	var req propletapi.StartRequest
-	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
-		logger.Error("Invalid start command payload", slog.Any("error", err))
-
-		return
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize message payload: %w", err)
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return fmt.Errorf("invalid start command payload: %w", err)
 	}
 
 	logger.Info("Received start command", slog.String("app_name", req.AppName))
@@ -176,85 +169,87 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, 
 		logger.Info("Using preloaded WASM binary", slog.String("app_name", req.AppName))
 		function, err := p.runtime.StartApp(ctx, req.AppName, p.wasmBinary, "main")
 		if err != nil {
-			logger.Error("Failed to start app", slog.String("app_name", req.AppName), slog.Any("error", err))
-
-			return
+			return fmt.Errorf("failed to start app '%s': %w", req.AppName, err)
 		}
 
 		_, err = function.Call(ctx)
 		if err != nil {
-			logger.Error("Error executing app", slog.String("app_name", req.AppName), slog.Any("error", err))
-		} else {
-			logger.Info("App started successfully", slog.String("app_name", req.AppName))
+			return fmt.Errorf("error executing app '%s': %w", req.AppName, err)
 		}
 
-		return
+		return nil
 	}
 
-	if p.config.RegistryURL != "" {
-		err := PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName, logger)
-		if err != nil {
-			logger.Error("Failed to publish fetch request", slog.String("app_name", req.AppName), slog.Any("error", err))
-
-			return
-		}
-
-		go func() {
-			logger.Info("Waiting for chunks", slog.String("app_name", req.AppName))
-
-			for {
-				p.chunksMutex.Lock()
-				metadata, exists := p.chunkMetadata[req.AppName]
-				receivedChunks := len(p.chunks[req.AppName])
-				p.chunksMutex.Unlock()
-
-				if exists && receivedChunks == metadata.TotalChunks {
-					logger.Info("All chunks received, deploying app", slog.String("app_name", req.AppName))
-					go p.deployAndRunApp(ctx, req.AppName)
-
-					break
-				}
-
-				time.Sleep(pollingInterval)
-			}
-		}()
-	} else {
+	if p.config.RegistryURL == "" {
 		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", req.AppName))
+
+		return nil
+	}
+
+	if err := p.mqttService.PublishFetchRequest(ctx, req.AppName); err != nil {
+		return fmt.Errorf("failed to publish fetch request for app '%s': %w", req.AppName, err)
+	}
+
+	logger.Info("Waiting for chunks", slog.String("app_name", req.AppName))
+	timeout := time.After(chunkWaitTimeout)
+
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timed out waiting for chunks for app '%s'", req.AppName)
+		default:
+			p.chunksMutex.Lock()
+			metadata, exists := p.chunkMetadata[req.AppName]
+			receivedChunks := len(p.chunks[req.AppName])
+			p.chunksMutex.Unlock()
+
+			if exists && receivedChunks == metadata.TotalChunks {
+				go p.deployAndRunApp(ctx, req.AppName)
+
+				return nil
+			}
+
+			time.Sleep(pollingInterval)
+		}
 	}
 }
 
-func (p *PropletService) handleStopCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
 	var req propletapi.StopRequest
-	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
-		logger.Error("Invalid stop command payload", slog.Any("error", err))
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize message payload: %w", err)
+	}
 
-		return
+	if err := json.Unmarshal(data, &req); err != nil {
+		return fmt.Errorf("invalid stop command payload: %w", err)
 	}
 
 	logger.Info("Received stop command", slog.String("app_name", req.AppName))
 
-	err := p.runtime.StopApp(ctx, req.AppName)
+	err = p.runtime.StopApp(ctx, req.AppName)
 	if err != nil {
-		logger.Error("Failed to stop app", slog.String("app_name", req.AppName), slog.Any("error", err))
-
-		return
+		return fmt.Errorf("failed to stop app '%s': %w", req.AppName, err)
 	}
 
 	logger.Info("App stopped successfully", slog.String("app_name", req.AppName))
+
+	return nil
 }
 
-func (p *PropletService) handleChunk(ctx context.Context, _ mqtt.Client, msg mqtt.Message) {
+func (p *PropletService) handleChunk(ctx context.Context, _ string, msg map[string]interface{}) error {
 	var chunk ChunkPayload
-	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
-		log.Printf("Failed to unmarshal chunk payload: %v", err)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize chunk payload: %w", err)
+	}
 
-		return
+	if err := json.Unmarshal(data, &chunk); err != nil {
+		return fmt.Errorf("failed to unmarshal chunk payload: %w", err)
 	}
 
 	if err := chunk.Validate(); err != nil {
-		log.Printf("Invalid chunk payload: %v\n", err)
-
-		return
+		return fmt.Errorf("invalid chunk payload: %w", err)
 	}
 
 	p.chunksMutex.Lock()
@@ -272,6 +267,8 @@ func (p *PropletService) handleChunk(ctx context.Context, _ mqtt.Client, msg mqt
 		log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
 		go p.deployAndRunApp(ctx, chunk.AppName)
 	}
+
+	return nil
 }
 
 func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
@@ -349,23 +346,33 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 	return nil
 }
 
-func (p *PropletService) registryUpdate(ctx context.Context, client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
+func (p *PropletService) registryUpdate(ctx context.Context, _ string, msg map[string]interface{}, _ *slog.Logger) error {
 	var payload struct {
 		RegistryURL   string `json:"registry_url"`
 		RegistryToken string `json:"registry_token"`
 	}
-	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
-		logger.Error("Invalid registry update payload", slog.Any("error", err))
 
-		return
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize registry update payload: %w", err)
 	}
 
-	ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return fmt.Errorf("invalid registry update payload: %w", err)
+	}
+
+	ackTopic := fmt.Sprintf(RegistryUpdateResponseTopic, p.config.ChannelID)
 	if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
-		client.Publish(ackTopic, 0, false, fmt.Sprintf(RegistryFailurePayload, err))
-		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
-	} else {
-		client.Publish(ackTopic, 0, false, RegistrySuccessPayload)
-		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
+		if pubErr := p.mqttService.pubsub.Publish(ctx, ackTopic, fmt.Sprintf(RegistryFailurePayload, err)); pubErr != nil {
+			return fmt.Errorf("failed to publish registry update failure acknowledgment on topic '%s': %w", ackTopic, pubErr)
+		}
+
+		return fmt.Errorf("failed to update registry configuration on topic '%s' with registry URL '%s': %w", ackTopic, payload.RegistryURL, err)
 	}
+
+	if pubErr := p.mqttService.pubsub.Publish(ctx, ackTopic, RegistrySuccessPayload); pubErr != nil {
+		return fmt.Errorf("failed to publish registry update success acknowledgment on topic '%s': %w", ackTopic, pubErr)
+	}
+
+	return nil
 }
