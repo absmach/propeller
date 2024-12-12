@@ -20,7 +20,6 @@ const registryTimeout = 30 * time.Second
 
 var (
 	wasmFilePath string
-	wasmBinary   []byte
 	logLevel     slog.Level
 )
 
@@ -64,18 +63,11 @@ func run() error {
 		}
 	}
 
-	if hasWASMFile {
-		wasmBinary, err = loadWASMFile(wasmFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to load WASM file: %w", err)
-		}
+	if cfg.RegistryURL == "" && !hasWASMFile {
+		return errors.New("missing registry URL and WASM file")
 	}
 
-	if cfg.RegistryURL == "" && wasmBinary == nil {
-		return errors.New("missing registry URL and WASM binary file")
-	}
-
-	service, err := proplet.NewService(ctx, cfg, wasmBinary, logger)
+	service, err := proplet.NewService(ctx, cfg, wasmFilePath, logger)
 	if err != nil {
 		return fmt.Errorf("service initialization error: %w", err)
 	}
@@ -98,15 +90,6 @@ func configureLogger(level string) *slog.Logger {
 	})
 
 	return slog.New(logHandler)
-}
-
-func loadWASMFile(path string) ([]byte, error) {
-	wasmBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read WASM file: %w", err)
-	}
-
-	return wasmBytes, nil
 }
 
 func checkRegistryConnectivity(registryURL string) error {
