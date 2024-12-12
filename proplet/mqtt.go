@@ -24,7 +24,7 @@ var (
 	AlivePayload                = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
 	DiscoveryTopic              = "channels/%s/messages/control/proplet/create"
 	DiscoveryPayload            = `{"proplet_id":"%s","chan_id":"%s"}`
-	LWTTopic                    = "channels/%s/messages/control/proplet/create"
+	LWTTopic                    = "channels/%s/messages/control/proplet"
 	LWTPayload                  = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
 	StartTopic                  = "channels/%s/messages/control/manager/start"
 	StopTopic                   = "channels/%s/messages/control/manager/stop"
