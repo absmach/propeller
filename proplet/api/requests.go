@@ -54,37 +54,50 @@ func (r RPCRequest) ParseParams() (interface{}, error) {
 		if len(r.Params) < 1 {
 			return nil, fmt.Errorf("start method: missing required parameters: %w", pkgerrors.ErrInvalidParams)
 		}
+
 		appName, ok := r.Params[0].(string)
 		if !ok || appName == "" {
 			return nil, fmt.Errorf("start method: invalid app_name parameter: %w", pkgerrors.ErrInvalidParams)
 		}
 
+		params, err := parseStringSlice(r.Params[1:])
+		if err != nil {
+			return nil, fmt.Errorf("start method: invalid parameters: %w", err)
+		}
+
 		return StartRequest{
 			AppName: appName,
-			Params:  parseStringSlice(r.Params[1:]),
+			Params:  params,
 		}, nil
+
 	case "stop":
 		if len(r.Params) < 1 {
 			return nil, fmt.Errorf("stop method: missing required parameters: %w", pkgerrors.ErrInvalidParams)
 		}
+
 		appName, ok := r.Params[0].(string)
 		if !ok || appName == "" {
 			return nil, fmt.Errorf("stop method: invalid app_name parameter: %w", pkgerrors.ErrInvalidParams)
 		}
 
-		return StopRequest{AppName: appName}, nil
+		return StopRequest{
+			AppName: appName,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown method '%s': %w", r.Method, pkgerrors.ErrInvalidMethod)
 	}
 }
 
-func parseStringSlice(params []interface{}) []string {
-	result := []string{}
-	for _, param := range params {
-		if str, ok := param.(string); ok {
-			result = append(result, str)
+func parseStringSlice(params []interface{}) ([]string, error) {
+	result := make([]string, len(params))
+	for i, param := range params {
+		str, ok := param.(string)
+		if !ok {
+			return nil, fmt.Errorf("parameter at index %d is not a string", i)
 		}
+		result[i] = str
 	}
 
-	return result
+	return result, nil
 }
