@@ -193,10 +193,14 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 			args[i] = arg
 		}
 
-		_, err = function.Call(ctx, args...)
+		result, err := function.Call(ctx, args...)
 		if err != nil {
 			return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
 		}
+
+		logger.Info("WASM function executed successfully",
+			slog.String("app_name", startReq.AppName),
+			slog.Any("result", result))
 
 		return nil
 	}
