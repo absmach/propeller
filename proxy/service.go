@@ -25,6 +25,8 @@ func NewService(ctx context.Context, mqttCfg *config.MQTTProxyConfig, httpCfg *c
 		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
 	}
 
+	logger.Info("successfully initialized MQTT client")
+
 	return &ProxyService{
 		orasconfig:    httpCfg,
 		mqttClient:    mqttClient,
@@ -42,13 +44,11 @@ func (s *ProxyService) ContainerChan() chan string {
 	return s.containerChan
 }
 
-func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
+func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			errs <- ctx.Err()
-
-			return
+			return ctx.Err()
 		case containerName := <-s.containerChan:
 			chunks, err := s.orasconfig.FetchFromReg(ctx, containerName)
 			if err != nil {
@@ -66,22 +66,18 @@ func (s *ProxyService) StreamHTTP(ctx context.Context, errs chan error) {
 						"chunk", chunk.ChunkIdx,
 						"total", chunk.TotalChunks)
 				case <-ctx.Done():
-					errs <- ctx.Err()
-
-					return
+					return ctx.Err()
 				}
 			}
 		}
 	}
 }
 
-func (s *ProxyService) StreamMQTT(ctx context.Context, errs chan error) {
+func (s *ProxyService) StreamMQTT(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			errs <- ctx.Err()
-
-			return
+			return ctx.Err()
 		case chunk := <-s.dataChan:
 			if err := s.mqttClient.PublishContainer(ctx, chunk); err != nil {
 				s.logger.Error("failed to publish container chunk",

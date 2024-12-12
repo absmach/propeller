@@ -14,9 +14,9 @@ import (
 )
 
 const (
+	svcName    = "proxy"
 	mqttPrefix = "MQTT_REGISTRY_"
 	httpPrefix = "HTTP_"
-	chanSize   = 2
 )
 
 func main() {
@@ -25,24 +25,28 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	err := godotenv.Load()
+	err := godotenv.Load("cmd/proxy/.env")
 	if err != nil {
 		panic(err)
 	}
 
 	mqttCfg, err := config.LoadMQTTConfig(env.Options{Prefix: mqttPrefix})
 	if err != nil {
-		logger.Error("Failed to load MQTT configuration", slog.Any("error", err))
+		logger.Error("failed to load MQTT configuration", slog.Any("error", err))
 
 		return
 	}
+
+	logger.Info("successfully loaded MQTT config")
 
 	httpCfg, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
 	if err != nil {
-		logger.Error("Failed to load HTTP configuration", slog.Any("error", err))
+		logger.Error("failed to load HTTP configuration", slog.Any("error", err))
 
 		return
 	}
+
+	logger.Info("successfully loaded HTTP config")
 
 	service, err := proxy.NewService(ctx, mqttCfg, httpCfg, logger)
 	if err != nil {
@@ -51,17 +55,21 @@ func main() {
 		return
 	}
 
-	g.Go(func() error {
-		return start(ctx, service)
-	})
+	logger.Info("starting proxy service")
+
+	if err := start(ctx, g, service); err != nil {
+		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
+	}
 }
 
-func start(ctx context.Context, s *proxy.ProxyService) error {
-	errs := make(chan error, chanSize)
+func start(ctx context.Context, g *errgroup.Group, s *proxy.ProxyService) error {
+	slog.Info("connecting...")
 
 	if err := s.MQTTClient().Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
 	}
+
+	slog.Info("successfully connected to broker")
 
 	defer func() {
 		if err := s.MQTTClient().Disconnect(ctx); err != nil {
@@ -73,8 +81,15 @@ func start(ctx context.Context, s *proxy.ProxyService) error {
 		return fmt.Errorf("failed to subscribe to container requests: %w", err)
 	}
 
-	go s.StreamHTTP(ctx, errs)
-	go s.StreamMQTT(ctx, errs)
+	slog.Info("successfully subscribed to topic")
 
-	return <-errs
+	g.Go(func() error {
+		return s.StreamHTTP(ctx)
+	})
+
+	g.Go(func() error {
+		return s.StreamMQTT(ctx)
+	})
+
+	return g.Wait()
 }
