@@ -15,6 +15,8 @@ const (
 	connTimeout    = 10
 	reconnTimeout  = 1
 	disconnTimeout = 250
+	pubTopic      = "channels/%s/messages/registry/server"
+	subTopic      = "channels/%s/message/registry/proplet"
 )
 
 type RegistryClient struct {
@@ -65,7 +67,6 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 }
 
 func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
-	subTopic := fmt.Sprintf("channels/%s/message/registry/proplet", c.config.ChannelID)
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 
@@ -78,7 +79,6 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 		err := json.Unmarshal(data, &payLoad)
 		if err != nil {
 			log.Printf("failed unmarshalling: %v", err)
-
 			return
 		}
 
@@ -92,7 +92,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 		}
 	}
 
-	token := c.client.Subscribe(subTopic, 1, handler)
+	token := c.client.Subscribe(fmt.Sprintf(subTopic, c.config.ChannelID), 1, handler)
 	if err := token.Error(); err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subTopic, err)
 	}
@@ -100,17 +100,19 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 	return nil
 }
 
-func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []byte) error {
-	pubTopic := fmt.Sprintf("channels/%s/messages/registry/server", c.config.ChannelID)
+func (c *RegistryClient) PublishContainer(ctx context.Context, chunk config.ChunkPayload) error {
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		return fmt.Errorf("failed to marshal chunk payload: %w", err)
+	}
 
-	token := c.client.Publish(pubTopic, 1, false, containerData)
+	token := c.client.Publish(fmt.Sprintf(pubTopic, c.config.ChannelID), 1, false, data)
 
 	select {
 	case <-token.Done():
 		if err := token.Error(); err != nil {
-			return fmt.Errorf("failed to publish container: %w", err)
+			return fmt.Errorf("failed to publish container chunk: %w", err)
 		}
-
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -120,11 +122,9 @@ func (c *RegistryClient) PublishContainer(ctx context.Context, containerData []b
 func (c *RegistryClient) Disconnect(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
-
 		return ctx.Err()
 	default:
 		c.client.Disconnect(disconnTimeout)
-
 		return nil
 	}
 }

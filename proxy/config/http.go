@@ -11,7 +11,17 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
-const tag = "latest"
+const (
+	tag       = "latest"
+	chunkSize = 1024 * 1024
+)
+
+type ChunkPayload struct {
+	AppName     string `json:"app_name"`
+	ChunkIdx    int    `json:"chunk_idx"`
+	TotalChunks int    `json:"total_chunks"`
+	Data        []byte `json:"data"`
+}
 
 type HTTPProxyConfig struct {
 	RegistryURL  string `env:"REGISTRY_URL" envDefault:"localhost:5000"`
@@ -29,7 +39,7 @@ func LoadHTTPConfig(opts env.Options) (*HTTPProxyConfig, error) {
 	return &config, nil
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]byte, error) {
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {
 	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
 
 	repo, err := remote.NewRepository(fullPath)
@@ -64,5 +74,24 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 		return nil, fmt.Errorf("failed to read blob for %s: %w", containerName, err)
 	}
 
-	return data, nil
+	totalChunks := (len(data) + chunkSize - 1) / chunkSize
+
+	chunks := make([]ChunkPayload, 0, totalChunks)
+	for i := 0; i < totalChunks; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		chunk := ChunkPayload{
+			AppName:     containerName,
+			ChunkIdx:    i,
+			TotalChunks: totalChunks,
+			Data:        data[start:end],
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks, nil
 }

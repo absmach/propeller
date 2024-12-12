@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/absmach/propeller/proxy"
 	"github.com/absmach/propeller/proxy/config"
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -21,50 +20,40 @@ const (
 )
 
 func main() {
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	g, ctx := errgroup.WithContext(context.Background())
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	err := godotenv.Load()
 	if err != nil {
 		panic(err)
 	}
 
-	cfgM, err := config.LoadMQTTConfig(env.Options{Prefix: mqttPrefix})
+	mqttCfg, err := config.LoadMQTTConfig(env.Options{Prefix: mqttPrefix})
 	if err != nil {
 		logger.Error("Failed to load MQTT configuration", slog.Any("error", err))
 
 		return
 	}
 
-	cfgH, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
+	httpCfg, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
 	if err != nil {
 		logger.Error("Failed to load HTTP configuration", slog.Any("error", err))
 
 		return
 	}
 
-	service, err := proxy.NewService(ctx, cfgM, cfgH, logger)
+	service, err := proxy.NewService(ctx, mqttCfg, httpCfg, logger)
 	if err != nil {
 		logger.Error("failed to create proxy service", "error", err)
 
 		return
 	}
 
-	go func() {
-		if err := start(ctx, service); err != nil {
-			logger.Error("service error", "error", err)
-			cancel()
-		}
-	}()
-
-	<-sigChan
-	cancel()
+	g.Go(func() error {
+		return start(ctx, service)
+	})
 }
 
 func start(ctx context.Context, s *proxy.ProxyService) error {
