@@ -9,11 +9,12 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	propletapi "github.com/absmach/propeller/proplet/api"
+	"github.com/absmach/propeller/proplet/api"
 	"github.com/tetratelabs/wazero"
 	wazeroapi "github.com/tetratelabs/wazero/api"
 )
@@ -154,57 +155,77 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	var req propletapi.StartRequest
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize message payload: %w", err)
 	}
-	if err := json.Unmarshal(data, &req); err != nil {
+
+	var rpcReq api.RPCRequest
+	if err := json.Unmarshal(data, &rpcReq); err != nil {
 		return fmt.Errorf("invalid start command payload: %w", err)
 	}
 
-	logger.Info("Received start command", slog.String("app_name", req.AppName))
+	parsed, err := rpcReq.ParseParams()
+	if err != nil {
+		return fmt.Errorf("failed to parse start command parameters: %w", err)
+	}
+
+	startReq, ok := parsed.(api.StartRequest)
+	if !ok {
+		return fmt.Errorf("unexpected request type for start command")
+	}
+
+	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
 
 	if p.wasmBinary != nil {
-		logger.Info("Using preloaded WASM binary", slog.String("app_name", req.AppName))
-		function, err := p.runtime.StartApp(ctx, req.AppName, p.wasmBinary, "main")
+		logger.Info("Using preloaded WASM binary", slog.String("app_name", startReq.AppName))
+		function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, "add")
 		if err != nil {
-			return fmt.Errorf("failed to start app '%s': %w", req.AppName, err)
+			return fmt.Errorf("failed to start app '%s': %w", startReq.AppName, err)
 		}
 
-		_, err = function.Call(ctx)
+		args := make([]uint64, len(startReq.Params))
+		for i, param := range startReq.Params {
+			arg, err := strconv.ParseUint(param, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid argument '%s': %w", param, err)
+			}
+			args[i] = arg
+		}
+
+		_, err = function.Call(ctx, args...)
 		if err != nil {
-			return fmt.Errorf("error executing app '%s': %w", req.AppName, err)
+			return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
 		}
 
 		return nil
 	}
 
 	if p.config.RegistryURL == "" {
-		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", req.AppName))
+		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", startReq.AppName))
 
 		return nil
 	}
 
-	if err := p.mqttService.PublishFetchRequest(ctx, req.AppName); err != nil {
-		return fmt.Errorf("failed to publish fetch request for app '%s': %w", req.AppName, err)
+	if err := p.mqttService.PublishFetchRequest(ctx, startReq.AppName); err != nil {
+		return fmt.Errorf("failed to publish fetch request for app '%s': %w", startReq.AppName, err)
 	}
 
-	logger.Info("Waiting for chunks", slog.String("app_name", req.AppName))
+	logger.Info("Waiting for chunks", slog.String("app_name", startReq.AppName))
 	timeout := time.After(chunkWaitTimeout)
 
 	for {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timed out waiting for chunks for app '%s'", req.AppName)
+			return fmt.Errorf("timed out waiting for chunks for app '%s'", startReq.AppName)
 		default:
 			p.chunksMutex.Lock()
-			metadata, exists := p.chunkMetadata[req.AppName]
-			receivedChunks := len(p.chunks[req.AppName])
+			metadata, exists := p.chunkMetadata[startReq.AppName]
+			receivedChunks := len(p.chunks[startReq.AppName])
 			p.chunksMutex.Unlock()
 
 			if exists && receivedChunks == metadata.TotalChunks {
-				go p.deployAndRunApp(ctx, req.AppName)
+				go p.deployAndRunApp(ctx, startReq.AppName)
 
 				return nil
 			}
@@ -215,24 +236,34 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 }
 
 func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	var req propletapi.StopRequest
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize message payload: %w", err)
 	}
 
-	if err := json.Unmarshal(data, &req); err != nil {
+	var rpcReq api.RPCRequest
+	if err := json.Unmarshal(data, &rpcReq); err != nil {
 		return fmt.Errorf("invalid stop command payload: %w", err)
 	}
 
-	logger.Info("Received stop command", slog.String("app_name", req.AppName))
-
-	err = p.runtime.StopApp(ctx, req.AppName)
+	parsed, err := rpcReq.ParseParams()
 	if err != nil {
-		return fmt.Errorf("failed to stop app '%s': %w", req.AppName, err)
+		return fmt.Errorf("failed to parse stop command parameters: %w", err)
 	}
 
-	logger.Info("App stopped successfully", slog.String("app_name", req.AppName))
+	stopReq, ok := parsed.(api.StopRequest)
+	if !ok {
+		return fmt.Errorf("unexpected request type for stop command")
+	}
+
+	logger.Info("Received stop command", slog.String("app_name", stopReq.AppName))
+
+	err = p.runtime.StopApp(ctx, stopReq.AppName)
+	if err != nil {
+		return fmt.Errorf("failed to stop app '%s': %w", stopReq.AppName, err)
+	}
+
+	logger.Info("App stopped successfully", slog.String("app_name", stopReq.AppName))
 
 	return nil
 }
