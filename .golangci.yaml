@@ -29,6 +29,7 @@ linters:
     - interfacebloat
     - dupl
     - err113
+    - noctx
 
 linters-settings:
   gocritic:
