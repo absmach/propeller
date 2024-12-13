@@ -8,8 +8,6 @@ import (
 
 	"github.com/absmach/propeller/proxy"
 	"github.com/absmach/propeller/proxy/config"
-	"github.com/caarlos0/env/v11"
-	"github.com/joho/godotenv"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -19,36 +17,41 @@ const (
 	httpPrefix = "HTTP_"
 )
 
+const (
+	BrokerURL       = "localhost:1883"
+	PropletID       = "72fd490b-f91f-47dc-aa0b-a65931719ee1"
+	ChannelID       = "cb6cb9ae-ddcf-41ab-8f32-f3e93b3a3be2"
+	PropletPassword = "3963a940-332e-4a18-aa57-bab4d4124ab0"
+
+	RegistryURL      = "docker.io"
+	Authenticate     = true
+	RegistryUsername = "mrstevenyaga"
+	RegistryPassword = "Nya@851612"
+)
+
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	err := godotenv.Load("cmd/proxy/.env")
-	if err != nil {
-		panic(err)
+	mqttCfg := config.MQTTProxyConfig{
+		BrokerURL: BrokerURL,
+		Password:  PropletPassword,
+		PropletID: PropletID,
+		ChannelID: ChannelID,
 	}
 
-	mqttCfg, err := config.LoadMQTTConfig(env.Options{Prefix: mqttPrefix})
-	if err != nil {
-		logger.Error("failed to load MQTT configuration", slog.Any("error", err))
-
-		return
+	httpCfg := config.HTTPProxyConfig{
+		RegistryURL:  RegistryURL,
+		Authenticate: Authenticate,
+		Username:     RegistryUsername,
+		Password:     RegistryPassword,
 	}
 
-	logger.Info("successfully loaded MQTT config")
+	logger.Info("successfully initialized MQTT and HTTP config")
 
-	httpCfg, err := config.LoadHTTPConfig(env.Options{Prefix: httpPrefix})
-	if err != nil {
-		logger.Error("failed to load HTTP configuration", slog.Any("error", err))
-
-		return
-	}
-
-	logger.Info("successfully loaded HTTP config")
-
-	service, err := proxy.NewService(ctx, mqttCfg, httpCfg, logger)
+	service, err := proxy.NewService(ctx, &mqttCfg, &httpCfg, logger)
 	if err != nil {
 		logger.Error("failed to create proxy service", "error", err)
 
@@ -63,8 +66,6 @@ func main() {
 }
 
 func start(ctx context.Context, g *errgroup.Group, s *proxy.ProxyService) error {
-	slog.Info("connecting...")
-
 	if err := s.MQTTClient().Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/caarlos0/env/v11"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
@@ -28,15 +27,6 @@ type HTTPProxyConfig struct {
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
 	Username     string `env:"USERNAME"     envDefault:""`
 	Password     string `env:"PASSWORD"     envDefault:""`
-}
-
-func LoadHTTPConfig(opts env.Options) (*HTTPProxyConfig, error) {
-	config := HTTPProxyConfig{}
-	if err := env.ParseWithOptions(&config, opts); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
 }
 
 func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {

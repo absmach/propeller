@@ -16,7 +16,7 @@ const (
 	reconnTimeout  = 1
 	disconnTimeout = 250
 	pubTopic       = "channels/%s/messages/registry/server"
-	subTopic       = "channels/%s/message/registry/proplet"
+	subTopic       = "channels/%s/messages/registry/proplet"
 )
 
 type RegistryClient struct {
@@ -93,6 +93,9 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 			log.Println("Channel full, dropping container request")
 		}
 	}
+
+	x := fmt.Sprintf(subTopic, c.config.ChannelID)
+	log.Println(x)
 
 	token := c.client.Subscribe(fmt.Sprintf(subTopic, c.config.ChannelID), 1, handler)
 	if err := token.Error(); err != nil {
