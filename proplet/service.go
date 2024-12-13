@@ -12,11 +12,8 @@ import (
 	"sync"
 	"time"
 
-	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	propletapi "github.com/absmach/propeller/proplet/api"
+	"github.com/absmach/propeller/task"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/tetratelabs/wazero"
-	wazeroapi "github.com/tetratelabs/wazero/api"
 )
 
 const (
@@ -26,13 +23,13 @@ const (
 
 type PropletService struct {
 	config        Config
-	mqttClient    mqtt.Client
-	runtime       *WazeroRuntime
-	wasmBinary    []byte
+	mqttClient    Client
 	chunks        map[string][][]byte
 	chunkMetadata map[string]*ChunkPayload
 	chunksMutex   sync.Mutex
+	runtime       Runtime
 }
+
 type ChunkPayload struct {
 	AppName     string `json:"app_name"`
 	ChunkIdx    int    `json:"chunk_idx"`
@@ -40,98 +37,18 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-type WazeroRuntime struct {
-	runtime wazero.Runtime
-	modules map[string]wazeroapi.Module
-	mutex   sync.Mutex
-}
-
-func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
-	return &WazeroRuntime{
-		runtime: wazero.NewRuntime(ctx),
-		modules: make(map[string]wazeroapi.Module),
-	}
-}
-
-func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (wazeroapi.Function, error) {
-	if appName == "" {
-		return nil, fmt.Errorf("start app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
-	}
-	if len(wasmBinary) == 0 {
-		return nil, fmt.Errorf("start app: Wasm binary is empty: %w", pkgerrors.ErrInvalidValue)
-	}
-	if functionName == "" {
-		return nil, fmt.Errorf("start app: functionName is required but missing: %w", pkgerrors.ErrMissingValue)
-	}
-
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
-	if _, exists := w.modules[appName]; exists {
-		return nil, fmt.Errorf("start app: app '%s' is already running: %w", appName, pkgerrors.ErrAppAlreadyRunning)
-	}
-
-	module, err := w.runtime.Instantiate(ctx, wasmBinary)
-	if err != nil {
-		return nil, fmt.Errorf("start app: failed to instantiate Wasm module for app '%s': %w", appName, pkgerrors.ErrModuleInstantiation)
-	}
-
-	function := module.ExportedFunction(functionName)
-	if function == nil {
-		_ = module.Close(ctx)
-
-		return nil, fmt.Errorf("start app: function '%s' not found in Wasm module for app '%s': %w", functionName, appName, pkgerrors.ErrFunctionNotFound)
-	}
-
-	w.modules[appName] = module
-
-	return function, nil
-}
-
-func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
-	if appName == "" {
-		return fmt.Errorf("stop app: appName is required but missing: %w", pkgerrors.ErrMissingValue)
-	}
-
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
-	module, exists := w.modules[appName]
-	if !exists {
-		return fmt.Errorf("stop app: app '%s' is not running: %w", appName, pkgerrors.ErrAppNotRunning)
-	}
-
-	if err := module.Close(ctx); err != nil {
-		return fmt.Errorf("stop app: failed to stop app '%s': %w", appName, pkgerrors.ErrModuleStopFailed)
-	}
-
-	delete(w.modules, appName)
-
-	return nil
-}
-
-func NewService(ctx context.Context, cfg Config, wasmBinary []byte, logger *slog.Logger) (*PropletService, error) {
-	mqttClient, err := NewMQTTClient(cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
-	}
-
-	runtime := NewWazeroRuntime(ctx)
-
+func NewService(cfg Config, mqttClient Client, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
 	return &PropletService{
 		config:        cfg,
 		mqttClient:    mqttClient,
-		runtime:       runtime,
-		wasmBinary:    wasmBinary,
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
+		runtime:       runtime,
 	}, nil
 }
 
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	if err := SubscribeToManagerTopics(
-		p.mqttClient,
-		p.config,
+	if err := p.mqttClient.SubscribeToManagerTopics(
 		func(client mqtt.Client, msg mqtt.Message) {
 			p.handleStartCommand(ctx, client, msg, logger)
 		},
@@ -141,18 +58,14 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		func(client mqtt.Client, msg mqtt.Message) {
 			p.registryUpdate(ctx, client, msg, logger)
 		},
-		logger,
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
 	}
 
-	if err := SubscribeToRegistryTopic(
-		p.mqttClient,
-		p.config.ChannelID,
+	if err := p.mqttClient.SubscribeToRegistryTopic(
 		func(client mqtt.Client, msg mqtt.Message) {
 			p.handleChunk(ctx, client, msg)
 		},
-		logger,
 	); err != nil {
 		return fmt.Errorf("failed to subscribe to Registry topics: %w", err)
 	}
@@ -164,54 +77,52 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req propletapi.StartRequest
-	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
+	var payload task.Task
+	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
+		logger.Error("Invalid start command payload", slog.Any("error", err))
+
+		return
+	}
+	req := startRequest{
+		ID:           payload.ID,
+		FunctionName: payload.Name,
+		WasmFile:     payload.File,
+		Params:       payload.Inputs,
+	}
+	if err := req.Validate(); err != nil {
 		logger.Error("Invalid start command payload", slog.Any("error", err))
 
 		return
 	}
 
-	logger.Info("Received start command", slog.String("app_name", req.AppName))
+	logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
-	if p.wasmBinary != nil {
-		logger.Info("Using preloaded WASM binary", slog.String("app_name", req.AppName))
-		function, err := p.runtime.StartApp(ctx, req.AppName, p.wasmBinary, "main")
-		if err != nil {
-			logger.Error("Failed to start app", slog.String("app_name", req.AppName), slog.Any("error", err))
-
-			return
-		}
-
-		_, err = function.Call(ctx)
-		if err != nil {
-			logger.Error("Error executing app", slog.String("app_name", req.AppName), slog.Any("error", err))
-		} else {
-			logger.Info("App started successfully", slog.String("app_name", req.AppName))
-		}
+	if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
+		logger.Error("Failed to start app", slog.String("app_name", req.FunctionName), slog.Any("error", err))
 
 		return
 	}
 
 	if p.config.RegistryURL != "" {
-		err := PublishFetchRequest(p.mqttClient, p.config.ChannelID, req.AppName, logger)
+		err := p.mqttClient.PublishFetchRequest(req.FunctionName)
 		if err != nil {
-			logger.Error("Failed to publish fetch request", slog.String("app_name", req.AppName), slog.Any("error", err))
+			logger.Error("Failed to publish fetch request", slog.String("app_name", req.FunctionName), slog.Any("error", err))
 
 			return
 		}
 
 		go func() {
-			logger.Info("Waiting for chunks", slog.String("app_name", req.AppName))
+			logger.Info("Waiting for chunks", slog.String("app_name", req.FunctionName))
 
 			for {
 				p.chunksMutex.Lock()
-				metadata, exists := p.chunkMetadata[req.AppName]
-				receivedChunks := len(p.chunks[req.AppName])
+				metadata, exists := p.chunkMetadata[req.FunctionName]
+				receivedChunks := len(p.chunks[req.FunctionName])
 				p.chunksMutex.Unlock()
 
 				if exists && receivedChunks == metadata.TotalChunks {
-					logger.Info("All chunks received, deploying app", slog.String("app_name", req.AppName))
-					go p.deployAndRunApp(ctx, req.AppName)
+					logger.Info("All chunks received, deploying app", slog.String("app_name", req.FunctionName))
+					go p.deployAndRunApp(ctx, req.FunctionName)
 
 					break
 				}
@@ -219,29 +130,29 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, 
 				time.Sleep(pollingInterval)
 			}
 		}()
-	} else {
-		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", req.AppName))
 	}
 }
 
 func (p *PropletService) handleStopCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req propletapi.StopRequest
+	var req stopRequest
 	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
 		logger.Error("Invalid stop command payload", slog.Any("error", err))
 
 		return
 	}
-
-	logger.Info("Received stop command", slog.String("app_name", req.AppName))
-
-	err := p.runtime.StopApp(ctx, req.AppName)
-	if err != nil {
-		logger.Error("Failed to stop app", slog.String("app_name", req.AppName), slog.Any("error", err))
+	if err := req.Validate(); err != nil {
+		logger.Error("Invalid stop command payload", slog.Any("error", err))
 
 		return
 	}
 
-	logger.Info("App stopped successfully", slog.String("app_name", req.AppName))
+	if err := p.runtime.StopApp(ctx, req.ID); err != nil {
+		logger.Error("Failed to stop app", slog.Any("error", err))
+
+		return
+	}
+
+	logger.Info("App stopped successfully")
 }
 
 func (p *PropletService) handleChunk(ctx context.Context, _ mqtt.Client, msg mqtt.Message) {
@@ -283,21 +194,8 @@ func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
 	delete(p.chunks, appName)
 	p.chunksMutex.Unlock()
 
-	wasmBinary := assembleChunks(chunks)
-
-	function, err := p.runtime.StartApp(ctx, appName, wasmBinary, "main")
-	if err != nil {
-		log.Printf("Failed to start app '%s': %v\n", appName, err)
-
-		return
-	}
-
-	_, err = function.Call(ctx)
-	if err != nil {
-		log.Printf("Failed to execute app '%s': %v\n", appName, err)
-
-		return
-	}
+	_ = ctx
+	_ = assembleChunks(chunks)
 
 	log.Printf("App '%s' started successfully\n", appName)
 }
@@ -363,7 +261,7 @@ func (p *PropletService) registryUpdate(ctx context.Context, client mqtt.Client,
 
 	ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
 	if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
-		client.Publish(ackTopic, 0, false, fmt.Sprintf(RegistryFailurePayload, err))
+		client.Publish(ackTopic, 0, false, fmt.Sprintf(RegistryFailurePayload, err.Error()))
 		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
 	} else {
 		client.Publish(ackTopic, 0, false, RegistrySuccessPayload)

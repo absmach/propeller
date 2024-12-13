@@ -40,10 +40,10 @@ var managerCmd = []cobra.Command{
 				MQTTTimeout: mqttTimeout,
 			}
 			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
 			if err := manager.StartManager(ctx, cancel, cfg); err != nil {
 				slog.Error("failed to start manager", slog.String("error", err.Error()))
 			}
-			cancel()
 		},
 	},
 }

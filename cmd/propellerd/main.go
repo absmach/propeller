@@ -25,9 +25,11 @@ func main() {
 
 	managerCmd := propellerd.NewManagerCmd()
 	tasksCmd := propellerd.NewTasksCmd()
+	propletCmd := propellerd.NewPropletCmd()
 
 	rootCmd.AddCommand(managerCmd)
 	rootCmd.AddCommand(tasksCmd)
+	rootCmd.AddCommand(propletCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

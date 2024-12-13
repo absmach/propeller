@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +17,11 @@ import (
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+)
+
+const (
+	maxFileSize = 1024 * 1024 * 100
+	fileKey     = "file"
 )
 
 func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) http.Handler {
@@ -104,13 +110,25 @@ func decodeEntityReq(key string) kithttp.DecodeRequestFunc {
 }
 
 func decodeTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
-	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
-		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
-	}
 	var req taskReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, errors.Join(err, apiutil.ErrValidation)
+	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+		return nil, err
 	}
+	file, header, err := r.FormFile(fileKey)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(header.Filename, ".wasm") {
+		return nil, errors.Join(apiutil.ErrValidation, errors.New("invalid file extension"))
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	req.File = data
+	req.Name = header.Filename
 
 	return req, nil
 }

@@ -2,104 +2,102 @@ package proplet
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"log/slog"
 	"sync"
 
-	"github.com/absmach/propeller/task"
 	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-var _ Service = (*proplet)(nil)
+var resultsTopic = "channels/%s/messages/control/proplet/results"
 
-type proplet struct {
-	mu        sync.Mutex
-	Name      string
-	DB        map[string]task.Task
-	TaskCount int
-	runtimes  map[string]wazero.Runtime
-	functions map[string]api.Function
+type Runtime interface {
+	StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error
+	StopApp(ctx context.Context, id string) error
 }
 
-func NewWasmProplet(name string) *proplet {
-	return &proplet{
-		Name:      name,
-		DB:        make(map[string]task.Task),
-		TaskCount: 0,
-		runtimes:  make(map[string]wazero.Runtime),
-		functions: make(map[string]api.Function),
+type wazeroRuntime struct {
+	mutex      sync.Mutex
+	runtimes   map[string]wazero.Runtime
+	results    map[string][]uint64
+	mqttClient Client
+	channelID  string
+	logger     *slog.Logger
+}
+
+func NewWazeroRuntime(logger *slog.Logger, mqttClient Client, channelID string) Runtime {
+	return &wazeroRuntime{
+		runtimes:   make(map[string]wazero.Runtime),
+		results:    make(map[string][]uint64),
+		mqttClient: mqttClient,
+		channelID:  channelID,
+		logger:     logger,
 	}
 }
 
-func (w *proplet) StartTask(ctx context.Context, t task.Task) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
+func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error {
 	r := wazero.NewRuntime(ctx)
+
+	w.mutex.Lock()
+	w.runtimes[id] = r
+	w.mutex.Unlock()
+
 	// Instantiate WASI, which implements host functions needed for TinyGo to
 	// implement `panic`.
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
-	module, err := r.Instantiate(ctx, t.Function.File)
+	module, err := r.Instantiate(ctx, wasmBinary)
 	if err != nil {
-		return err
+		return errors.Join(errors.New("failed to instantiate Wasm module"), err)
 	}
 
-	function := module.ExportedFunction(t.Function.Name)
+	function := module.ExportedFunction(functionName)
 	if function == nil {
-		return fmt.Errorf("function %q not found", t.Function.Name)
+		return errors.New("failed to find exported function")
 	}
 
-	w.TaskCount++
-	w.runtimes[t.ID] = r
-	w.functions[t.ID] = function
-	w.DB[t.ID] = t
+	go func() {
+		results, err := function.Call(ctx, args...)
+		if err != nil {
+			w.logger.Error("failed to call function", slog.String("id", id), slog.String("function", functionName), slog.String("error", err.Error()))
+
+			return
+		}
+		w.mutex.Lock()
+		w.results[id] = results
+		w.mutex.Unlock()
+
+		if err := w.StopApp(ctx, id); err != nil {
+			w.logger.Error("failed to stop app", slog.String("id", id), slog.String("error", err.Error()))
+		}
+
+		if err := w.mqttClient.PublishResults(id, results); err != nil {
+			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
+
+			return
+		}
+
+		w.logger.Info("Finished running app", slog.String("id", id))
+	}()
 
 	return nil
 }
 
-func (w *proplet) RunTask(ctx context.Context, taskID string) ([]uint64, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (w *wazeroRuntime) StopApp(ctx context.Context, id string) error {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
 
-	t, ok := w.DB[taskID]
-	if !ok {
-		return nil, fmt.Errorf("task %q not found", taskID)
+	r, exists := w.runtimes[id]
+	if !exists {
+		return errors.New("there is no runtime for this id")
 	}
 
-	function := w.functions[t.ID]
-
-	result, err := function.Call(ctx, t.Function.Inputs...)
-	if err != nil {
-		return nil, err
-	}
-
-	r := w.runtimes[t.ID]
 	if err := r.Close(ctx); err != nil {
-		return nil, err
+		return err
 	}
 
-	return result, nil
-}
-
-func (w *proplet) StopTask(ctx context.Context, taskID string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	r := w.runtimes[taskID]
-
-	return r.Close(ctx)
-}
-
-func (w *proplet) RemoveTask(_ context.Context, taskID string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	delete(w.DB, taskID)
-	delete(w.runtimes, taskID)
-	delete(w.functions, taskID)
-	w.TaskCount--
+	delete(w.runtimes, id)
 
 	return nil
 }

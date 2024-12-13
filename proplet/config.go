@@ -1,69 +1,44 @@
 package proplet
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
+	"time"
 )
 
 type Config struct {
-	BrokerURL     string `json:"broker_url"`
-	Password      string `json:"password"`
-	PropletID     string `json:"proplet_id"`
-	ChannelID     string `json:"channel_id"`
-	RegistryURL   string `json:"registry_url"`
-	RegistryToken string `json:"registry_token"`
+	LogLevel           string        `json:"log_level"`
+	ID                 string        `json:"id"`
+	MQTTAddress        string        `json:"mqtt_address"`
+	MQTTTimeout        time.Duration `json:"mqtt_timeout"`
+	MQTTQoS            byte          `json:"mqtt_qos"`
+	LivelinessInterval time.Duration `json:"liveliness_interval"`
+	RegistryURL        string        `json:"registry_url,omitempty"`
+	RegistryToken      string        `json:"registry_token,omitempty"`
+	RegistryTimeout    time.Duration `json:"registry_timeout,omitempty"`
+	ChannelID          string        `json:"channel_id"`
+	ThingID            string        `json:"thing_id"`
+	ThingKey           string        `json:"thing_key"`
 }
 
-func LoadConfig(filepath string, hasWASMFile bool) (Config, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return Config{}, fmt.Errorf("unable to open configuration file '%s': %w", filepath, err)
+func (c Config) Validate() error {
+	if c.MQTTAddress == "" {
+		return errors.New("MQTT address is required")
 	}
-	defer file.Close()
-
-	var config Config
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&config); err != nil {
-		return Config{}, fmt.Errorf("failed to parse configuration file '%s': %w", filepath, err)
-	}
-
-	if err := config.Validate(hasWASMFile); err != nil {
-		return Config{}, fmt.Errorf("configuration validation failed: %w", err)
-	}
-
-	return config, nil
-}
-
-func (c Config) Validate(hasWASMFile bool) error {
-	if c.BrokerURL == "" {
-		return errors.New("broker_url is required")
-	}
-	if _, err := url.Parse(c.BrokerURL); err != nil {
-		return fmt.Errorf("broker_url is not a valid URL: %w", err)
-	}
-	if c.Password == "" {
-		return errors.New("password is required")
-	}
-	if c.PropletID == "" {
-		return errors.New("proplet_id is required")
+	if _, err := url.Parse(c.MQTTAddress); err != nil {
+		return errors.Join(errors.New("MQTT address is not a valid URL"), err)
 	}
 	if c.ChannelID == "" {
-		return errors.New("channel_id is required")
+		return errors.New("magistrala channel id is required")
 	}
-	if hasWASMFile {
-		return nil
+	if c.ThingID == "" {
+		return errors.New("magistrala thing id is required")
 	}
-	if c.RegistryURL == "" {
-		return errors.New("registry_url is required when not using a WASM file")
+	if c.ThingKey == "" {
+		return errors.New("magistrala thing key is required")
 	}
-	if _, err := url.Parse(c.RegistryURL); err != nil {
-		return fmt.Errorf("registry_url is not a valid URL: %w", err)
-	}
-	if c.RegistryToken == "" {
-		return errors.New("registry_token is required when not using a WASM file")
+	if _, err := url.Parse(c.RegistryURL); err != nil && c.RegistryURL != "" {
+		return errors.Join(errors.New("registry URL is not a valid URL"), err)
 	}
 
 	return nil

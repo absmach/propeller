@@ -31,17 +31,13 @@ func (s State) String() string {
 	}
 }
 
-type Function struct {
-	File   []byte
-	Name   string
-	Inputs []uint64
-}
-
 type Task struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	State      State     `json:"state"`
-	Function   Function  `json:"function"`
+	File       []byte    `json:"file,omitempty"`
+	Inputs     []uint64  `json:"inputs,omitempty"`
+	Results    []uint64  `json:"results,omitempty"`
 	StartTime  time.Time `json:"start_time"`
 	FinishTime time.Time `json:"finish_time"`
 	CreatedAt  time.Time `json:"created_at"`

@@ -5,6 +5,7 @@ BUILD_DIR = build
 TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
+EXAMPLES = add hello-world
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -35,6 +36,9 @@ start-magistrala:
 
 stop-magistrala:
 	docker compose -f docker/compose.yaml down
+
+$(EXAMPLES):
+	GOOS=js GOARCH=wasm tinygo build -o build/$@.wasm -target wasi example/$@/$@.go
 
 help:
 	@echo "Usage: make <target>"
