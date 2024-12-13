@@ -23,12 +23,14 @@
 3. **Deploy Anywhere**: Use Propeller to orchestrate and manage workload deployment across the cloud, edge, and IoT devices.
 4. **Monitor & Scale**: Leverage real-time monitoring and dynamic scaling to optimize your system's performance.
 
+![Propeller Orchestration Diagram](docs/architecture.svg)
+
 ---
 
 ## 📖 Documentation
 
 For setup instructions, API references, and usage examples, see the documentation:  
-🔗 [Documentation Link](#)
+🔗 [Documentation Link](http://docs.propeller.abstractmachines.fr/)
 
 ---
 
