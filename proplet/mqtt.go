@@ -39,6 +39,13 @@ type MQTTService struct {
 }
 
 func NewMQTTService(ctx context.Context, config Config, logger *slog.Logger) (*MQTTService, error) {
+	lwtTopic := fmt.Sprintf(LWTTopic, config.ChannelID)
+	lwtPayload := map[string]string{
+		"status":     "offline",
+		"proplet_id": config.PropletID,
+		"chan_id":    config.ChannelID,
+	}
+
 	pubsub, err := mqtt.NewPubSub(
 		config.BrokerURL,
 		qos,
@@ -46,6 +53,8 @@ func NewMQTTService(ctx context.Context, config Config, logger *slog.Logger) (*M
 		config.PropletID,
 		config.Password,
 		mqttTimeout,
+		lwtTopic,
+		lwtPayload,
 		logger,
 	)
 	if err != nil {
@@ -56,18 +65,6 @@ func NewMQTTService(ctx context.Context, config Config, logger *slog.Logger) (*M
 		pubsub: pubsub,
 		config: config,
 		logger: logger,
-	}
-
-	lwtTopic := fmt.Sprintf(LWTTopic, config.ChannelID)
-	lwtPayload := map[string]string{
-		"status":     "offline",
-		"proplet_id": config.PropletID,
-		"chan_id":    config.ChannelID,
-	}
-	if err := pubsub.Publish(ctx, lwtTopic, lwtPayload); err != nil {
-		logger.Error("Failed to set LWT message", slog.Any("error", err))
-
-		return nil, err
 	}
 
 	if err := service.PublishDiscoveryMessage(ctx); err != nil {
