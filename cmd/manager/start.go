@@ -70,7 +70,7 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQOS, svcName, cfg.ThingID, cfg.ThingKey, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQOS, svcName, cfg.ThingID, cfg.ThingKey, cfg.MQTTTimeout, "", nil, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize mqtt pubsub: %s", err.Error())
 	}

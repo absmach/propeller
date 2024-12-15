@@ -1,136 +1,155 @@
 package proplet
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
 
-	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/absmach/propeller/pkg/mqtt"
 )
 
-const livelinessInterval = 10 * time.Second
+const (
+	livelinessInterval = 10 * time.Second
+	mqttTimeout        = 30 * time.Second
+	qos                = 0
+)
 
 var (
 	RegistryFailurePayload      = `{"status":"failure","error":"%v"}`
 	RegistrySuccessPayload      = `{"status":"success"}`
-	RegistryAckTopicTemplate    = "channels/%s/messages/control/manager/registry"
-	lwtPayloadTemplate          = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
-	discoveryPayloadTemplate    = `{"proplet_id":"%s","chan_id":"%s"}`
-	alivePayloadTemplate        = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
-	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
-	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
-	startTopicTemplate          = "channels/%s/messages/control/manager/start"
-	stopTopicTemplate           = "channels/%s/messages/control/manager/stop"
-	registryUpdateTopicTemplate = "channels/%s/messages/control/manager/updateRegistry"
-	registryResponseTopic       = "channels/%s/messages/registry/server"
-	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
+	RegistryUpdateRequestTopic  = "channels/%s/messages/control/manager/updateRegistry"
+	RegistryUpdateResponseTopic = "channels/%s/messages/control/proplet/updateRegistry"
+	AliveTopic                  = "channels/%s/messages/control/proplet/alive"
+	AlivePayload                = `{"status":"alive","proplet_id":"%s","chan_id":"%s"}`
+	DiscoveryTopic              = "channels/%s/messages/control/proplet/create"
+	DiscoveryPayload            = `{"proplet_id":"%s","chan_id":"%s"}`
+	LWTTopic                    = "channels/%s/messages/control/proplet"
+	LWTPayload                  = `{"status":"offline","proplet_id":"%s","chan_id":"%s"}`
+	StartTopic                  = "channels/%s/messages/control/manager/start"
+	StopTopic                   = "channels/%s/messages/control/manager/stop"
+	RegistryResponseTopic       = "channels/%s/messages/registry/server"
+	RegistryRequestTopic        = "channels/%s/messages/registry/proplet"
 )
 
-func NewMQTTClient(config Config, logger *slog.Logger) (mqtt.Client, error) {
-	lwtPayload := fmt.Sprintf(lwtPayloadTemplate, config.PropletID, config.ChannelID)
-	if lwtPayload == "" {
-		return nil, fmt.Errorf("failed to prepare MQTT last will payload: %w", pkgerrors.ErrMQTTWillPayloadFailed)
-	}
-
-	opts := mqtt.NewClientOptions().
-		AddBroker(config.BrokerURL).
-		SetClientID("Proplet-"+config.PropletID).
-		SetUsername(config.PropletID).
-		SetPassword(config.Password).
-		SetCleanSession(true).
-		SetWill(aliveTopicTemplate+config.ChannelID, lwtPayloadTemplate+config.PropletID+config.ChannelID, 0, false)
-
-	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
-		logger.Error("MQTT connection lost", slog.Any("error", err))
-	})
-
-	opts.SetReconnectingHandler(func(client mqtt.Client, options *mqtt.ClientOptions) {
-		logger.Info("MQTT reconnecting")
-	})
-
-	client := mqtt.NewClient(opts)
-	password := client.Connect()
-	if password.Wait() && password.Error() != nil {
-		return nil, fmt.Errorf("failed to connect to MQTT broker '%s': %w", config.BrokerURL, pkgerrors.ErrMQTTConnectionFailed)
-	}
-
-	logger.Info("MQTT client connected successfully", slog.String("broker_url", config.BrokerURL))
-
-	if err := PublishDiscovery(client, config, logger); err != nil {
-		return nil, fmt.Errorf("failed to publish discovery message: %w", err)
-	}
-
-	go startLivelinessUpdates(client, config, logger)
-
-	return client, nil
+type MQTTService struct {
+	pubsub mqtt.PubSub
+	config Config
+	logger *slog.Logger
 }
 
-func PublishDiscovery(client mqtt.Client, config Config, logger *slog.Logger) error {
-	topic := fmt.Sprintf(discoveryTopicTemplate, config.ChannelID)
-	payload := fmt.Sprintf(discoveryPayloadTemplate, config.PropletID, config.ChannelID)
-	password := client.Publish(topic, 0, false, payload)
-	password.Wait()
-	if password.Error() != nil {
-		return fmt.Errorf("failed to publish discovery message: %w", password.Error())
+func NewMQTTService(ctx context.Context, config Config, logger *slog.Logger) (*MQTTService, error) {
+	lwtTopic := fmt.Sprintf(LWTTopic, config.ChannelID)
+	lwtPayload := map[string]string{
+		"status":     "offline",
+		"proplet_id": config.PropletID,
+		"chan_id":    config.ChannelID,
 	}
 
-	return nil
+	pubsub, err := mqtt.NewPubSub(
+		config.BrokerURL,
+		qos,
+		"Proplet-"+config.PropletID,
+		config.PropletID,
+		config.Password,
+		mqttTimeout,
+		lwtTopic,
+		lwtPayload,
+		logger,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize MQTT PubSub: %w", err)
+	}
+
+	service := &MQTTService{
+		pubsub: pubsub,
+		config: config,
+		logger: logger,
+	}
+
+	if err := service.PublishDiscoveryMessage(ctx); err != nil {
+		logger.Error("Failed to publish discovery message", slog.Any("error", err))
+
+		return nil, err
+	}
+
+	go service.StartLivelinessUpdates(ctx)
+
+	return service, nil
 }
 
-func startLivelinessUpdates(client mqtt.Client, config Config, logger *slog.Logger) {
+func (m *MQTTService) StartLivelinessUpdates(ctx context.Context) {
 	ticker := time.NewTicker(livelinessInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		password := client.Publish(fmt.Sprintf(aliveTopicTemplate, config.ChannelID), 0, false, fmt.Sprintf(alivePayloadTemplate, config.PropletID, config.ChannelID))
-		password.Wait()
-		if password.Error() != nil {
-			logger.Error("Failed to publish liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)), slog.Any("error", password.Error()))
-		} else {
-			logger.Info("Published liveliness message", slog.String("topic", fmt.Sprintf(aliveTopicTemplate, config.ChannelID)))
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			err := m.pubsub.Publish(ctx, fmt.Sprintf(AliveTopic, m.config.ChannelID), map[string]string{
+				"status":     "alive",
+				"proplet_id": m.config.PropletID,
+				"chan_id":    m.config.ChannelID,
+			})
+			if err != nil {
+				m.logger.Error("Failed to publish liveliness message", slog.Any("error", err))
+			} else {
+				m.logger.Info("Published liveliness message")
+			}
 		}
 	}
 }
 
-func SubscribeToManagerTopics(client mqtt.Client, config Config, startHandler, stopHandler, registryHandler mqtt.MessageHandler, logger *slog.Logger) error {
-	if password := client.Subscribe(fmt.Sprintf(startTopicTemplate, config.ChannelID), 0, startHandler); password.Wait() && password.Error() != nil {
-		return fmt.Errorf("failed to subscribe to start topic: %w", password.Error())
+func (m *MQTTService) PublishDiscoveryMessage(ctx context.Context) error {
+	topic := fmt.Sprintf(DiscoveryTopic, m.config.ChannelID)
+	payload := map[string]string{
+		"proplet_id": m.config.PropletID,
+		"chan_id":    m.config.ChannelID,
 	}
-
-	if password := client.Subscribe(fmt.Sprintf(stopTopicTemplate, config.ChannelID), 0, stopHandler); password.Wait() && password.Error() != nil {
-		return fmt.Errorf("failed to subscribe to stop topic: %w", password.Error())
+	if err := m.pubsub.Publish(ctx, topic, payload); err != nil {
+		return fmt.Errorf("failed to publish discovery message: %w", err)
 	}
-
-	if password := client.Subscribe(fmt.Sprintf(registryUpdateTopicTemplate, config.ChannelID), 0, registryHandler); password.Wait() && password.Error() != nil {
-		return fmt.Errorf("failed to subscribe to registry update topic: %w", password.Error())
-	}
-
-	logger.Info("Subscribed to Manager topics",
-		slog.String("start_topic", fmt.Sprintf(startTopicTemplate, config.ChannelID)),
-		slog.String("stop_topic", fmt.Sprintf(stopTopicTemplate, config.ChannelID)),
-		slog.String("registry_update_topic", fmt.Sprintf(registryUpdateTopicTemplate, config.ChannelID)))
+	m.logger.Info("Discovery message published successfully")
 
 	return nil
 }
 
-func SubscribeToRegistryTopic(client mqtt.Client, channelID string, handler mqtt.MessageHandler, logger *slog.Logger) error {
-	if password := client.Subscribe(fmt.Sprintf(registryResponseTopic, channelID), 0, handler); password.Wait() && password.Error() != nil {
-		return fmt.Errorf("failed to subscribe to registry topic '%s': %w", fmt.Sprintf(registryResponseTopic, channelID), password.Error())
+func (m *MQTTService) SubscribeToManagerTopics(ctx context.Context, startHandler, stopHandler, registryHandler mqtt.Handler) error {
+	handlers := map[string]mqtt.Handler{
+		fmt.Sprintf(StartTopic, m.config.ChannelID):                 startHandler,
+		fmt.Sprintf(StopTopic, m.config.ChannelID):                  stopHandler,
+		fmt.Sprintf(RegistryUpdateRequestTopic, m.config.ChannelID): registryHandler,
+	}
+	for topic, handler := range handlers {
+		if err := m.pubsub.Subscribe(ctx, topic, handler); err != nil {
+			return fmt.Errorf("failed to subscribe to topic %s: %w", topic, err)
+		}
 	}
 
 	return nil
 }
 
-func PublishFetchRequest(client mqtt.Client, channelID, appName string, logger *slog.Logger) error {
-	payload, err := json.Marshal(map[string]string{"app_name": appName})
-	if err != nil {
-		return fmt.Errorf("failed to marshal fetch request payload: %w", err)
-	}
-	if password := client.Publish(fmt.Sprintf(fetchRequestTopicTemplate, channelID), 0, false, payload); password.Wait() && password.Error() != nil {
-		return fmt.Errorf("failed to publish fetch request: %w", password.Error())
+func (m *MQTTService) SubscribeToRegistryTopic(ctx context.Context, handler mqtt.Handler) error {
+	topic := fmt.Sprintf(RegistryResponseTopic, m.config.ChannelID)
+	if err := m.pubsub.Subscribe(ctx, topic, handler); err != nil {
+		return fmt.Errorf("failed to subscribe to registry topic: %w", err)
 	}
 
 	return nil
+}
+
+func (m *MQTTService) PublishFetchRequest(ctx context.Context, appName string) error {
+	topic := fmt.Sprintf(RegistryRequestTopic, m.config.ChannelID)
+	payload := map[string]string{"app_name": appName}
+	if err := m.pubsub.Publish(ctx, topic, payload); err != nil {
+		return fmt.Errorf("failed to publish fetch request: %w", err)
+	}
+	m.logger.Info("Fetch request published successfully")
+
+	return nil
+}
+
+func (m *MQTTService) Close() error {
+	return m.pubsub.Close()
 }
