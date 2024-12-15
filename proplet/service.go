@@ -156,34 +156,20 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 }
 
 func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	data, err := json.Marshal(msg)
+	rpcReq, err := parseRPCRequest(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize message payload: %w", err)
+		return err
 	}
 
-	var rpcReq api.RPCRequest
-	if err := json.Unmarshal(data, &rpcReq); err != nil {
-		return fmt.Errorf("invalid start command payload: %w", err)
-	}
-
-	parsed, err := rpcReq.ParseParams()
+	startReq, err := parseCommandParams[api.StartRequest](rpcReq)
 	if err != nil {
-		return fmt.Errorf("failed to parse start command parameters: %w", err)
-	}
-
-	startReq, ok := parsed.(api.StartRequest)
-	if !ok {
-		return errors.New("unexpected request type for start command")
+		return err
 	}
 
 	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
 
-	if p.wasmBinary == nil && p.wasmFilePath != "" {
-		p.wasmBinary, err = loadWASMFile(p.wasmFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to load WASM file: %w", err)
-		}
-		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
+	if err := p.checkWASMBinary(logger); err != nil {
+		return err
 	}
 
 	if p.wasmBinary != nil {
@@ -225,48 +211,19 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 	}
 
 	logger.Info("Waiting for chunks", slog.String("app_name", startReq.AppName))
-	timeout := time.After(chunkWaitTimeout)
 
-	for {
-		select {
-		case <-timeout:
-			return fmt.Errorf("timed out waiting for chunks for app '%s'", startReq.AppName)
-		default:
-			p.chunksMutex.Lock()
-			metadata, exists := p.chunkMetadata[startReq.AppName]
-			receivedChunks := len(p.chunks[startReq.AppName])
-			p.chunksMutex.Unlock()
-
-			if exists && receivedChunks == metadata.TotalChunks {
-				go p.deployAndRunApp(ctx, startReq.AppName)
-
-				return nil
-			}
-
-			time.Sleep(pollingInterval)
-		}
-	}
+	return nil
 }
 
 func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	data, err := json.Marshal(msg)
+	rpcReq, err := parseRPCRequest(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize message payload: %w", err)
+		return err
 	}
 
-	var rpcReq api.RPCRequest
-	if err := json.Unmarshal(data, &rpcReq); err != nil {
-		return fmt.Errorf("invalid stop command payload: %w", err)
-	}
-
-	parsed, err := rpcReq.ParseParams()
+	stopReq, err := parseCommandParams[api.StopRequest](rpcReq)
 	if err != nil {
-		return fmt.Errorf("failed to parse stop command parameters: %w", err)
-	}
-
-	stopReq, ok := parsed.(api.StopRequest)
-	if !ok {
-		return errors.New("unexpected request type for stop command")
+		return err
 	}
 
 	logger.Info("Received stop command", slog.String("app_name", stopReq.AppName))
@@ -416,6 +373,47 @@ func (p *PropletService) registryUpdate(ctx context.Context, _ string, msg map[s
 
 	if pubErr := p.mqttService.pubsub.Publish(ctx, ackTopic, RegistrySuccessPayload); pubErr != nil {
 		return fmt.Errorf("failed to publish registry update success acknowledgment on topic '%s': %w", ackTopic, pubErr)
+	}
+
+	return nil
+}
+
+func parseRPCRequest(msg map[string]interface{}) (api.RPCRequest, error) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return api.RPCRequest{}, fmt.Errorf("failed to serialize message payload: %w", err)
+	}
+
+	var rpcReq api.RPCRequest
+	if err := json.Unmarshal(data, &rpcReq); err != nil {
+		return api.RPCRequest{}, fmt.Errorf("invalid command payload: %w", err)
+	}
+
+	return rpcReq, nil
+}
+
+func parseCommandParams[T any](rpcReq api.RPCRequest) (T, error) {
+	parsed, err := rpcReq.ParseParams()
+	if err != nil {
+		return *new(T), fmt.Errorf("failed to parse command parameters: %w", err)
+	}
+
+	cmdParams, ok := parsed.(T)
+	if !ok {
+		return *new(T), errors.New("unexpected request type for command")
+	}
+
+	return cmdParams, nil
+}
+
+func (p *PropletService) checkWASMBinary(logger *slog.Logger) error {
+	if p.wasmBinary == nil && p.wasmFilePath != "" {
+		binary, err := loadWASMFile(p.wasmFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to load WASM file: %w", err)
+		}
+		p.wasmBinary = binary
+		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
 	}
 
 	return nil
