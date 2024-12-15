@@ -172,45 +172,43 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 		return err
 	}
 
-	if p.wasmBinary != nil {
-		logger.Info("Using preloaded WASM binary", slog.String("app_name", startReq.AppName))
-		function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, "add")
-		if err != nil {
-			return fmt.Errorf("failed to start app '%s': %w", startReq.AppName, err)
+	if p.wasmBinary == nil {
+		if p.config.RegistryURL == "" {
+			logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", startReq.AppName))
+
+			return nil
 		}
 
-		args := make([]uint64, len(startReq.Params))
-		for i, param := range startReq.Params {
-			arg, err := strconv.ParseUint(param, 10, 64)
-			if err != nil {
-				return fmt.Errorf("invalid argument '%s': %w", param, err)
-			}
-			args[i] = arg
+		if err := p.mqttService.PublishFetchRequest(ctx, startReq.AppName); err != nil {
+			return fmt.Errorf("failed to publish fetch request for app '%s': %w", startReq.AppName, err)
 		}
 
-		result, err := function.Call(ctx, args...)
-		if err != nil {
-			return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
-		}
-
-		logger.Info("WASM function executed successfully",
-			slog.String("app_name", startReq.AppName),
-			slog.Any("result", result))
+		logger.Info("Waiting for chunks", slog.String("app_name", startReq.AppName))
 
 		return nil
 	}
 
-	if p.config.RegistryURL == "" {
-		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", startReq.AppName))
-
-		return nil
+	logger.Info("Using preloaded WASM binary", slog.String("app_name", startReq.AppName))
+	function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, "add")
+	if err != nil {
+		return fmt.Errorf("failed to start app '%s': %w", startReq.AppName, err)
 	}
 
-	if err := p.mqttService.PublishFetchRequest(ctx, startReq.AppName); err != nil {
-		return fmt.Errorf("failed to publish fetch request for app '%s': %w", startReq.AppName, err)
+	args := make([]uint64, len(startReq.Params))
+	for i, param := range startReq.Params {
+		arg, err := strconv.ParseUint(param, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid argument '%s': %w", param, err)
+		}
+		args[i] = arg
 	}
 
-	logger.Info("Waiting for chunks", slog.String("app_name", startReq.AppName))
+	result, err := function.Call(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
+	}
+
+	logger.Info("WASM function executed successfully", slog.String("app_name", startReq.AppName), slog.Any("result", result))
 
 	return nil
 }
