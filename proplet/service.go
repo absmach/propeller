@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net/url"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/absmach/propeller/proplet/api"
@@ -24,16 +22,6 @@ const (
 	chunkWaitTimeout = 10 * time.Minute
 )
 
-type PropletService struct {
-	config        Config
-	mqttService   *MQTTService
-	runtime       *WazeroRuntime
-	wasmFilePath  string
-	wasmBinary    []byte
-	chunks        map[string][][]byte
-	chunkMetadata map[string]*ChunkPayload
-	chunksMutex   sync.Mutex
-}
 type ChunkPayload struct {
 	AppName     string `json:"app_name"`
 	ChunkIdx    int    `json:"chunk_idx"`
@@ -62,33 +50,6 @@ func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
 		runtimes: make(map[string]wazero.Runtime),
 		modules:  make(map[string]wazeroapi.Module),
 	}
-}
-
-func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	if err := p.mqttService.SubscribeToManagerTopics(ctx,
-		func(topic string, msg map[string]interface{}) error {
-			return p.handleStartCommand(ctx, topic, msg, logger)
-		},
-		func(topic string, msg map[string]interface{}) error {
-			return p.handleStopCommand(ctx, topic, msg, logger)
-		},
-		func(topic string, msg map[string]interface{}) error {
-			return p.registryUpdate(ctx, topic, msg, logger)
-		},
-	); err != nil {
-		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
-	}
-
-	if err := p.mqttService.SubscribeToRegistryTopic(ctx, func(topic string, msg map[string]interface{}) error {
-		return p.handleChunk(ctx, topic, msg)
-	}); err != nil {
-		return fmt.Errorf("failed to subscribe to registry topic: %w", err)
-	}
-
-	logger.Info("Proplet service is running.")
-	<-ctx.Done()
-
-	return nil
 }
 
 func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
@@ -250,31 +211,6 @@ func (c *ChunkPayload) Validate() error {
 	if len(c.Data) == 0 {
 		return errors.New("chunk validation: data is empty")
 	}
-
-	return nil
-}
-
-func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, registryToken string) error {
-	if registryURL == "" {
-		return errors.New("registry URL cannot be empty")
-	}
-	if _, err := url.ParseRequestURI(registryURL); err != nil {
-		return fmt.Errorf("invalid registry URL '%s': %w", registryURL, err)
-	}
-
-	p.config.RegistryURL = registryURL
-	p.config.RegistryToken = registryToken
-
-	configData, err := json.MarshalIndent(p.config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize updated config: %w", err)
-	}
-
-	if err := os.WriteFile("proplet/config.json", configData, filePermissions); err != nil {
-		return fmt.Errorf("failed to write updated config to file: %w", err)
-	}
-
-	log.Printf("App Registry updated and persisted: %s\n", registryURL)
 
 	return nil
 }
