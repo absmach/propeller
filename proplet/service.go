@@ -19,7 +19,7 @@ import (
 const (
 	filePermissions = 0o644
 	pollingTick     = 500 * time.Millisecond
-	timeout         = 30 * time.Minute
+	timeout         = 30 * time.Second
 )
 
 type ChunkPayload struct {
