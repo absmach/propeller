@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	filePermissions  = 0o644
-	pollingInterval  = 5 * time.Second
-	chunkWaitTimeout = 10 * time.Minute
+	filePermissions = 0o644
+	pollingTick     = 500 * time.Millisecond
+	timeout         = 30 * time.Minute
 )
 
 type ChunkPayload struct {
@@ -53,12 +53,7 @@ func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
 }
 
 func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	rpcReq, err := parseRPCRequest(msg)
-	if err != nil {
-		return err
-	}
-
-	startReq, err := parseCommandParams[api.StartRequest](rpcReq)
+	startReq, err := parseRPCCommand[api.StartRequest](msg)
 	if err != nil {
 		return err
 	}
@@ -69,7 +64,7 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 		return err
 	}
 
-	if err := p.executeWASMFunction(ctx, startReq, logger); err != nil {
+	if err := p.runWASMApp(ctx, startReq.AppName, "", startReq.Params, logger); err != nil {
 		return err
 	}
 
@@ -77,6 +72,9 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 }
 
 func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Logger, appName string) error {
+	timeout := time.After(timeout)
+	ticker := time.NewTicker(pollingTick)
+
 	if p.wasmBinary != nil {
 		logger.Info("Using preloaded WASM binary", slog.String("app_name", appName))
 
@@ -106,46 +104,78 @@ func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Log
 
 	logger.Info("Waiting for chunks", slog.String("app_name", appName))
 
-	return nil
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context canceled while waiting for chunks for app '%s'", appName)
+		case <-timeout:
+			return fmt.Errorf("timed out waiting for chunks for app '%s'", appName)
+		case <-ticker.C:
+			p.chunksMutex.Lock()
+			assembled := p.wasmBinary != nil
+			p.chunksMutex.Unlock()
+
+			if assembled {
+				logger.Info("WASM binary assembled successfully", slog.String("app_name", appName))
+
+				return nil
+			}
+		}
+	}
 }
 
-func (p *PropletService) executeWASMFunction(ctx context.Context, startReq api.StartRequest, logger *slog.Logger) error {
-	functionName, err := p.runtime.GetWASMFunctionName(ctx, p.wasmBinary)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve function name: %w", err)
-	}
-
-	function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, functionName)
-	if err != nil {
-		return fmt.Errorf("failed to start app '%s': %w", startReq.AppName, err)
-	}
-
-	args := make([]uint64, len(startReq.Params))
-	for i, param := range startReq.Params {
-		arg, err := strconv.ParseUint(param, 10, 64)
+func (p *PropletService) runWASMApp(ctx context.Context, appName, functionName string, params []string, logger *slog.Logger) error {
+	var err error
+	if functionName == "" {
+		logger.Info("Retrieving function name from WASM binary", slog.String("app_name", appName))
+		functionName, err = p.runtime.GetWASMFunctionName(ctx, p.wasmBinary)
 		if err != nil {
-			return fmt.Errorf("invalid argument '%s': %w", param, err)
+			logger.Error("Failed to retrieve function name from WASM binary", slog.String("app_name", appName), slog.Any("error", err))
+
+			return nil
 		}
-		args[i] = arg
+		logger.Info("Retrieved function name successfully", slog.String("app_name", appName), slog.String("function_name", functionName))
+	}
+
+	logger.Info("Running WASM app", slog.String("app_name", appName), slog.String("function_name", functionName))
+
+	function, err := p.runtime.StartApp(ctx, appName, p.wasmBinary, functionName)
+	if err != nil {
+		logger.Error("Failed to start WASM app", slog.String("app_name", appName), slog.String("function_name", functionName), slog.Any("error", err))
+
+		return nil
+	}
+
+	var args []uint64
+	if len(params) > 0 {
+		args = make([]uint64, len(params))
+		for i, param := range params {
+			arg, err := strconv.ParseUint(param, 10, 64)
+			if err != nil {
+				logger.Error("Invalid argument for WASM app", slog.String("app_name", appName), slog.String("arg", param), slog.Any("error", err))
+
+				return nil
+			}
+			args[i] = arg
+		}
 	}
 
 	result, err := function.Call(ctx, args...)
 	if err != nil {
-		return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
+		logger.Error("Failed to execute WASM function", slog.String("app_name", appName), slog.String("function_name", functionName), slog.Any("error", err))
+
+		return nil
 	}
 
-	logger.Info("WASM function executed successfully", slog.String("app_name", startReq.AppName), slog.Any("result", result))
+	logger.Info("WASM app executed successfully", slog.String("app_name", appName), slog.String("function_name", functionName), slog.Any("result", result))
 
 	return nil
 }
 
 func (p *PropletService) handleStopCmd(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
-	rpcReq, err := parseRPCRequest(msg)
-	if err != nil {
-		return err
-	}
-
-	stopReq, err := parseCommandParams[api.StopRequest](rpcReq)
+	stopReq, err := parseRPCCommand[api.StartRequest](msg)
 	if err != nil {
 		return err
 	}
@@ -162,7 +192,7 @@ func (p *PropletService) handleStopCmd(ctx context.Context, _ string, msg map[st
 	return nil
 }
 
-func (p *PropletService) handleAppChunks(ctx context.Context, _ string, msg map[string]interface{}) error {
+func (p *PropletService) handleAppChunks(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
 	var chunk ChunkPayload
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -199,30 +229,14 @@ func (p *PropletService) handleAppChunks(ctx context.Context, _ string, msg map[
 
 		log.Printf("Binary for app '%s' assembled successfully. Ready to deploy.\n", chunk.AppName)
 
-		go p.deployApp(ctx, chunk.AppName)
+		go func() {
+			if err := p.prepareWASMBinary(ctx, logger, chunk.AppName); err != nil {
+				logger.Error("Failed to prepare WASM binary", slog.String("app_name", chunk.AppName), slog.Any("error", err))
+			}
+		}()
 	}
 
 	return nil
-}
-
-func (p *PropletService) deployApp(ctx context.Context, appName string) {
-	log.Printf("Deploying app '%s'\n", appName)
-
-	function, err := p.runtime.StartApp(ctx, appName, p.wasmBinary, "main")
-	if err != nil {
-		log.Printf("Failed to start app '%s': %v\n", appName, err)
-
-		return
-	}
-
-	_, err = function.Call(ctx)
-	if err != nil {
-		log.Printf("Failed to execute app '%s': %v\n", appName, err)
-
-		return
-	}
-
-	log.Printf("App '%s' started successfully\n", appName)
 }
 
 func (c *ChunkPayload) Validate() error {
@@ -270,21 +284,17 @@ func (p *PropletService) registryUpdate(ctx context.Context, _ string, msg map[s
 	return nil
 }
 
-func parseRPCRequest(msg map[string]interface{}) (api.RPCRequest, error) {
+func parseRPCCommand[T any](msg map[string]interface{}) (T, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return api.RPCRequest{}, fmt.Errorf("failed to serialize message payload: %w", err)
+		return *new(T), fmt.Errorf("failed to serialize message payload: %w", err)
 	}
 
 	var rpcReq api.RPCRequest
 	if err := json.Unmarshal(data, &rpcReq); err != nil {
-		return api.RPCRequest{}, fmt.Errorf("invalid command payload: %w", err)
+		return *new(T), fmt.Errorf("invalid command payload: %w", err)
 	}
 
-	return rpcReq, nil
-}
-
-func parseCommandParams[T any](rpcReq api.RPCRequest) (T, error) {
 	parsed, err := rpcReq.ParseParams()
 	if err != nil {
 		return *new(T), fmt.Errorf("failed to parse command parameters: %w", err)

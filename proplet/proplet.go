@@ -76,7 +76,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	if err := p.mqttService.SubscribeToRegistryTopic(ctx, func(topic string, msg map[string]interface{}) error {
-		return p.handleAppChunks(ctx, topic, msg)
+		return p.handleAppChunks(ctx, topic, msg, logger)
 	}); err != nil {
 		return fmt.Errorf("failed to subscribe to registry topic: %w", err)
 	}
