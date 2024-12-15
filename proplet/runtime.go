@@ -2,6 +2,7 @@ package proplet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -12,6 +13,7 @@ import (
 
 type Runtime interface {
 	StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (wazeroapi.Function, error)
+	GetWASMFunctionName(ctx context.Context, wasmBinary []byte) (string, error)
 	StopApp(ctx context.Context, appName string) error
 }
 
@@ -93,4 +95,22 @@ func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 	delete(w.modules, appName)
 
 	return nil
+}
+
+func (w *WazeroRuntime) GetWASMFunctionName(ctx context.Context, wasmBinary []byte) (string, error) {
+	runtime := wazero.NewRuntime(ctx)
+	defer runtime.Close(ctx)
+
+	compiledModule, err := runtime.CompileModule(ctx, wasmBinary)
+	if err != nil {
+		return "", fmt.Errorf("failed to compile WASM binary: %w", err)
+	}
+	defer compiledModule.Close(ctx)
+
+	exportedFunctions := compiledModule.ExportedFunctions()
+	for name := range exportedFunctions {
+		return name, nil
+	}
+
+	return "", errors.New("no exported functions found in the WASM binary")
 }
