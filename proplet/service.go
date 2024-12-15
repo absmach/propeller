@@ -77,23 +77,34 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 }
 
 func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Logger, appName string) error {
-	if err := p.checkWASMBinary(logger); err != nil {
-		if p.config.RegistryURL == "" {
-			logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", appName))
-
-			return nil
-		}
-
-		if err := p.mqttService.PublishFetchRequest(ctx, appName); err != nil {
-			return fmt.Errorf("failed to publish fetch request for app '%s': %w", appName, err)
-		}
-
-		logger.Info("Waiting for chunks", slog.String("app_name", appName))
+	if p.wasmBinary != nil {
+		logger.Info("Using preloaded WASM binary", slog.String("app_name", appName))
 
 		return nil
 	}
 
-	logger.Info("Using preloaded WASM binary", slog.String("app_name", appName))
+	if p.wasmFilePath != "" {
+		wasmBytes, err := os.ReadFile(p.wasmFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to load WASM file from path '%s': %w", p.wasmFilePath, err)
+		}
+		p.wasmBinary = wasmBytes
+		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
+
+		return nil
+	}
+
+	if p.config.RegistryURL == "" {
+		logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", appName))
+
+		return nil
+	}
+
+	if err := p.mqttService.PublishFetchRequest(ctx, appName); err != nil {
+		return fmt.Errorf("failed to publish fetch request for app '%s': %w", appName, err)
+	}
+
+	logger.Info("Waiting for chunks", slog.String("app_name", appName))
 
 	return nil
 }
@@ -285,26 +296,4 @@ func parseCommandParams[T any](rpcReq api.RPCRequest) (T, error) {
 	}
 
 	return cmdParams, nil
-}
-
-func (p *PropletService) checkWASMBinary(logger *slog.Logger) error {
-	if p.wasmBinary == nil && p.wasmFilePath != "" {
-		binary, err := loadWASMFile(p.wasmFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to load WASM file: %w", err)
-		}
-		p.wasmBinary = binary
-		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
-	}
-
-	return nil
-}
-
-func loadWASMFile(path string) ([]byte, error) {
-	wasmBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read WASM file: %w", err)
-	}
-
-	return wasmBytes, nil
 }
