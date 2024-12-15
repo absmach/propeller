@@ -173,7 +173,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 
 	startReq, ok := parsed.(api.StartRequest)
 	if !ok {
-		return fmt.Errorf("unexpected request type for start command")
+		return errors.New("unexpected request type for start command")
 	}
 
 	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
@@ -232,16 +232,16 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 		case <-timeout:
 			return fmt.Errorf("timed out waiting for chunks for app '%s'", startReq.AppName)
 		default:
-			p.chunksMutex.Lock()
-			metadata, exists := p.chunkMetadata[startReq.AppName]
-			receivedChunks := len(p.chunks[startReq.AppName])
-			p.chunksMutex.Unlock()
+		p.chunksMutex.Lock()
+		metadata, exists := p.chunkMetadata[startReq.AppName]
+		receivedChunks := len(p.chunks[startReq.AppName])
+		p.chunksMutex.Unlock()
 
-			if exists && receivedChunks == metadata.TotalChunks {
-				go p.deployAndRunApp(ctx, startReq.AppName)
+		if exists && receivedChunks == metadata.TotalChunks {
+			go p.deployAndRunApp(ctx, startReq.AppName)
 
-				return nil
-			}
+			return nil
+		}
 
 			time.Sleep(pollingInterval)
 		}
@@ -266,7 +266,7 @@ func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg ma
 
 	stopReq, ok := parsed.(api.StopRequest)
 	if !ok {
-		return fmt.Errorf("unexpected request type for stop command")
+		return errors.New("unexpected request type for stop command")
 	}
 
 	logger.Info("Received stop command", slog.String("app_name", stopReq.AppName))
