@@ -49,8 +49,7 @@ func (r RPCRequest) Validate() error {
 }
 
 func (r RPCRequest) ParseParams() (interface{}, error) {
-	switch r.Method {
-	case "start":
+	if r.Method == "start" {
 		if len(r.Params) < 1 {
 			return nil, fmt.Errorf("start method: missing required parameters: %w", pkgerrors.ErrInvalidParams)
 		}
@@ -69,8 +68,9 @@ func (r RPCRequest) ParseParams() (interface{}, error) {
 			AppName: appName,
 			Params:  params,
 		}, nil
+	}
 
-	case "stop":
+	if r.Method == "stop" {
 		if len(r.Params) < 1 {
 			return nil, fmt.Errorf("stop method: missing required parameters: %w", pkgerrors.ErrInvalidParams)
 		}
@@ -83,10 +83,9 @@ func (r RPCRequest) ParseParams() (interface{}, error) {
 		return StopRequest{
 			AppName: appName,
 		}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown method '%s': %w", r.Method, pkgerrors.ErrInvalidMethod)
 	}
+
+	return nil, fmt.Errorf("unknown method '%s': %w", r.Method, pkgerrors.ErrInvalidMethod)
 }
 
 func parseStringSlice(params []interface{}) ([]string, error) {
