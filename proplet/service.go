@@ -65,24 +65,46 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 
 	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
 
+	if err := p.prepareWASMBinary(ctx, logger, startReq.AppName); err != nil {
+		return err
+	}
+
+	if err := p.executeWASMFunction(ctx, startReq, logger); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Logger, appName string) error {
 	if err := p.checkWASMBinary(logger); err != nil {
 		if p.config.RegistryURL == "" {
-			logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", startReq.AppName))
+			logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", appName))
 
 			return nil
 		}
 
-		if err := p.mqttService.PublishFetchRequest(ctx, startReq.AppName); err != nil {
-			return fmt.Errorf("failed to publish fetch request for app '%s': %w", startReq.AppName, err)
+		if err := p.mqttService.PublishFetchRequest(ctx, appName); err != nil {
+			return fmt.Errorf("failed to publish fetch request for app '%s': %w", appName, err)
 		}
 
-		logger.Info("Waiting for chunks", slog.String("app_name", startReq.AppName))
+		logger.Info("Waiting for chunks", slog.String("app_name", appName))
 
 		return nil
 	}
 
-	logger.Info("Using preloaded WASM binary", slog.String("app_name", startReq.AppName))
-	function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, "add")
+	logger.Info("Using preloaded WASM binary", slog.String("app_name", appName))
+
+	return nil
+}
+
+func (p *PropletService) executeWASMFunction(ctx context.Context, startReq api.StartRequest, logger *slog.Logger) error {
+	functionName, err := p.runtime.GetWASMFunctionName(ctx, p.wasmBinary)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve function name: %w", err)
+	}
+
+	function, err := p.runtime.StartApp(ctx, startReq.AppName, p.wasmBinary, functionName)
 	if err != nil {
 		return fmt.Errorf("failed to start app '%s': %w", startReq.AppName, err)
 	}
@@ -101,9 +123,7 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 		return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
 	}
 
-	logger.Info("WASM function executed successfully",
-		slog.String("app_name", startReq.AppName),
-		slog.Any("result", result))
+	logger.Info("WASM function executed successfully", slog.String("app_name", startReq.AppName), slog.Any("result", result))
 
 	return nil
 }
