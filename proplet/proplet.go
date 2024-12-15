@@ -3,6 +3,7 @@ package proplet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -88,7 +89,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 
 func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, registryToken string) error {
 	if registryURL == "" {
-		return fmt.Errorf("registry URL cannot be empty")
+		return errors.New("registry URL cannot be empty")
 	}
 	if _, err := url.ParseRequestURI(registryURL); err != nil {
 		return fmt.Errorf("invalid registry URL '%s': %w", registryURL, err)

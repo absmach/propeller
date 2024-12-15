@@ -131,7 +131,7 @@ func (p *PropletService) handleStopCmd(ctx context.Context, _ string, msg map[st
 	return nil
 }
 
-func (p *PropletService) handleAppChunks(_ context.Context, _ string, msg map[string]interface{}) error {
+func (p *PropletService) handleAppChunks(ctx context.Context, _ string, msg map[string]interface{}) error {
 	var chunk ChunkPayload
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -167,6 +167,8 @@ func (p *PropletService) handleAppChunks(_ context.Context, _ string, msg map[st
 		delete(p.chunks, chunk.AppName)
 
 		log.Printf("Binary for app '%s' assembled successfully. Ready to deploy.\n", chunk.AppName)
+
+		go p.deployApp(ctx, chunk.AppName)
 	}
 
 	return nil
