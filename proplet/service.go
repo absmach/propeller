@@ -52,7 +52,7 @@ func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
 	}
 }
 
-func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
+func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
 	rpcReq, err := parseRPCRequest(msg)
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 	return nil
 }
 
-func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
+func (p *PropletService) handleStopCmd(ctx context.Context, _ string, msg map[string]interface{}, logger *slog.Logger) error {
 	rpcReq, err := parseRPCRequest(msg)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func (p *PropletService) handleStopCommand(ctx context.Context, _ string, msg ma
 	return nil
 }
 
-func (p *PropletService) handleChunk(ctx context.Context, _ string, msg map[string]interface{}) error {
+func (p *PropletService) handleAppChunks(_ context.Context, _ string, msg map[string]interface{}) error {
 	var chunk ChunkPayload
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -159,23 +159,23 @@ func (p *PropletService) handleChunk(ctx context.Context, _ string, msg map[stri
 
 	if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
 		log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
-		go p.deployAndRunApp(ctx, chunk.AppName)
+		var wasmBinary []byte
+		for _, chunk := range p.chunks[chunk.AppName] {
+			wasmBinary = append(wasmBinary, chunk...)
+		}
+		p.wasmBinary = wasmBinary
+		delete(p.chunks, chunk.AppName)
+
+		log.Printf("Binary for app '%s' assembled successfully. Ready to deploy.\n", chunk.AppName)
 	}
 
 	return nil
 }
 
-func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
-	log.Printf("Assembling chunks for app '%s'\n", appName)
+func (p *PropletService) deployApp(ctx context.Context, appName string) {
+	log.Printf("Deploying app '%s'\n", appName)
 
-	p.chunksMutex.Lock()
-	chunks := p.chunks[appName]
-	delete(p.chunks, appName)
-	p.chunksMutex.Unlock()
-
-	wasmBinary := assembleChunks(chunks)
-
-	function, err := p.runtime.StartApp(ctx, appName, wasmBinary, "main")
+	function, err := p.runtime.StartApp(ctx, appName, p.wasmBinary, "main")
 	if err != nil {
 		log.Printf("Failed to start app '%s': %v\n", appName, err)
 
@@ -190,15 +190,6 @@ func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
 	}
 
 	log.Printf("App '%s' started successfully\n", appName)
-}
-
-func assembleChunks(chunks [][]byte) []byte {
-	var wasmBinary []byte
-	for _, chunk := range chunks {
-		wasmBinary = append(wasmBinary, chunk...)
-	}
-
-	return wasmBinary
 }
 
 func (c *ChunkPayload) Validate() error {

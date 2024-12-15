@@ -62,10 +62,10 @@ var _ Service = (*PropletService)(nil)
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	if err := p.mqttService.SubscribeToManagerTopics(ctx,
 		func(topic string, msg map[string]interface{}) error {
-			return p.handleStartCommand(ctx, topic, msg, logger)
+			return p.handleStartCmd(ctx, topic, msg, logger)
 		},
 		func(topic string, msg map[string]interface{}) error {
-			return p.handleStopCommand(ctx, topic, msg, logger)
+			return p.handleStopCmd(ctx, topic, msg, logger)
 		},
 		func(topic string, msg map[string]interface{}) error {
 			return p.registryUpdate(ctx, topic, msg, logger)
@@ -75,7 +75,7 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	if err := p.mqttService.SubscribeToRegistryTopic(ctx, func(topic string, msg map[string]interface{}) error {
-		return p.handleChunk(ctx, topic, msg)
+		return p.handleAppChunks(ctx, topic, msg)
 	}); err != nil {
 		return fmt.Errorf("failed to subscribe to registry topic: %w", err)
 	}
