@@ -43,9 +43,9 @@ type ChunkPayload struct {
 }
 
 type WazeroRuntime struct {
-	runtime wazero.Runtime
-	modules map[string]wazeroapi.Module
-	mutex   sync.Mutex
+	runtimes map[string]wazero.Runtime
+	modules  map[string]wazeroapi.Module
+	mutex    sync.Mutex
 }
 
 func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary []byte, functionName string) (wazeroapi.Function, error) {
@@ -66,19 +66,28 @@ func (w *WazeroRuntime) StartApp(ctx context.Context, appName string, wasmBinary
 		return nil, fmt.Errorf("start app: app '%s' is already running: %w", appName, pkgerrors.ErrAppAlreadyRunning)
 	}
 
-	module, err := w.runtime.Instantiate(ctx, wasmBinary)
+	runtime := wazero.NewRuntime(ctx)
+
+	module, err := runtime.Instantiate(ctx, wasmBinary)
 	if err != nil {
+		runtime.Close(ctx)
+
 		return nil, fmt.Errorf("start app: failed to instantiate Wasm module for app '%s': %w", appName, pkgerrors.ErrModuleInstantiation)
 	}
 
 	function := module.ExportedFunction(functionName)
 	if function == nil {
-		_ = module.Close(ctx)
+		module.Close(ctx)
+		runtime.Close(ctx)
 
 		return nil, fmt.Errorf("start app: function '%s' not found in Wasm module for app '%s': %w", functionName, appName, pkgerrors.ErrFunctionNotFound)
 	}
 
 	w.modules[appName] = module
+	if w.runtimes == nil {
+		w.runtimes = make(map[string]wazero.Runtime)
+	}
+	w.runtimes[appName] = runtime
 
 	return function, nil
 }
@@ -91,15 +100,21 @@ func (w *WazeroRuntime) StopApp(ctx context.Context, appName string) error {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	module, exists := w.modules[appName]
-	if !exists {
+	module, moduleExists := w.modules[appName]
+	runtime, runtimeExists := w.runtimes[appName]
+
+	if !moduleExists || !runtimeExists {
 		return fmt.Errorf("stop app: app '%s' is not running: %w", appName, pkgerrors.ErrAppNotRunning)
 	}
 
 	if err := module.Close(ctx); err != nil {
-		return fmt.Errorf("stop app: failed to stop app '%s': %w", appName, pkgerrors.ErrModuleStopFailed)
+		return fmt.Errorf("stop app: failed to close module for app '%s': %w", appName, err)
+	}
+	if err := runtime.Close(ctx); err != nil {
+		return fmt.Errorf("stop app: failed to close runtime for app '%s': %w", appName, err)
 	}
 
+	delete(w.runtimes, appName)
 	delete(w.modules, appName)
 
 	return nil
@@ -123,8 +138,8 @@ func NewService(ctx context.Context, cfg Config, wasmFilePath string, logger *sl
 
 func NewWazeroRuntime(ctx context.Context) *WazeroRuntime {
 	return &WazeroRuntime{
-		runtime: wazero.NewRuntime(ctx),
-		modules: make(map[string]wazeroapi.Module),
+		runtimes: make(map[string]wazero.Runtime),
+		modules:  make(map[string]wazeroapi.Module),
 	}
 }
 
