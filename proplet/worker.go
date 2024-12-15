@@ -1,20 +1,10 @@
 package proplet
 
 import (
-	"context"
 	"time"
-
-	"github.com/absmach/propeller/task"
 )
 
 const aliveTimeout = 10 * time.Second
-
-type Service interface {
-	StartTask(ctx context.Context, task task.Task) error
-	RunTask(ctx context.Context, taskID string) ([]uint64, error)
-	StopTask(ctx context.Context, taskID string) error
-	RemoveTask(ctx context.Context, taskID string) error
-}
 
 type Proplet struct {
 	ID           string      `json:"id"`
