@@ -169,10 +169,6 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 	logger.Info("Received start command", slog.String("app_name", startReq.AppName))
 
 	if err := p.checkWASMBinary(logger); err != nil {
-		return err
-	}
-
-	if p.wasmBinary == nil {
 		if p.config.RegistryURL == "" {
 			logger.Warn("Registry URL is empty, and no binary provided", slog.String("app_name", startReq.AppName))
 
@@ -208,7 +204,9 @@ func (p *PropletService) handleStartCommand(ctx context.Context, _ string, msg m
 		return fmt.Errorf("error executing app '%s': %w", startReq.AppName, err)
 	}
 
-	logger.Info("WASM function executed successfully", slog.String("app_name", startReq.AppName), slog.Any("result", result))
+	logger.Info("WASM function executed successfully",
+		slog.String("app_name", startReq.AppName),
+		slog.Any("result", result))
 
 	return nil
 }
