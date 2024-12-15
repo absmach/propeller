@@ -72,9 +72,6 @@ func (p *PropletService) handleStartCmd(ctx context.Context, _ string, msg map[s
 }
 
 func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Logger, appName string) error {
-	timeout := time.After(timeout)
-	ticker := time.NewTicker(pollingTick)
-
 	if p.wasmBinary != nil {
 		logger.Info("Using preloaded WASM binary", slog.String("app_name", appName))
 
@@ -82,12 +79,9 @@ func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Log
 	}
 
 	if p.wasmFilePath != "" {
-		wasmBytes, err := os.ReadFile(p.wasmFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to load WASM file from path '%s': %w", p.wasmFilePath, err)
+		if err := p.loadWASMFromFile(logger); err != nil {
+			return fmt.Errorf("failed to load WASM file: %w", err)
 		}
-		p.wasmBinary = wasmBytes
-		logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
 
 		return nil
 	}
@@ -104,6 +98,29 @@ func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Log
 
 	logger.Info("Waiting for chunks", slog.String("app_name", appName))
 
+	if err := p.waitForChunks(ctx, logger, appName); err != nil {
+		return err
+	}
+
+	logger.Info("WASM binary assembled successfully", slog.String("app_name", appName))
+
+	return nil
+}
+
+func (p *PropletService) loadWASMFromFile(logger *slog.Logger) error {
+	wasmBytes, err := os.ReadFile(p.wasmFilePath)
+	if err != nil {
+		return err
+	}
+	p.wasmBinary = wasmBytes
+	logger.Info("WASM file loaded successfully", slog.String("path", p.wasmFilePath))
+
+	return nil
+}
+
+func (p *PropletService) waitForChunks(ctx context.Context, _ *slog.Logger, appName string) error {
+	timeout := time.After(timeout)
+	ticker := time.NewTicker(pollingTick)
 	defer ticker.Stop()
 
 	for {
@@ -118,8 +135,6 @@ func (p *PropletService) prepareWASMBinary(ctx context.Context, logger *slog.Log
 			p.chunksMutex.Unlock()
 
 			if assembled {
-				logger.Info("WASM binary assembled successfully", slog.String("app_name", appName))
-
 				return nil
 			}
 		}
