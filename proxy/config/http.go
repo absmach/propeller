@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/absmach/propeller/proplet"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -20,13 +21,6 @@ const (
 	size      = 1024 * 1024
 	chunkSize = 512000
 )
-
-type ChunkPayload struct {
-	AppName     string `json:"app_name"`
-	ChunkIdx    int    `json:"chunk_idx"`
-	TotalChunks int    `json:"total_chunks"`
-	Data        []byte `json:"data"`
-}
 
 type HTTPProxyConfig struct {
 	RegistryURL  string `env:"REGISTRY_URL" envDefault:"localhost:5000"`
@@ -128,7 +122,7 @@ func findLargestLayer(manifest *ocispec.Manifest) (ocispec.Descriptor, error) {
 	return largestLayer, nil
 }
 
-func createChunks(data []byte, containerName string) []ChunkPayload {
+func createChunks(data []byte, containerName string) []proplet.ChunkPayload {
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
@@ -136,7 +130,7 @@ func createChunks(data []byte, containerName string) []ChunkPayload {
 	// log.Printf("Chunk size: %d bytes (500 KB)", chunkSize)
 	// log.Printf("Total chunks: %d", totalChunks)
 
-	chunks := make([]ChunkPayload, 0, totalChunks)
+	chunks := make([]proplet.ChunkPayload, 0, totalChunks)
 	for i := range make([]struct{}, totalChunks) {
 		start := i * chunkSize
 		end := start + chunkSize
@@ -147,7 +141,7 @@ func createChunks(data []byte, containerName string) []ChunkPayload {
 		chunkData := data[start:end]
 		log.Printf("Chunk %d size: %d bytes", i, len(chunkData))
 
-		chunks = append(chunks, ChunkPayload{
+		chunks = append(chunks, proplet.ChunkPayload{
 			AppName:     containerName,
 			ChunkIdx:    i,
 			TotalChunks: totalChunks,
@@ -158,7 +152,7 @@ func createChunks(data []byte, containerName string) []ChunkPayload {
 	return chunks
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]proplet.ChunkPayload, error) {
 	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
 
 	repo, err := remote.NewRepository(fullPath)
