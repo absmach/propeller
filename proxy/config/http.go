@@ -91,10 +91,6 @@ func (c *HTTPProxyConfig) fetchManifest(ctx context.Context, repo *remote.Reposi
 		return nil, fmt.Errorf("failed to resolve manifest for %s: %w", containerName, err)
 	}
 
-	log.Printf("Container %s:", containerName)
-	log.Printf("- Manifest size: %d bytes", descriptor.Size)
-	log.Printf("- Media type: %s", descriptor.MediaType)
-
 	reader, err := repo.Fetch(ctx, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch manifest for %s: %w", containerName, err)
@@ -136,9 +132,9 @@ func createChunks(data []byte, containerName string) []ChunkPayload {
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
-	log.Printf("Total data size: %d bytes (%.2f MB)", dataSize, float64(dataSize)/size)
-	log.Printf("Chunk size: %d bytes (500 KB)", chunkSize)
-	log.Printf("Total chunks: %d", totalChunks)
+	// log.Printf("Total data size: %d bytes (%.2f MB)", dataSize, float64(dataSize)/size)
+	// log.Printf("Chunk size: %d bytes (500 KB)", chunkSize)
+	// log.Printf("Total chunks: %d", totalChunks)
 
 	chunks := make([]ChunkPayload, 0, totalChunks)
 	for i := range make([]struct{}, totalChunks) {

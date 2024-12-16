@@ -74,6 +74,8 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 }
 
 func (s *ProxyService) StreamMQTT(ctx context.Context) error {
+	containerChunks := make(map[string]int)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,9 +89,20 @@ func (s *ProxyService) StreamMQTT(ctx context.Context) error {
 
 				continue
 			}
+
 			s.logger.Info("published container chunk",
-				"chunk", chunk.ChunkIdx,
+				"chunk_name", chunk.AppName,
+				"chunk_no", chunk.ChunkIdx,
 				"total", chunk.TotalChunks)
+
+			containerChunks[chunk.AppName]++
+
+			if containerChunks[chunk.AppName] == chunk.TotalChunks {
+				s.logger.Info("successfully sent all chunks",
+					"container", chunk.AppName,
+					"total_chunks", chunk.TotalChunks)
+				delete(containerChunks, chunk.AppName)
+			}
 		}
 	}
 }
