@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
 )
 
@@ -41,13 +42,13 @@ func StartProplet(ctx context.Context, cancel context.CancelFunc, cfg proplet.Co
 		logger.Info("successfully connected to registry URL", slog.String("url", cfg.RegistryURL))
 	}
 
-	mqttClient, err := proplet.NewMQTTClient(ctx, cfg, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		return errors.Join(errors.New("failed to initialize mqtt client"), err)
 	}
-	wazero := proplet.NewWazeroRuntime(logger, mqttClient, cfg.ChannelID)
+	wazero := proplet.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 
-	service, err := proplet.NewService(cfg, mqttClient, logger, wazero)
+	service, err := proplet.NewService(ctx, cfg, mqttPubSub, logger, wazero)
 	if err != nil {
 		return errors.Join(errors.New("failed to initialize service"), err)
 	}

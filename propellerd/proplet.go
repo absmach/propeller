@@ -26,7 +26,7 @@ var propletCmd = []cobra.Command{
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg := proplet.Config{
 				LogLevel:           logLevel,
-				ID:                 id,
+				InstanceID:         id,
 				MQTTTimeout:        mqttTimeout,
 				MQTTQoS:            uint8(mqttQOS),
 				LivelinessInterval: livelinessInterval,

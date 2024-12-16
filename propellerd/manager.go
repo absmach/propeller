@@ -36,7 +36,7 @@ var managerCmd = []cobra.Command{
 				ThingID:     thingID,
 				ThingKey:    thingKey,
 				MQTTAddress: mqttAddress,
-				MQTTQOS:     uint8(mqttQOS),
+				MQTTQoS:     uint8(mqttQOS),
 				MQTTTimeout: mqttTimeout,
 			}
 			ctx, cancel := context.WithCancel(cmd.Context())

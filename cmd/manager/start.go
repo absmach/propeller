@@ -27,16 +27,16 @@ const svcName = "manager"
 
 type Config struct {
 	LogLevel    string
-	OTELURL     url.URL
-	TraceRatio  float64
-	Server      server.Config
 	InstanceID  string
+	MQTTAddress string
+	MQTTQoS     uint8
+	MQTTTimeout time.Duration
 	ChannelID   string
 	ThingID     string
 	ThingKey    string
-	MQTTAddress string
-	MQTTQOS     uint8
-	MQTTTimeout time.Duration
+	Server      server.Config
+	OTELURL     url.URL
+	TraceRatio  float64
 }
 
 func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
@@ -70,7 +70,7 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQOS, svcName, cfg.ThingID, cfg.ThingKey, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize mqtt pubsub: %s", err.Error())
 	}

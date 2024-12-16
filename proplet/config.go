@@ -7,18 +7,18 @@ import (
 )
 
 type Config struct {
-	LogLevel           string        `json:"log_level"`
-	ID                 string        `json:"id"`
-	MQTTAddress        string        `json:"mqtt_address"`
-	MQTTTimeout        time.Duration `json:"mqtt_timeout"`
-	MQTTQoS            byte          `json:"mqtt_qos"`
-	LivelinessInterval time.Duration `json:"liveliness_interval"`
-	RegistryURL        string        `json:"registry_url,omitempty"`
-	RegistryToken      string        `json:"registry_token,omitempty"`
-	RegistryTimeout    time.Duration `json:"registry_timeout,omitempty"`
-	ChannelID          string        `json:"channel_id"`
-	ThingID            string        `json:"thing_id"`
-	ThingKey           string        `json:"thing_key"`
+	LogLevel           string
+	InstanceID         string
+	MQTTAddress        string
+	MQTTTimeout        time.Duration
+	MQTTQoS            byte
+	LivelinessInterval time.Duration
+	RegistryURL        string
+	RegistryToken      string
+	RegistryTimeout    time.Duration
+	ChannelID          string
+	ThingID            string
+	ThingKey           string
 }
 
 func (c Config) Validate() error {

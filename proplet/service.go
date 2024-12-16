@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	pkgmqtt "github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/task"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 const (
@@ -23,11 +23,12 @@ const (
 
 type PropletService struct {
 	config        Config
-	mqttClient    Client
+	pubsub        pkgmqtt.PubSub
 	chunks        map[string][][]byte
 	chunkMetadata map[string]*ChunkPayload
 	chunksMutex   sync.Mutex
 	runtime       Runtime
+	logger        *slog.Logger
 }
 
 type ChunkPayload struct {
@@ -37,37 +38,71 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(cfg Config, mqttClient Client, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
-	return &PropletService{
+func NewService(ctx context.Context, cfg Config, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+	topic := fmt.Sprintf(discoveryTopicTemplate, cfg.ChannelID)
+	payload := map[string]interface{}{
+		"proplet_id":    cfg.ThingID,
+		"mg_channel_id": cfg.ChannelID,
+	}
+	if err := pubsub.Publish(ctx, topic, payload); err != nil {
+		return nil, errors.Join(errors.New("failed to publish discovery"), err)
+	}
+
+	p := &PropletService{
 		config:        cfg,
-		mqttClient:    mqttClient,
+		pubsub:        pubsub,
 		chunks:        make(map[string][][]byte),
 		chunkMetadata: make(map[string]*ChunkPayload),
 		runtime:       runtime,
-	}, nil
+		logger:        logger,
+	}
+
+	go p.startLivelinessUpdates(ctx)
+
+	return p, nil
+}
+
+func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
+	ticker := time.NewTicker(p.config.LivelinessInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("stopping liveliness updates")
+
+			return
+		case <-ticker.C:
+			topic := fmt.Sprintf(aliveTopicTemplate, p.config.ChannelID)
+			payload := map[string]interface{}{
+				"status":        "alive",
+				"proplet_id":    p.config.ThingID,
+				"mg_channel_id": p.config.ChannelID,
+			}
+
+			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
+				p.logger.Error("failed to publish liveliness message", slog.Any("error", err))
+			}
+
+			p.logger.Debug("Published liveliness message", slog.String("topic", topic))
+		}
+	}
 }
 
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	if err := p.mqttClient.SubscribeToManagerTopics(
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStartCommand(ctx, client, msg, logger)
-		},
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleStopCommand(ctx, client, msg, logger)
-		},
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.registryUpdate(ctx, client, msg, logger)
-		},
-	); err != nil {
-		return fmt.Errorf("failed to subscribe to Manager topics: %w", err)
+	topic := fmt.Sprintf(startTopicTemplate, p.config.ChannelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleStartCommand(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to start topic: %w", err)
 	}
 
-	if err := p.mqttClient.SubscribeToRegistryTopic(
-		func(client mqtt.Client, msg mqtt.Message) {
-			p.handleChunk(ctx, client, msg)
-		},
-	); err != nil {
-		return fmt.Errorf("failed to subscribe to Registry topics: %w", err)
+	topic = fmt.Sprintf(stopTopicTemplate, p.config.ChannelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleStopCommand(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to stop topic: %w", err)
+	}
+
+	topic = fmt.Sprintf(registryResponseTopic, p.config.ChannelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleChunk(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
 	}
 
 	logger.Info("Proplet service is running.")
@@ -76,113 +111,125 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	return nil
 }
 
-func (p *PropletService) handleStartCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var payload task.Task
-	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
-		logger.Error("Invalid start command payload", slog.Any("error", err))
-
-		return
-	}
-	req := startRequest{
-		ID:           payload.ID,
-		FunctionName: payload.Name,
-		WasmFile:     payload.File,
-		Params:       payload.Inputs,
-	}
-	if err := req.Validate(); err != nil {
-		logger.Error("Invalid start command payload", slog.Any("error", err))
-
-		return
-	}
-
-	logger.Info("Received start command", slog.String("app_name", req.FunctionName))
-
-	if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
-		logger.Error("Failed to start app", slog.String("app_name", req.FunctionName), slog.Any("error", err))
-
-		return
-	}
-
-	if p.config.RegistryURL != "" {
-		err := p.mqttClient.PublishFetchRequest(req.FunctionName)
+func (p *PropletService) handleStartCommand(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		data, err := json.Marshal(msg)
 		if err != nil {
-			logger.Error("Failed to publish fetch request", slog.String("app_name", req.FunctionName), slog.Any("error", err))
-
-			return
+			return err
 		}
 
-		go func() {
-			logger.Info("Waiting for chunks", slog.String("app_name", req.FunctionName))
+		var payload task.Task
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return err
+		}
 
-			for {
-				p.chunksMutex.Lock()
-				metadata, exists := p.chunkMetadata[req.FunctionName]
-				receivedChunks := len(p.chunks[req.FunctionName])
-				p.chunksMutex.Unlock()
+		req := startRequest{
+			ID:           payload.ID,
+			FunctionName: payload.Name,
+			WasmFile:     payload.File,
+			Params:       payload.Inputs,
+		}
+		if err := req.Validate(); err != nil {
+			return err
+		}
 
-				if exists && receivedChunks == metadata.TotalChunks {
-					logger.Info("All chunks received, deploying app", slog.String("app_name", req.FunctionName))
-					go p.deployAndRunApp(ctx, req.FunctionName)
+		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
-					break
-				}
+		if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
+			return err
+		}
 
-				time.Sleep(pollingInterval)
+		if p.config.RegistryURL != "" {
+			payload := map[string]interface{}{
+				"app_name": req.FunctionName,
 			}
-		}()
+			topic := fmt.Sprintf(fetchRequestTopicTemplate, p.config.ChannelID)
+			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
+				return err
+			}
+
+			go func() {
+				p.logger.Info("Waiting for chunks", slog.String("app_name", req.FunctionName))
+
+				for {
+					p.chunksMutex.Lock()
+					metadata, exists := p.chunkMetadata[req.FunctionName]
+					receivedChunks := len(p.chunks[req.FunctionName])
+					p.chunksMutex.Unlock()
+
+					if exists && receivedChunks == metadata.TotalChunks {
+						p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.FunctionName))
+						go p.deployAndRunApp(ctx, req.FunctionName)
+
+						break
+					}
+
+					time.Sleep(pollingInterval)
+				}
+			}()
+		}
+
+		return nil
 	}
 }
 
-func (p *PropletService) handleStopCommand(ctx context.Context, _ mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var req stopRequest
-	if err := json.Unmarshal(msg.Payload(), &req); err != nil {
-		logger.Error("Invalid stop command payload", slog.Any("error", err))
+func (p *PropletService) handleStopCommand(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
 
-		return
+		var req stopRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			return err
+		}
+
+		if err := req.Validate(); err != nil {
+			return err
+		}
+
+		if err := p.runtime.StopApp(ctx, req.ID); err != nil {
+			return err
+		}
+
+		return nil
 	}
-	if err := req.Validate(); err != nil {
-		logger.Error("Invalid stop command payload", slog.Any("error", err))
-
-		return
-	}
-
-	if err := p.runtime.StopApp(ctx, req.ID); err != nil {
-		logger.Error("Failed to stop app", slog.Any("error", err))
-
-		return
-	}
-
-	logger.Info("App stopped successfully")
 }
 
-func (p *PropletService) handleChunk(ctx context.Context, _ mqtt.Client, msg mqtt.Message) {
-	var chunk ChunkPayload
-	if err := json.Unmarshal(msg.Payload(), &chunk); err != nil {
-		log.Printf("Failed to unmarshal chunk payload: %v", err)
+func (p *PropletService) handleChunk(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
 
-		return
-	}
+		var chunk ChunkPayload
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return err
+		}
 
-	if err := chunk.Validate(); err != nil {
-		log.Printf("Invalid chunk payload: %v\n", err)
+		if err := chunk.Validate(); err != nil {
+			return err
+		}
 
-		return
-	}
+		p.chunksMutex.Lock()
+		defer p.chunksMutex.Unlock()
 
-	p.chunksMutex.Lock()
-	defer p.chunksMutex.Unlock()
+		if _, exists := p.chunkMetadata[chunk.AppName]; !exists {
+			p.chunkMetadata[chunk.AppName] = &chunk
+		}
 
-	if _, exists := p.chunkMetadata[chunk.AppName]; !exists {
-		p.chunkMetadata[chunk.AppName] = &chunk
-	}
+		p.chunks[chunk.AppName] = append(p.chunks[chunk.AppName], chunk.Data)
 
-	p.chunks[chunk.AppName] = append(p.chunks[chunk.AppName], chunk.Data)
+		log.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
 
-	log.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
+		if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
+			log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
+			go p.deployAndRunApp(ctx, chunk.AppName)
+		}
 
-	if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
-		log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
-		go p.deployAndRunApp(ctx, chunk.AppName)
+		return nil
 	}
 }
 
@@ -248,23 +295,34 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 	return nil
 }
 
-func (p *PropletService) registryUpdate(ctx context.Context, client mqtt.Client, msg mqtt.Message, logger *slog.Logger) {
-	var payload struct {
-		RegistryURL   string `json:"registry_url"`
-		RegistryToken string `json:"registry_token"`
-	}
-	if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
-		logger.Error("Invalid registry update payload", slog.Any("error", err))
+func (p *PropletService) registryUpdate(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
 
-		return
-	}
+		var payload struct {
+			RegistryURL   string `json:"registry_url"`
+			RegistryToken string `json:"registry_token"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return err
+		}
 
-	ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
-	if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
-		client.Publish(ackTopic, 0, false, fmt.Sprintf(RegistryFailurePayload, err.Error()))
-		logger.Error("Failed to update registry configuration", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL), slog.Any("error", err))
-	} else {
-		client.Publish(ackTopic, 0, false, RegistrySuccessPayload)
-		logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
+		ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
+
+		if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
+			if err := p.pubsub.Publish(ctx, ackTopic, map[string]interface{}{"status": "failure", "error": err.Error()}); err != nil {
+				p.logger.Error("Failed to publish ack message", slog.String("ack_topic", ackTopic), slog.Any("error", err))
+			}
+		} else {
+			if err := p.pubsub.Publish(ctx, ackTopic, map[string]interface{}{"status": "success"}); err != nil {
+				p.logger.Error("Failed to publish ack message", slog.String("ack_topic", ackTopic), slog.Any("error", err))
+			}
+			p.logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
+		}
+
+		return nil
 	}
 }
