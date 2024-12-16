@@ -11,11 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	svcName    = "proxy"
-	mqttPrefix = "MQTT_REGISTRY_"
-	httpPrefix = "HTTP_"
-)
+const svcName = "proxy"
 
 const (
 	// MQTT configuration settings.
@@ -29,6 +25,7 @@ const (
 	Authenticate     = false
 	RegistryUsername = ""
 	RegistryPassword = ""
+	RegistryPAT      = ""
 )
 
 func main() {
@@ -55,6 +52,7 @@ func main() {
 		Authenticate: Authenticate,
 		Username:     RegistryUsername,
 		Password:     RegistryPassword,
+		Token:        RegistryPAT,
 	}
 
 	if err := httpCfg.Validate(); err != nil {

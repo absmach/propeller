@@ -43,6 +43,10 @@ func NewMQTTClient(cfg *config.MQTTProxyConfig) (*RegistryClient, error) {
 		log.Println("MQTT reconnecting...")
 	})
 
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		log.Println("MQTT connection established successfully")
+	})
+
 	client := mqtt.NewClient(opts)
 
 	return &RegistryClient{
