@@ -17,7 +17,8 @@ import (
 
 const (
 	tag       = "latest"
-	chunkSize = 512000 // 500KB to ensure we're well under NATS limit
+	size      = 1024 * 1024
+	chunkSize = 512000
 )
 
 type ChunkPayload struct {
@@ -127,7 +128,7 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 		return nil, fmt.Errorf("no valid layers found in manifest for %s", containerName)
 	}
 
-	log.Printf("- Found largest layer: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/(1024*1024))
+	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
 
 	layerReader, err := repo.Fetch(ctx, largestLayer)
 	if err != nil {
@@ -143,9 +144,9 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
-	log.Printf("- Total data size: %d bytes (%.2f MB)", dataSize, float64(dataSize)/(1024*1024))
-	log.Printf("- Chunk size: %d bytes (500 KB)", chunkSize)
-	log.Printf("- Total chunks: %d", totalChunks)
+	log.Printf("Total data size: %d bytes (%.2f MB)", dataSize, float64(dataSize)/size)
+	log.Printf("Chunk size: %d bytes (500 KB)", chunkSize)
+	log.Printf("Total chunks: %d", totalChunks)
 
 	chunks := make([]ChunkPayload, 0, totalChunks)
 	for i := range make([]struct{}, totalChunks) {
@@ -156,7 +157,7 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 		}
 
 		chunkData := data[start:end]
-		log.Printf("- Chunk %d size: %d bytes", i, len(chunkData))
+		log.Printf("Chunk %d size: %d bytes", i, len(chunkData))
 
 		chunk := ChunkPayload{
 			AppName:     containerName,
