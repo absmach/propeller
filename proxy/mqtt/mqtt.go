@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/proxy/config"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -109,7 +110,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 	return nil
 }
 
-func (c *RegistryClient) PublishContainer(ctx context.Context, chunk config.ChunkPayload) error {
+func (c *RegistryClient) PublishContainer(ctx context.Context, chunk proplet.ChunkPayload) error {
 	data, err := json.Marshal(chunk)
 	if err != nil {
 		return fmt.Errorf("failed to marshal chunk payload: %w", err)

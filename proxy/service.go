@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/proxy/config"
 	"github.com/absmach/propeller/proxy/mqtt"
 )
@@ -16,7 +17,7 @@ type ProxyService struct {
 	mqttClient    *mqtt.RegistryClient
 	logger        *slog.Logger
 	containerChan chan string
-	dataChan      chan config.ChunkPayload
+	dataChan      chan proplet.ChunkPayload
 }
 
 func NewService(ctx context.Context, mqttCfg *config.MQTTProxyConfig, httpCfg *config.HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
@@ -32,7 +33,7 @@ func NewService(ctx context.Context, mqttCfg *config.MQTTProxyConfig, httpCfg *c
 		mqttClient:    mqttClient,
 		logger:        logger,
 		containerChan: make(chan string, 1),
-		dataChan:      make(chan config.ChunkPayload, chunkBuffer),
+		dataChan:      make(chan proplet.ChunkPayload, chunkBuffer),
 	}, nil
 }
 
