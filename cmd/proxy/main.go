@@ -24,9 +24,9 @@ const (
 	PropletPassword = "3963a940-332e-4a18-aa57-bab4d4124ab0"
 
 	RegistryURL      = "docker.io"
-	Authenticate     = true
-	RegistryUsername = "mrstevenyaga"
-	RegistryPassword = "Nya@851612"
+	Authenticate     = false
+	RegistryUsername = ""
+	RegistryPassword = ""
 )
 
 func main() {
