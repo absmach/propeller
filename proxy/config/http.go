@@ -2,8 +2,10 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/url"
 
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -27,6 +29,17 @@ type HTTPProxyConfig struct {
 	Authenticate bool   `env:"AUTHENTICATE" envDefault:"false"`
 	Username     string `env:"USERNAME"     envDefault:""`
 	Password     string `env:"PASSWORD"     envDefault:""`
+}
+
+func (c *HTTPProxyConfig) Validate() error {
+	if c.RegistryURL == "" {
+		return errors.New("broker_url is required")
+	}
+	if _, err := url.Parse(c.RegistryURL); err != nil {
+		return fmt.Errorf("broker_url is not a valid URL: %w", err)
+	}
+
+	return nil
 }
 
 func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {
