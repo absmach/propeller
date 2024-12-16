@@ -44,11 +44,23 @@ func main() {
 		ChannelID: ChannelID,
 	}
 
+	if err := mqttCfg.Validate(); err != nil {
+		logger.Error("failed to initialize mqtt config", "error", err)
+
+		return
+	}
+
 	httpCfg := config.HTTPProxyConfig{
 		RegistryURL:  RegistryURL,
 		Authenticate: Authenticate,
 		Username:     RegistryUsername,
 		Password:     RegistryPassword,
+	}
+
+	if err := httpCfg.Validate(); err != nil {
+		logger.Error("failed to initialize mqtt config", "error", err)
+
+		return
 	}
 
 	logger.Info("successfully initialized MQTT and HTTP config")
