@@ -18,11 +18,13 @@ const (
 )
 
 const (
+	// MQTT configuration settings
 	BrokerURL       = "localhost:1883"
-	PropletID       = "72fd490b-f91f-47dc-aa0b-a65931719ee1"
-	ChannelID       = "cb6cb9ae-ddcf-41ab-8f32-f3e93b3a3be2"
-	PropletPassword = "3963a940-332e-4a18-aa57-bab4d4124ab0"
+	PropletID       = "test_proplet"
+	ChannelID       = "test_channel"
+	PropletPassword = ""
 
+	// HTTP configuration settings
 	RegistryURL      = "docker.io"
 	Authenticate     = false
 	RegistryUsername = ""
