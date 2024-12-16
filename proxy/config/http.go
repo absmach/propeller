@@ -60,36 +60,32 @@ func (c *HTTPProxyConfig) Validate() error {
 	return nil
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {
-	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
-
-	repo, err := remote.NewRepository(fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create repository for %s: %w", containerName, err)
+func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
+	if !c.Authenticate {
+		return
 	}
 
-	if c.Authenticate {
-		var cred auth.Credential
-
-		if c.Username != "" && c.Password != "" {
-			cred = auth.Credential{
-				Username: c.Username,
-				Password: c.Password,
-			}
-		} else if c.Token != "" {
-			cred = auth.Credential{
-				Username:    c.Username,
-				AccessToken: c.Token,
-			}
+	var cred auth.Credential
+	if c.Username != "" && c.Password != "" {
+		cred = auth.Credential{
+			Username: c.Username,
+			Password: c.Password,
 		}
-
-		repo.Client = &auth.Client{
-			Client:     retry.DefaultClient,
-			Cache:      auth.NewCache(),
-			Credential: auth.StaticCredential(c.RegistryURL, cred),
+	} else if c.Token != "" {
+		cred = auth.Credential{
+			Username:    c.Username,
+			AccessToken: c.Token,
 		}
 	}
 
+	repo.Client = &auth.Client{
+		Client:     retry.DefaultClient,
+		Cache:      auth.NewCache(),
+		Credential: auth.StaticCredential(c.RegistryURL, cred),
+	}
+}
+
+func (c *HTTPProxyConfig) fetchManifest(ctx context.Context, repo *remote.Repository, containerName string) (*ocispec.Manifest, error) {
 	descriptor, err := repo.Resolve(ctx, tag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve manifest for %s: %w", containerName, err)
@@ -115,8 +111,13 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 		return nil, fmt.Errorf("failed to parse manifest for %s: %w", containerName, err)
 	}
 
+	return &manifest, nil
+}
+
+func findLargestLayer(manifest *ocispec.Manifest) (ocispec.Descriptor, error) {
 	var largestLayer ocispec.Descriptor
 	var maxSize int64
+
 	for _, layer := range manifest.Layers {
 		if layer.Size > maxSize {
 			maxSize = layer.Size
@@ -125,22 +126,13 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 	}
 
 	if largestLayer.Size == 0 {
-		return nil, fmt.Errorf("no valid layers found in manifest for %s", containerName)
+		return ocispec.Descriptor{}, errors.New("no valid layers found in manifest")
 	}
 
-	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
+	return largestLayer, nil
+}
 
-	layerReader, err := repo.Fetch(ctx, largestLayer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerName, err)
-	}
-	defer layerReader.Close()
-
-	data, err := io.ReadAll(layerReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read layer for %s: %w", containerName, err)
-	}
-
+func createChunks(data []byte, containerName string) []ChunkPayload {
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
@@ -159,14 +151,49 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string
 		chunkData := data[start:end]
 		log.Printf("Chunk %d size: %d bytes", i, len(chunkData))
 
-		chunk := ChunkPayload{
+		chunks = append(chunks, ChunkPayload{
 			AppName:     containerName,
 			ChunkIdx:    i,
 			TotalChunks: totalChunks,
 			Data:        chunkData,
-		}
-		chunks = append(chunks, chunk)
+		})
 	}
 
-	return chunks, nil
+	return chunks
+}
+
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string) ([]ChunkPayload, error) {
+	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
+
+	repo, err := remote.NewRepository(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create repository for %s: %w", containerName, err)
+	}
+
+	c.setupAuthentication(repo)
+
+	manifest, err := c.fetchManifest(ctx, repo, containerName)
+	if err != nil {
+		return nil, err
+	}
+
+	largestLayer, err := findLargestLayer(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find layer for %s: %w", containerName, err)
+	}
+
+	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
+
+	layerReader, err := repo.Fetch(ctx, largestLayer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerName, err)
+	}
+	defer layerReader.Close()
+
+	data, err := io.ReadAll(layerReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read layer for %s: %w", containerName, err)
+	}
+
+	return createChunks(data, containerName), nil
 }
