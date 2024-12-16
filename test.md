@@ -102,3 +102,23 @@ export PROPLET_THING_ID=""
 export PROPLET_THING_KEY=""
 propeller-proplet
 ```
+
+ **Testing proxy.**
+
+Start proxy
+
+```bash
+go run cmd/proxy/main.go
+```
+
+Subscibe to MQTT channel to download the requested binary
+
+```bash
+mosquitto_sub -i magistrala -u $PROPLET_THING_ID -P $PROPLET_THING_KEY -t channels/$MANAGER_CHANNEL_ID/messages/registry/server -h localhost
+```
+
+Publish to MQTT channel to request the container to download
+
+```bash
+mosquitto_pub -i magistrala -u $PROPLET_THING_ID -P $PROPLET_THING_KEY -t channels/$MANAGER_CHANNEL_ID/messages/registry/proplet -h localhost -m '{"app_name":"magistrala/users"}'
+```
