@@ -1,8 +1,9 @@
-package manager
+package main
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/url"
 	"os"
@@ -18,33 +19,49 @@ import (
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
+	"github.com/caarlos0/env/v11"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
 )
 
-const svcName = "manager"
+const (
+	svcName       = "manager"
+	defHTTPPort   = "7070"
+	envPrefixHTTP = "MANAGER_HTTP_"
+)
 
-type Config struct {
-	LogLevel    string
-	InstanceID  string
-	MQTTAddress string
-	MQTTQoS     uint8
-	MQTTTimeout time.Duration
-	ChannelID   string
-	ThingID     string
-	ThingKey    string
+type config struct {
+	LogLevel    string        `env:"MANAGER_LOG_LEVEL"           envDefault:"info"`
+	InstanceID  string        `env:"MANAGER_INSTANCE_ID"`
+	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
+	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
+	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
+	ChannelID   string        `env:"MANAGER_CHANNEL_ID,notEmpty"`
+	ThingID     string        `env:"MANAGER_THING_ID,notEmpty"`
+	ThingKey    string        `env:"MANAGER_THING_KEY,notEmpty"`
 	Server      server.Config
-	OTELURL     url.URL
-	TraceRatio  float64
+	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
+	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
 }
 
-func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) error {
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
+
+	cfg := config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("failed to load configuration : %s", err.Error())
+	}
+
+	if cfg.InstanceID == "" {
+		cfg.InstanceID = uuid.NewString()
+	}
 
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
-		return fmt.Errorf("failed to parse log level: %s", err.Error())
+		log.Fatalf("failed to parse log level: %s", err.Error())
 	}
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
@@ -59,11 +76,13 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	default:
 		sdktp, err := jaeger.NewProvider(ctx, svcName, cfg.OTELURL, "", cfg.TraceRatio)
 		if err != nil {
-			return fmt.Errorf("failed to initialize opentelemetry: %s", err.Error())
+			logger.Error("failed to initialize opentelemetry", slog.String("error", err.Error()))
+
+			return
 		}
 		defer func() {
 			if err := sdktp.Shutdown(ctx); err != nil {
-				slog.Error("error shutting down tracer provider", slog.Any("error", err))
+				logger.Error("error shutting down tracer provider", slog.Any("error", err))
 			}
 		}()
 		tp = sdktp
@@ -72,7 +91,9 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 
 	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
-		return fmt.Errorf("failed to initialize mqtt pubsub: %s", err.Error())
+		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
+
+		return
 	}
 
 	svc := manager.NewService(
@@ -90,10 +111,19 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	svc = middleware.Metrics(counter, latency, svc)
 
 	if err := svc.Subscribe(ctx); err != nil {
-		return fmt.Errorf("failed to subscribe to manager channel: %s", err.Error())
+		logger.Error("failed to subscribe to manager channel", slog.String("error", err.Error()))
+
+		return
 	}
 
-	hs := httpserver.NewServer(ctx, cancel, svcName, cfg.Server, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
+	httpServerConfig := server.Config{Port: defHTTPPort}
+	if err := env.ParseWithOptions(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {
+		logger.Error(fmt.Sprintf("failed to load %s HTTP server configuration : %s", svcName, err.Error()))
+
+		return
+	}
+
+	hs := httpserver.NewServer(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
 
 	g.Go(func() error {
 		return hs.Start()
@@ -106,6 +136,4 @@ func StartManager(ctx context.Context, cancel context.CancelFunc, cfg Config) er
 	if err := g.Wait(); err != nil {
 		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
 	}
-
-	return nil
 }

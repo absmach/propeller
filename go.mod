@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/0x6flab/namegenerator v1.4.0
 	github.com/absmach/magistrala v0.15.1
+	github.com/caarlos0/env/v11 v11.3.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/fatih/color v1.18.0
 	github.com/go-chi/chi/v5 v5.2.0

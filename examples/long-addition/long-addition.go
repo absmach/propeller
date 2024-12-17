@@ -1,7 +1,10 @@
 package main
 
+import "time"
+
 //export add
 func add(x, y uint32) uint32 {
+	time.Sleep(time.Minute)
 	return x + y
 }
 

@@ -8,7 +8,6 @@ import (
 	"log"
 	"log/slog"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -33,13 +32,18 @@ var (
 )
 
 type PropletService struct {
-	config        Config
-	pubsub        pkgmqtt.PubSub
-	chunks        map[string][][]byte
-	chunkMetadata map[string]*ChunkPayload
-	chunksMutex   sync.Mutex
-	runtime       Runtime
-	logger        *slog.Logger
+	channelID          string
+	thingID            string
+	thingKey           string
+	registryURL        string
+	registryToken      string
+	livelinessInterval time.Duration
+	pubsub             pkgmqtt.PubSub
+	chunks             map[string][][]byte
+	chunkMetadata      map[string]*ChunkPayload
+	chunksMutex        sync.Mutex
+	runtime            Runtime
+	logger             *slog.Logger
 }
 
 type ChunkPayload struct {
@@ -49,23 +53,28 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(ctx context.Context, cfg Config, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
-	topic := fmt.Sprintf(discoveryTopicTemplate, cfg.ChannelID)
+func NewService(ctx context.Context, channelID, thingID, thingKey, registryURL, registryToken string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+	topic := fmt.Sprintf(discoveryTopicTemplate, channelID)
 	payload := map[string]interface{}{
-		"proplet_id":    cfg.ThingID,
-		"mg_channel_id": cfg.ChannelID,
+		"proplet_id":    thingID,
+		"mg_channel_id": channelID,
 	}
 	if err := pubsub.Publish(ctx, topic, payload); err != nil {
 		return nil, errors.Join(errors.New("failed to publish discovery"), err)
 	}
 
 	p := &PropletService{
-		config:        cfg,
-		pubsub:        pubsub,
-		chunks:        make(map[string][][]byte),
-		chunkMetadata: make(map[string]*ChunkPayload),
-		runtime:       runtime,
-		logger:        logger,
+		channelID:          channelID,
+		thingID:            thingID,
+		thingKey:           thingKey,
+		registryURL:        registryURL,
+		registryToken:      registryToken,
+		livelinessInterval: livelinessInterval,
+		pubsub:             pubsub,
+		chunks:             make(map[string][][]byte),
+		chunkMetadata:      make(map[string]*ChunkPayload),
+		runtime:            runtime,
+		logger:             logger,
 	}
 
 	go p.startLivelinessUpdates(ctx)
@@ -74,7 +83,7 @@ func NewService(ctx context.Context, cfg Config, pubsub pkgmqtt.PubSub, logger *
 }
 
 func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
-	ticker := time.NewTicker(p.config.LivelinessInterval)
+	ticker := time.NewTicker(p.livelinessInterval)
 	defer ticker.Stop()
 
 	for {
@@ -84,11 +93,11 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 
 			return
 		case <-ticker.C:
-			topic := fmt.Sprintf(aliveTopicTemplate, p.config.ChannelID)
+			topic := fmt.Sprintf(aliveTopicTemplate, p.channelID)
 			payload := map[string]interface{}{
 				"status":        "alive",
-				"proplet_id":    p.config.ThingID,
-				"mg_channel_id": p.config.ChannelID,
+				"proplet_id":    p.thingID,
+				"mg_channel_id": p.channelID,
 			}
 
 			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
@@ -101,22 +110,22 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 }
 
 func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	topic := fmt.Sprintf(startTopicTemplate, p.config.ChannelID)
+	topic := fmt.Sprintf(startTopicTemplate, p.channelID)
 	if err := p.pubsub.Subscribe(ctx, topic, p.handleStartCommand(ctx)); err != nil {
 		return fmt.Errorf("failed to subscribe to start topic: %w", err)
 	}
 
-	topic = fmt.Sprintf(stopTopicTemplate, p.config.ChannelID)
+	topic = fmt.Sprintf(stopTopicTemplate, p.channelID)
 	if err := p.pubsub.Subscribe(ctx, topic, p.handleStopCommand(ctx)); err != nil {
 		return fmt.Errorf("failed to subscribe to stop topic: %w", err)
 	}
 
-	topic = fmt.Sprintf(registryResponseTopic, p.config.ChannelID)
+	topic = fmt.Sprintf(registryResponseTopic, p.channelID)
 	if err := p.pubsub.Subscribe(ctx, topic, p.handleChunk(ctx)); err != nil {
 		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
 	}
 
-	topic = fmt.Sprintf(updateRegistryTopicTemplate, p.config.ChannelID)
+	topic = fmt.Sprintf(updateRegistryTopicTemplate, p.channelID)
 	if err := p.pubsub.Subscribe(ctx, topic, p.registryUpdate(ctx)); err != nil {
 		return fmt.Errorf("failed to subscribe to update registry topic: %w", err)
 	}
@@ -155,11 +164,11 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			return err
 		}
 
-		if p.config.RegistryURL != "" {
+		if p.registryURL != "" {
 			payload := map[string]interface{}{
 				"app_name": req.FunctionName,
 			}
-			topic := fmt.Sprintf(fetchRequestTopicTemplate, p.config.ChannelID)
+			topic := fmt.Sprintf(fetchRequestTopicTemplate, p.channelID)
 			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
 				return err
 			}
@@ -294,17 +303,8 @@ func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, regist
 		return fmt.Errorf("invalid registry URL '%s': %w", registryURL, err)
 	}
 
-	p.config.RegistryURL = registryURL
-	p.config.RegistryToken = registryToken
-
-	configData, err := json.MarshalIndent(p.config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize updated config: %w", err)
-	}
-
-	if err := os.WriteFile("proplet/config.json", configData, filePermissions); err != nil {
-		return fmt.Errorf("failed to write updated config to file: %w", err)
-	}
+	p.registryURL = registryURL
+	p.registryToken = registryToken
 
 	log.Printf("App Registry updated and persisted: %s\n", registryURL)
 
@@ -326,7 +326,7 @@ func (p *PropletService) registryUpdate(ctx context.Context) func(topic string, 
 			return err
 		}
 
-		ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.config.ChannelID)
+		ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.channelID)
 
 		if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
 			if err := p.pubsub.Publish(ctx, ackTopic, map[string]interface{}{"status": "failure", "error": err.Error()}); err != nil {

@@ -6,6 +6,7 @@ TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
 EXAMPLES = addition long-addition
+SERVICES = manager proplet cli
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -13,17 +14,21 @@ define compile_service
 	-X 'github.com/absmach/magistrala.BuildTime=$(TIME)' \
 	-X 'github.com/absmach/magistrala.Version=$(VERSION)' \
 	-X 'github.com/absmach/magistrala.Commit=$(COMMIT)'" \
-	-o ${BUILD_DIR}/propellerd cmd/propellerd/main.go
+	-o ${BUILD_DIR}/$(1) cmd/$(1)/main.go
 endef
 
-.PHONY: build
-build:
-	$(call compile_service)
+$(SERVICES):
+	$(call compile_service,$(@))
 
 install:
-	cp ${BUILD_DIR}/propellerd $(GOBIN)/propellerd
+	for file in $(BUILD_DIR)/*; do \
+		if [[ ! "$$file" =~ \.wasm$$ ]]; then \
+			cp "$$file" $(GOBIN)/propeller-`basename "$$file"`; \
+		fi \
+	done
 
-all: build
+.PHONY: all $(SERVICES)
+all: $(SERVICES)
 
 clean:
 	rm -rf build
