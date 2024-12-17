@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	errConnect            = errors.New("failed to connect to MQTT broker")
 	errPublishTimeout     = errors.New("failed to publish due to timeout reached")
 	errSubscribeTimeout   = errors.New("failed to subscribe due to timeout reached")
 	errUnsubscribeTimeout = errors.New("failed to unsubscribe due to timeout reached")

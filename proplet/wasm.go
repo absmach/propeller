@@ -22,7 +22,6 @@ type Runtime interface {
 type wazeroRuntime struct {
 	mutex     sync.Mutex
 	runtimes  map[string]wazero.Runtime
-	results   map[string][]uint64
 	pubsub    mqtt.PubSub
 	channelID string
 	logger    *slog.Logger
@@ -31,7 +30,6 @@ type wazeroRuntime struct {
 func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string) Runtime {
 	return &wazeroRuntime{
 		runtimes:  make(map[string]wazero.Runtime),
-		results:   make(map[string][]uint64),
 		pubsub:    pubsub,
 		channelID: channelID,
 		logger:    logger,
@@ -66,9 +64,6 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, id, fun
 
 			return
 		}
-		w.mutex.Lock()
-		w.results[id] = results
-		w.mutex.Unlock()
 
 		if err := w.StopApp(ctx, id); err != nil {
 			w.logger.Error("failed to stop app", slog.String("id", id), slog.String("error", err.Error()))

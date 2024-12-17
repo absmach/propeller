@@ -21,6 +21,17 @@ const (
 	pollingInterval = 5 * time.Second
 )
 
+var (
+	RegistryAckTopicTemplate    = "channels/%s/messages/control/manager/registry"
+	updateRegistryTopicTemplate = "channels/%s/messages/control/manager/update"
+	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
+	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
+	startTopicTemplate          = "channels/%s/messages/control/manager/start"
+	stopTopicTemplate           = "channels/%s/messages/control/manager/stop"
+	registryResponseTopic       = "channels/%s/messages/registry/server"
+	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
+)
+
 type PropletService struct {
 	config        Config
 	pubsub        pkgmqtt.PubSub
@@ -103,6 +114,11 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	topic = fmt.Sprintf(registryResponseTopic, p.config.ChannelID)
 	if err := p.pubsub.Subscribe(ctx, topic, p.handleChunk(ctx)); err != nil {
 		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
+	}
+
+	topic = fmt.Sprintf(updateRegistryTopicTemplate, p.config.ChannelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.registryUpdate(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to update registry topic: %w", err)
 	}
 
 	logger.Info("Proplet service is running.")
