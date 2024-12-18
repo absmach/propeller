@@ -22,10 +22,10 @@ const (
 )
 
 type HTTPProxyConfig struct {
-	RegistryURL  string `env:"PROXY_REGISTRY_URL" envDefault:""`
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE" envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE" envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN" envDefault:""`
+	RegistryURL  string `env:"PROXY_REGISTRY_URL"      envDefault:""`
+	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"        envDefault:"512000"`
+	Authenticate bool   `env:"PROXY_AUTHENTICATE"      envDefault:"false"`
+	Token        string `env:"PROXY_REGISTRY_TOKEN"    envDefault:""`
 	Username     string `env:"PROXY_REGISTRY_USERNAME" envDefault:""`
 	Password     string `env:"PROXY_REGISTRY_PASSWORD" envDefault:""`
 }
