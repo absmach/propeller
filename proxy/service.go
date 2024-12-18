@@ -51,7 +51,7 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case containerName := <-s.containerChan:
-			chunks, err := s.orasconfig.FetchFromReg(ctx, containerName)
+			chunks, err := s.orasconfig.FetchFromReg(ctx, containerName, s.orasconfig.ChunkSize)
 			if err != nil {
 				s.logger.Error("failed to fetch container", "container", containerName, "error", err)
 

@@ -3,30 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 
 	"github.com/absmach/propeller/proxy"
 	"github.com/absmach/propeller/proxy/config"
+	"github.com/caarlos0/env/v11"
 	"golang.org/x/sync/errgroup"
 )
 
 const svcName = "proxy"
-
-const (
-	// MQTT configuration settings.
-	BrokerURL       = "localhost:1883"
-	PropletID       = "test_proplet"
-	ChannelID       = "test_channel"
-	PropletPassword = ""
-
-	// HTTP configuration settings.
-	RegistryURL      = "docker.io"
-	Authenticate     = false
-	RegistryUsername = ""
-	RegistryPassword = ""
-	RegistryPAT      = ""
-)
 
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
@@ -34,29 +21,24 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	mqttCfg := config.MQTTProxyConfig{
-		BrokerURL: BrokerURL,
-		Password:  PropletPassword,
-		PropletID: PropletID,
-		ChannelID: ChannelID,
+	mqttCfg := config.MQTTProxyConfig{}
+	if err := env.Parse(&mqttCfg); err != nil {
+		log.Fatalf("failed to load mqtt config : %s", err.Error())
 	}
 
 	if err := mqttCfg.Validate(); err != nil {
-		logger.Error("failed to initialize mqtt config", "error", err)
+		log.Fatalf("failed to validate mqtt config : %s", err.Error())
 
 		return
 	}
 
-	httpCfg := config.HTTPProxyConfig{
-		RegistryURL:  RegistryURL,
-		Authenticate: Authenticate,
-		Username:     RegistryUsername,
-		Password:     RegistryPassword,
-		Token:        RegistryPAT,
+	httpCfg := config.HTTPProxyConfig{}
+	if err := env.Parse(&httpCfg); err != nil {
+		log.Fatalf("failed to load http config : %s", err.Error())
 	}
 
 	if err := httpCfg.Validate(); err != nil {
-		logger.Error("failed to initialize mqtt config", "error", err)
+		log.Fatalf("failed to validate http config : %s", err.Error())
 
 		return
 	}
@@ -65,7 +47,7 @@ func main() {
 
 	service, err := proxy.NewService(ctx, &mqttCfg, &httpCfg, logger)
 	if err != nil {
-		logger.Error("failed to create proxy service", "error", err)
+		logger.Error("failed to create proxy service", slog.Any("error", err))
 
 		return
 	}
