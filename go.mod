@@ -58,6 +58,7 @@ require (
 )
 
 require (
+	github.com/caarlos0/env/v11 v11.3.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 )

@@ -7,10 +7,10 @@ import (
 )
 
 type MQTTProxyConfig struct {
-	BrokerURL string
-	Password  string
-	PropletID string
-	ChannelID string
+	BrokerURL string `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
+	Password  string `env:"PROXY_PROPLET_KEY" envDefault:""`
+	PropletID string `env:"PROXY_PROPLET_ID" envDefault:""`
+	ChannelID string `env:"PROXY_CHANNEL_ID" envDefault:""`
 }
 
 func (c *MQTTProxyConfig) Validate() error {
