@@ -25,7 +25,6 @@ type config struct {
 	MQTTTimeout        time.Duration `env:"PROPLET_MQTT_TIMEOUT"        envDefault:"30s"`
 	MQTTQoS            byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
 	LivelinessInterval time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
-	RegistryTimeout    time.Duration `env:"PROPLET_REGISTRY_TIMEOUT"    envDefault:"30s"`
 	ChannelID          string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
 	ThingID            string        `env:"PROPLET_THING_ID,notEmpty"`
 	ThingKey           string        `env:"PROPLET_THING_KEY,notEmpty"`
