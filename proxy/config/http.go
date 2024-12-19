@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 
 	"github.com/absmach/propeller/proplet"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -22,36 +21,12 @@ const (
 )
 
 type HTTPProxyConfig struct {
-	RegistryURL  string `env:"PROXY_REGISTRY_URL"      envDefault:""`
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"        envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE"      envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN"    envDefault:""`
-	Username     string `env:"PROXY_REGISTRY_USERNAME" envDefault:""`
-	Password     string `env:"PROXY_REGISTRY_PASSWORD" envDefault:""`
-}
-
-func (c *HTTPProxyConfig) Validate() error {
-	if c.RegistryURL == "" {
-		return errors.New("broker_url is required")
-	}
-	if _, err := url.Parse(c.RegistryURL); err != nil {
-		return fmt.Errorf("broker_url is not a valid URL: %w", err)
-	}
-
-	if c.Authenticate {
-		hasToken := c.Token != ""
-		hasCredentials := c.Username != "" && c.Password != ""
-
-		if !hasToken && !hasCredentials {
-			return errors.New("either PAT or username/password must be provided when authentication is enabled")
-		}
-
-		if hasToken && c.Username == "" {
-			return errors.New("username is required when using PAT authentication")
-		}
-	}
-
-	return nil
+	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty" envDefault:""`
+	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
+	Authenticate bool   `env:"PROXY_AUTHENTICATE"          envDefault:"false"`
+	Token        string `env:"PROXY_REGISTRY_TOKEN"        envDefault:""`
+	Username     string `env:"PROXY_REGISTRY_USERNAME"     envDefault:""`
+	Password     string `env:"PROXY_REGISTRY_PASSWORD"     envDefault:""`
 }
 
 func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
