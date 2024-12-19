@@ -18,7 +18,14 @@ const svcName = "proxy"
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	var level slog.Level
+	if err := level.UnmarshalText([]byte("info")); err != nil {
+		log.Fatalf("failed to parse log level: %s", err.Error())
+	}
+	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	})
+	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
 	mqttCfg := config.MQTTProxyConfig{}
@@ -26,21 +33,9 @@ func main() {
 		log.Fatalf("failed to load mqtt config : %s", err.Error())
 	}
 
-	if err := mqttCfg.Validate(); err != nil {
-		log.Fatalf("failed to validate mqtt config : %s", err.Error())
-
-		return
-	}
-
 	httpCfg := config.HTTPProxyConfig{}
 	if err := env.Parse(&httpCfg); err != nil {
 		log.Fatalf("failed to load http config : %s", err.Error())
-	}
-
-	if err := httpCfg.Validate(); err != nil {
-		log.Fatalf("failed to validate http config : %s", err.Error())
-
-		return
 	}
 
 	logger.Info("successfully initialized MQTT and HTTP config")
