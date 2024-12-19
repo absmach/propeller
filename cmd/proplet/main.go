@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -26,8 +25,6 @@ type config struct {
 	MQTTTimeout        time.Duration `env:"PROPLET_MQTT_TIMEOUT"        envDefault:"30s"`
 	MQTTQoS            byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
 	LivelinessInterval time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
-	RegistryURL        string        `env:"PROPLET_REGISTRY_URL"`
-	RegistryToken      string        `env:"PROPLET_REGISTRY_TOKEN"`
 	RegistryTimeout    time.Duration `env:"PROPLET_REGISTRY_TIMEOUT"    envDefault:"30s"`
 	ChannelID          string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
 	ThingID            string        `env:"PROPLET_THING_ID,notEmpty"`
@@ -57,16 +54,6 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	if cfg.RegistryURL != "" {
-		if err := checkRegistryConnectivity(ctx, cfg.RegistryURL, cfg.RegistryTimeout); err != nil {
-			logger.Error("failed to connect to registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
-
-			return
-		}
-
-		logger.Info("successfully connected to registry URL", slog.String("url", cfg.RegistryURL))
-	}
-
 	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
@@ -75,7 +62,7 @@ func main() {
 	}
 	wazero := proplet.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 
-	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.RegistryURL, cfg.RegistryToken, cfg.LivelinessInterval, mqttPubSub, logger, wazero)
+	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, wazero)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 
@@ -95,28 +82,4 @@ func main() {
 	if err := g.Wait(); err != nil {
 		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
 	}
-}
-
-func checkRegistryConnectivity(ctx context.Context, registryURL string, registryTimeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, registryTimeout)
-	defer cancel()
-
-	client := http.DefaultClient
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, http.NoBody)
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to connect to registry URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("registry returned unexpected status: %d", resp.StatusCode)
-	}
-
-	return nil
 }

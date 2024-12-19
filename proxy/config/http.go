@@ -21,12 +21,12 @@ const (
 )
 
 type HTTPProxyConfig struct {
-	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty" envDefault:""`
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE"          envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN"        envDefault:""`
-	Username     string `env:"PROXY_REGISTRY_USERNAME"     envDefault:""`
-	Password     string `env:"PROXY_REGISTRY_PASSWORD"     envDefault:""`
+	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"             envDefault:"512000"`
+	Authenticate bool   `env:"PROXY_AUTHENTICATE"           envDefault:"false"`
+	Token        string `env:"PROXY_REGISTRY_TOKEN"         envDefault:""`
+	Username     string `env:"PROXY_REGISTRY_USERNAME"      envDefault:""`
+	Password     string `env:"PROXY_REGISTRY_PASSWORD"      envDefault:""`
+	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty"`
 }
 
 func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
@@ -97,7 +97,7 @@ func findLargestLayer(manifest *ocispec.Manifest) (ocispec.Descriptor, error) {
 	return largestLayer, nil
 }
 
-func createChunks(data []byte, containerName string, chunkSize int) []proplet.ChunkPayload {
+func createChunks(data []byte, containerPath string, chunkSize int) []proplet.ChunkPayload {
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
@@ -113,7 +113,7 @@ func createChunks(data []byte, containerName string, chunkSize int) []proplet.Ch
 		log.Printf("Chunk %d size: %d bytes", i, len(chunkData))
 
 		chunks = append(chunks, proplet.ChunkPayload{
-			AppName:     containerName,
+			AppName:     containerPath,
 			ChunkIdx:    i,
 			TotalChunks: totalChunks,
 			Data:        chunkData,
@@ -123,38 +123,36 @@ func createChunks(data []byte, containerName string, chunkSize int) []proplet.Ch
 	return chunks
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerName string, chunkSize int) ([]proplet.ChunkPayload, error) {
-	fullPath := fmt.Sprintf("%s/%s", c.RegistryURL, containerName)
-
-	repo, err := remote.NewRepository(fullPath)
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
+	repo, err := remote.NewRepository(containerPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository for %s: %w", containerName, err)
+		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
 	}
 
 	c.setupAuthentication(repo)
 
-	manifest, err := c.fetchManifest(ctx, repo, containerName)
+	manifest, err := c.fetchManifest(ctx, repo, containerPath)
 	if err != nil {
 		return nil, err
 	}
 
 	largestLayer, err := findLargestLayer(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find layer for %s: %w", containerName, err)
+		return nil, fmt.Errorf("failed to find layer for %s: %w", containerPath, err)
 	}
 
 	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
 
 	layerReader, err := repo.Fetch(ctx, largestLayer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerName, err)
+		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerPath, err)
 	}
 	defer layerReader.Close()
 
 	data, err := io.ReadAll(layerReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read layer for %s: %w", containerName, err)
+		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
 	}
 
-	return createChunks(data, containerName, chunkSize), nil
+	return createChunks(data, containerPath, chunkSize), nil
 }

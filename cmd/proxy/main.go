@@ -13,13 +13,16 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const svcName = "proxy"
+const (
+	svcName  = "proxy"
+	logLevel = "info"
+)
 
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
 
 	var level slog.Level
-	if err := level.UnmarshalText([]byte("info")); err != nil {
+	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
 		log.Fatalf("failed to parse log level: %s", err.Error())
 	}
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -30,12 +33,12 @@ func main() {
 
 	mqttCfg := config.MQTTProxyConfig{}
 	if err := env.Parse(&mqttCfg); err != nil {
-		log.Fatalf("failed to load mqtt config : %s", err.Error())
+		logger.Error("failed to load mqtt config", slog.Any("error", err))
 	}
 
 	httpCfg := config.HTTPProxyConfig{}
 	if err := env.Parse(&httpCfg); err != nil {
-		log.Fatalf("failed to load http config : %s", err.Error())
+		logger.Error("failed to load http config", slog.Any("error", err))
 	}
 
 	logger.Info("successfully initialized MQTT and HTTP config")

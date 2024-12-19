@@ -33,6 +33,7 @@ linters:
     - err113
     - noctx
     - cyclop
+    - tagalign
 
 linters-settings:
   gocritic:
