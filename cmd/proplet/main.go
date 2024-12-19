@@ -2,158 +2,121 @@ package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
+	"github.com/absmach/magistrala/pkg/server"
+	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
+	"github.com/caarlos0/env/v11"
+	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
-const registryTimeout = 30 * time.Second
+const svcName = "proplet"
 
-var (
-	wasmFilePath string
-	wasmBinary   []byte
-	logLevel     slog.Level
-)
-
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+type config struct {
+	LogLevel           string        `env:"PROPLET_LOG_LEVEL"           envDefault:"info"`
+	InstanceID         string        `env:"PROPLET_INSTANCE_ID"`
+	MQTTAddress        string        `env:"PROPLET_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
+	MQTTTimeout        time.Duration `env:"PROPLET_MQTT_TIMEOUT"        envDefault:"30s"`
+	MQTTQoS            byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
+	LivelinessInterval time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
+	RegistryURL        string        `env:"PROPLET_REGISTRY_URL"`
+	RegistryToken      string        `env:"PROPLET_REGISTRY_TOKEN"`
+	RegistryTimeout    time.Duration `env:"PROPLET_REGISTRY_TIMEOUT"    envDefault:"30s"`
+	ChannelID          string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
+	ThingID            string        `env:"PROPLET_THING_ID,notEmpty"`
+	ThingKey           string        `env:"PROPLET_THING_KEY,notEmpty"`
 }
 
-func run() error {
-	flag.StringVar(&wasmFilePath, "file", "", "Path to the WASM file")
-	flag.Parse()
-
+func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
 
-	logger := configureLogger("info")
+	cfg := config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Fatalf("failed to load configuration : %s", err.Error())
+	}
+
+	if cfg.InstanceID == "" {
+		cfg.InstanceID = uuid.NewString()
+	}
+
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+		log.Fatalf("failed to parse log level: %s", err.Error())
+	}
+	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	})
+	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	logger.Info("Starting Proplet service")
-
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		sig := <-sigChan
-		logger.Info("Received shutdown signal", slog.String("signal", sig.String()))
-		cancel()
-	}()
-
-	hasWASMFile := wasmFilePath != ""
-
-	cfg, err := proplet.LoadConfig("proplet/config.json", hasWASMFile)
-	if err != nil {
-		logger.Error("Failed to load configuration", slog.String("path", "proplet/config.json"), slog.Any("error", err))
-
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
 	if cfg.RegistryURL != "" {
-		if err := checkRegistryConnectivity(cfg.RegistryURL, logger); err != nil {
-			logger.Error("Failed connectivity check for Registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
+		if err := checkRegistryConnectivity(ctx, cfg.RegistryURL, cfg.RegistryTimeout); err != nil {
+			logger.Error("failed to connect to registry URL", slog.String("url", cfg.RegistryURL), slog.Any("error", err))
 
-			return fmt.Errorf("registry connectivity check failed: %w", err)
+			return
 		}
-		logger.Info("Registry connectivity verified", slog.String("url", cfg.RegistryURL))
+
+		logger.Info("successfully connected to registry URL", slog.String("url", cfg.RegistryURL))
 	}
 
-	if hasWASMFile {
-		wasmBinary, err = loadWASMFile(wasmFilePath, logger)
-		if err != nil {
-			logger.Error("Failed to load WASM file", slog.String("wasm_file_path", wasmFilePath), slog.Any("error", err))
-
-			return fmt.Errorf("failed to load WASM file: %w", err)
-		}
-		logger.Info("WASM binary loaded at startup", slog.Int("size_bytes", len(wasmBinary)))
-	}
-
-	if cfg.RegistryURL == "" && wasmBinary == nil {
-		logger.Error("Neither a registry URL nor a WASM binary file was provided")
-
-		return errors.New("missing registry URL and WASM binary file")
-	}
-
-	service, err := proplet.NewService(ctx, cfg, wasmBinary, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
-		logger.Error("Error initializing service", slog.Any("error", err))
+		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
 
-		return fmt.Errorf("service initialization error: %w", err)
+		return
+	}
+	wazero := proplet.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
+
+	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.RegistryURL, cfg.RegistryToken, cfg.LivelinessInterval, mqttPubSub, logger, wazero)
+	if err != nil {
+		logger.Error("failed to initialize service", slog.Any("error", err))
+
+		return
 	}
 
 	if err := service.Run(ctx, logger); err != nil {
-		logger.Error("Error running service", slog.Any("error", err))
+		logger.Error("failed to run service", slog.Any("error", err))
 
-		return fmt.Errorf("service run error: %w", err)
+		return
 	}
 
-	return nil
-}
-
-func configureLogger(level string) *slog.Logger {
-	if err := logLevel.UnmarshalText([]byte(level)); err != nil {
-		log.Printf("Invalid log level: %s. Defaulting to info.\n", level)
-		logLevel = slog.LevelInfo
-	}
-
-	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
+	g.Go(func() error {
+		return server.StopSignalHandler(ctx, cancel, logger, svcName)
 	})
 
-	return slog.New(logHandler)
-}
-
-func loadWASMFile(path string, logger *slog.Logger) ([]byte, error) {
-	logger.Info("Loading WASM file", slog.String("path", path))
-	wasmBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read WASM file: %w", err)
+	if err := g.Wait(); err != nil {
+		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
 	}
-
-	return wasmBytes, nil
 }
 
-func checkRegistryConnectivity(registryURL string, logger *slog.Logger) error {
-	ctx, cancel := context.WithTimeout(context.Background(), registryTimeout)
+func checkRegistryConnectivity(ctx context.Context, registryURL string, registryTimeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, registryTimeout)
 	defer cancel()
 
-	client := http.Client{}
-
-	logger.Info("Checking registry connectivity", slog.String("url", registryURL))
+	client := http.DefaultClient
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL, http.NoBody)
 	if err != nil {
-		logger.Error("Failed to create HTTP request", slog.String("url", registryURL), slog.Any("error", err))
-
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Error("Failed to connect to registry", slog.String("url", registryURL), slog.Any("error", err))
-
-		return fmt.Errorf("failed to connect to registry URL '%s': %w", registryURL, err)
+		return fmt.Errorf("failed to connect to registry URL: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Error("Registry returned unexpected status", slog.String("url", registryURL), slog.Int("status_code", resp.StatusCode))
-
-		return fmt.Errorf("registry URL '%s' returned status: %s", registryURL, resp.Status)
+		return fmt.Errorf("registry returned unexpected status: %d", resp.StatusCode)
 	}
-
-	logger.Info("Registry connectivity verified", slog.String("url", registryURL))
 
 	return nil
 }

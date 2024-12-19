@@ -149,11 +149,26 @@ func (svc *service) ListTasks(ctx context.Context, offset, limit uint64) (task.T
 }
 
 func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, error) {
-	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+	dbT, err := svc.GetTask(ctx, t.ID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	dbT.UpdatedAt = time.Now()
+	if t.Name != "" {
+		dbT.Name = t.Name
+	}
+	if t.Inputs != nil {
+		dbT.Inputs = t.Inputs
+	}
+	if t.File != nil {
+		dbT.File = t.File
+	}
+
+	if err := svc.tasksDB.Update(ctx, dbT.ID, dbT); err != nil {
 		return task.Task{}, err
 	}
 
-	return t, nil
+	return dbT, nil
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
@@ -166,13 +181,13 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	p, err := svc.SelectProplet(ctx, t)
-	if err != nil {
+	topic := svc.baseTopic + "/control/manager/start"
+	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
 		return err
 	}
 
-	topic := "channels/" + p.ID + "/messages/control/manager/start"
-	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
+	p, err := svc.SelectProplet(ctx, t)
+	if err != nil {
 		return err
 	}
 
@@ -182,6 +197,13 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 
 	p.TaskCount++
 	if err := svc.propletsDB.Update(ctx, p.ID, p); err != nil {
+		return err
+	}
+
+	t.State = task.Running
+	t.UpdatedAt = time.Now()
+	t.StartTime = time.Now()
+	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
 		return err
 	}
 
@@ -207,7 +229,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	topic := "channels/" + p.ID + "/messages/control/manager/stop"
+	topic := svc.baseTopic + "/control/manager/stop"
 	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
 		return err
 	}
@@ -244,6 +266,8 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 			svc.logger.InfoContext(ctx, "successfully created proplet")
 		case svc.baseTopic + "/control/proplet/alive":
 			return svc.updateLivenessHandler(ctx, msg)
+		case svc.baseTopic + "/control/proplet/results":
+			return svc.updateResultsHandler(ctx, msg)
 		}
 
 		return nil
@@ -280,6 +304,9 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]in
 	}
 
 	p, err := svc.GetProplet(ctx, propletID)
+	if errors.Is(err, pkgerrors.ErrNotFound) {
+		return svc.createPropletHandler(ctx, msg)
+	}
 	if err != nil {
 		return err
 	}
@@ -290,6 +317,44 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]in
 		p.AliveHistory = p.AliveHistory[1:]
 	}
 	if err := svc.propletsDB.Update(ctx, propletID, p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]interface{}) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok {
+		return errors.New("invalid task_id")
+	}
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+
+	results, ok := msg["results"].([]interface{})
+	if !ok {
+		return errors.New("invalid results")
+	}
+	data := make([]uint64, len(results))
+	for i := range results {
+		r, ok := results[i].(float64)
+		if !ok {
+			return errors.New("invalid result")
+		}
+		data[i] = uint64(r)
+	}
+
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	t.Results = data
+	t.State = task.Completed
+	t.UpdatedAt = time.Now()
+	t.FinishTime = time.Now()
+
+	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
 		return err
 	}
 

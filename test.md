@@ -80,3 +80,25 @@ Publish alive message to the manager channel. This updates the proplet.
 ```bash
 mosquitto_pub -u $PROPLET_THING_ID -P $PROPLET_THING_KEY -I propeller -t channels/$MANAGER_CHANNEL_ID/messages/control/proplet/alive -h localhost -m "{\"proplet_id\": \"$PROPLET_THING_ID\"}"
 ```
+
+To start the manager, run the following command
+
+```bash
+export MANAGER_THING_ID=""
+export MANAGER_THING_KEY=""
+export PRMANAGER_CHANNEL_ID=""
+export PROPLET_THING_ID=""
+export PROPLET_THING_KEY=""
+propeller-manager
+```
+
+To start the proplet, run the following command
+
+```bash
+export MANAGER_THING_ID=""
+export MANAGER_THING_KEY=""
+export PROPLET_CHANNEL_ID=""
+export PROPLET_THING_ID=""
+export PROPLET_THING_KEY=""
+propeller-proplet
+```

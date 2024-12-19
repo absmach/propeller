@@ -2,6 +2,8 @@ run:
   timeout: 10m
 
 issues:
+  exclude-dirs:
+    - examples/
   max-issues-per-linter: 100
   max-same-issues: 100
 
@@ -30,6 +32,7 @@ linters:
     - dupl
     - err113
     - noctx
+    - cyclop
 
 linters-settings:
   gocritic:

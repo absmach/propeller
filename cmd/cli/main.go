@@ -10,9 +10,9 @@ import (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "propellerd",
-		Short: "Propeller Daemon",
-		Long:  `Propeller Daemon is a daemon that manages the lifecycle of Propeller components.`,
+		Use:   "propeller-cli",
+		Short: "Propeller CLI",
+		Long:  `Propeller CLI is a command line interface for interacting with Propeller components.`,
 		PersistentPreRun: func(_ *cobra.Command, _ []string) {
 			sdkConf := sdk.Config{
 				ManagerURL:      propellerd.DefManagerURL,
@@ -23,10 +23,8 @@ func main() {
 		},
 	}
 
-	managerCmd := propellerd.NewManagerCmd()
 	tasksCmd := propellerd.NewTasksCmd()
 
-	rootCmd.AddCommand(managerCmd)
 	rootCmd.AddCommand(tasksCmd)
 
 	if err := rootCmd.Execute(); err != nil {

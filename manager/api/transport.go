@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +17,11 @@ import (
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+)
+
+const (
+	maxFileSize = 1024 * 1024 * 100
+	fileKey     = "file"
 )
 
 func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) http.Handler {
@@ -68,6 +74,12 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "update-task").ServeHTTP)
+			r.Put("/upload", otelhttp.NewHandler(kithttp.NewServer(
+				updateTaskEndpoint(svc),
+				decodeUploadTaskFileReq,
+				api.EncodeResponse,
+				opts...,
+			), "upload-task-file").ServeHTTP)
 			r.Delete("/", otelhttp.NewHandler(kithttp.NewServer(
 				deleteTaskEndpoint(svc),
 				decodeEntityReq("taskID"),
@@ -107,10 +119,35 @@ func decodeTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
 	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
 		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
 	}
+
 	var req taskReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)
 	}
+
+	return req, nil
+}
+
+func decodeUploadTaskFileReq(_ context.Context, r *http.Request) (interface{}, error) {
+	var req taskReq
+	if err := r.ParseMultipartForm(maxFileSize); err != nil {
+		return nil, err
+	}
+	file, header, err := r.FormFile(fileKey)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(header.Filename, ".wasm") {
+		return nil, errors.Join(apiutil.ErrValidation, errors.New("invalid file extension"))
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	req.File = data
+	req.Task.ID = chi.URLParam(r, "taskID")
 
 	return req, nil
 }

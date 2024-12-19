@@ -12,12 +12,14 @@ import (
 )
 
 var (
-	errConnect            = errors.New("failed to connect to MQTT broker")
 	errPublishTimeout     = errors.New("failed to publish due to timeout reached")
 	errSubscribeTimeout   = errors.New("failed to subscribe due to timeout reached")
 	errUnsubscribeTimeout = errors.New("failed to unsubscribe due to timeout reached")
 	errEmptyTopic         = errors.New("empty topic")
 	errEmptyID            = errors.New("empty ID")
+
+	aliveTopicTemplate = "channels/%s/messages/control/proplet/alive"
+	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","mg_channel_id":"%s"}`
 )
 
 type pubsub struct {
@@ -35,12 +37,12 @@ type PubSub interface {
 	Unsubscribe(ctx context.Context, topic string) error
 }
 
-func NewPubSub(url string, qos byte, id, username, password string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password, channelID string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyID
 	}
 
-	client, err := newClient(url, id, username, password, timeout)
+	client, err := newClient(url, id, username, password, channelID, timeout, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -112,21 +114,49 @@ func (ps *pubsub) Close() error {
 	return nil
 }
 
-func newClient(address, id, username, password string, timeout time.Duration) (mqtt.Client, error) {
+func newClient(address, id, username, password, channelID string, timeout time.Duration, logger *slog.Logger) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
+		AddBroker(address).
+		SetClientID(id).
 		SetUsername(username).
 		SetPassword(password).
-		AddBroker(address).
-		SetClientID(id)
+		SetCleanSession(true)
+	if channelID != "" {
+		topic := fmt.Sprintf(aliveTopicTemplate, channelID)
+		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
+		opts.SetWill(topic, lwtPayload, 0, false)
+	}
+
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		args := []any{}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+		}
+
+		logger.Info("MQTT connection lost", args...)
+	})
+
+	opts.SetReconnectingHandler(func(client mqtt.Client, options *mqtt.ClientOptions) {
+		args := []any{}
+		if options != nil {
+			args = append(args,
+				slog.String("client_id", options.ClientID),
+				slog.String("username", options.Username),
+			)
+		}
+
+		logger.Info("MQTT reconnecting", args...)
+	})
+
 	client := mqtt.NewClient(opts)
 
 	token := client.Connect()
 	if token.Error() != nil {
-		return nil, token.Error()
+		return nil, errors.Join(errors.New("failed to connect to MQTT broker"), token.Error())
 	}
 
 	if ok := token.WaitTimeout(timeout); !ok {
-		return nil, errConnect
+		return nil, errors.New("timeout reached while connecting to MQTT broker")
 	}
 
 	return client, nil
