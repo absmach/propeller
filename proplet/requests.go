@@ -3,10 +3,11 @@ package proplet
 import "errors"
 
 type startRequest struct {
-	ID           string
-	FunctionName string
-	WasmFile     []byte
-	Params       []uint64
+	ID                   string
+	FunctionName         string
+	WasmFile             []byte
+	WasmFileDownloadPath string
+	Params               []uint64
 }
 
 func (r startRequest) Validate() error {
@@ -16,8 +17,8 @@ func (r startRequest) Validate() error {
 	if r.FunctionName == "" {
 		return errors.New("function name is required")
 	}
-	if r.WasmFile == nil {
-		return errors.New("wasm file is required")
+	if r.WasmFile == nil && r.WasmFileDownloadPath == "" {
+		return errors.New("either wasm file or wasm file download path is required")
 	}
 
 	return nil

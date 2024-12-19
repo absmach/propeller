@@ -10,6 +10,10 @@ type taskReq struct {
 }
 
 func (t *taskReq) validate() error {
+	if t.Name == "" {
+		return apiutil.ErrMissingName
+	}
+
 	return nil
 }
 
