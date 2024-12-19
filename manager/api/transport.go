@@ -74,6 +74,12 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "update-task").ServeHTTP)
+			r.Put("/upload", otelhttp.NewHandler(kithttp.NewServer(
+				updateTaskEndpoint(svc),
+				decodeUploadTaskFileReq,
+				api.EncodeResponse,
+				opts...,
+			), "upload-task-file").ServeHTTP)
 			r.Delete("/", otelhttp.NewHandler(kithttp.NewServer(
 				deleteTaskEndpoint(svc),
 				decodeEntityReq("taskID"),
@@ -110,6 +116,19 @@ func decodeEntityReq(key string) kithttp.DecodeRequestFunc {
 }
 
 func decodeTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
+	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
+		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
+	}
+
+	var req taskReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, errors.Join(err, apiutil.ErrValidation)
+	}
+
+	return req, nil
+}
+
+func decodeUploadTaskFileReq(_ context.Context, r *http.Request) (interface{}, error) {
 	var req taskReq
 	if err := r.ParseMultipartForm(maxFileSize); err != nil {
 		return nil, err
@@ -128,7 +147,7 @@ func decodeTaskReq(_ context.Context, r *http.Request) (interface{}, error) {
 		return nil, err
 	}
 	req.File = data
-	req.Name = header.Filename
+	req.Task.ID = chi.URLParam(r, "taskID")
 
 	return req, nil
 }

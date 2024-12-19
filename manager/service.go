@@ -154,8 +154,15 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 		return task.Task{}, err
 	}
 	dbT.UpdatedAt = time.Now()
-	dbT.Name = t.Name
-	dbT.Inputs = t.Inputs
+	if t.Name != "" {
+		dbT.Name = t.Name
+	}
+	if t.Inputs != nil {
+		dbT.Inputs = t.Inputs
+	}
+	if t.File != nil {
+		dbT.File = t.File
+	}
 
 	if err := svc.tasksDB.Update(ctx, dbT.ID, dbT); err != nil {
 		return task.Task{}, err
