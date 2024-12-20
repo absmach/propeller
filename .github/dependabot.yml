@@ -17,3 +17,7 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "Europe/Paris"
+    groups:
+      go-dependency:
+        patterns:
+          - "*"
