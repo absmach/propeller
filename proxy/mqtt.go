@@ -1,4 +1,4 @@
-package mqtt
+package proxy
 
 import (
 	"context"
@@ -8,9 +8,16 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/proplet"
-	"github.com/absmach/propeller/proxy/config"
+	"github.com/absmach/propeller/task"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
+
+type MQTTProxyConfig struct {
+	BrokerURL string
+	Password  string
+	PropletID string
+	ChannelID string
+}
 
 const (
 	connTimeout    = 10
@@ -22,10 +29,10 @@ const (
 
 type RegistryClient struct {
 	client mqtt.Client
-	config *config.MQTTProxyConfig
+	config *MQTTProxyConfig
 }
 
-func NewMQTTClient(cfg *config.MQTTProxyConfig) (*RegistryClient, error) {
+func NewMQTTClient(cfg *MQTTProxyConfig) (*RegistryClient, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(cfg.BrokerURL).
 		SetClientID("Proplet-" + cfg.PropletID).
@@ -71,14 +78,14 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
+func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- task.URLValue) error {
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 
 		payLoad := struct {
-			Appname string `json:"app_name"`
+			Appname task.URLValue `json:"app_name"`
 		}{
-			Appname: "",
+			Appname: task.URLValue{},
 		}
 
 		err := json.Unmarshal(data, &payLoad)
@@ -90,7 +97,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- str
 
 		select {
 		case containerChan <- payLoad.Appname:
-			log.Printf("Received container request: %s", payLoad.Appname)
+			log.Printf("Received container request: %s", payLoad.Appname.String())
 		case <-ctx.Done():
 
 			return

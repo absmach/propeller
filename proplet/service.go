@@ -138,11 +138,11 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		}
 
 		req := startRequest{
-			ID:                   payload.ID,
-			FunctionName:         payload.Name,
-			WasmFile:             payload.File,
-			WasmFileDownloadPath: payload.DownloadFile,
-			Params:               payload.Inputs,
+			ID:           payload.ID,
+			FunctionName: payload.Name,
+			WasmFile:     payload.File,
+			imageURL:     payload.ImageURL,
+			Params:       payload.Inputs,
 		}
 		if err := req.Validate(); err != nil {
 			return err
@@ -159,7 +159,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		}
 
 		pl := map[string]interface{}{
-			"app_name": req.WasmFileDownloadPath,
+			"app_name": req.imageURL,
 		}
 		tp := fmt.Sprintf(fetchRequestTopicTemplate, p.channelID)
 		if err := p.pubsub.Publish(ctx, tp, pl); err != nil {
@@ -167,19 +167,20 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		}
 
 		go func() {
-			p.logger.Info("Waiting for chunks", slog.String("app_name", req.WasmFileDownloadPath))
+			p.logger.Info("Waiting for chunks", slog.String("app_name", req.imageURL.String()))
 
 			for {
 				p.chunksMutex.Lock()
-				metadata, exists := p.chunkMetadata[req.WasmFileDownloadPath]
-				receivedChunks := len(p.chunks[req.WasmFileDownloadPath])
+				urlStr := req.imageURL.String()
+				metadata, exists := p.chunkMetadata[urlStr]
+				receivedChunks := len(p.chunks[urlStr])
 				p.chunksMutex.Unlock()
 
 				if exists && receivedChunks == metadata.TotalChunks {
-					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.WasmFileDownloadPath))
-					wasmBinary := assembleChunks(p.chunks[req.WasmFileDownloadPath])
+					p.logger.Info("All chunks received, deploying app", slog.String("app_name", urlStr))
+					wasmBinary := assembleChunks(p.chunks[urlStr])
 					if err := p.runtime.StartApp(ctx, wasmBinary, req.ID, req.FunctionName, req.Params...); err != nil {
-						p.logger.Error("Failed to start app", slog.String("app_name", req.WasmFileDownloadPath), slog.Any("error", err))
+						p.logger.Error("Failed to start app", slog.String("app_name", urlStr), slog.Any("error", err))
 					}
 
 					break

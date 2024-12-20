@@ -1,4 +1,4 @@
-package config
+package proxy
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/task"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -21,12 +22,12 @@ const (
 )
 
 type HTTPProxyConfig struct {
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"             envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE"           envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN"         envDefault:""`
-	Username     string `env:"PROXY_REGISTRY_USERNAME"      envDefault:""`
-	Password     string `env:"PROXY_REGISTRY_PASSWORD"      envDefault:""`
-	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty"`
+	ChunkSize    int
+	Authenticate bool
+	Token        string
+	Username     string
+	Password     string
+	RegistryURL  string
 }
 
 func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
@@ -123,36 +124,37 @@ func createChunks(data []byte, containerPath string, chunkSize int) []proplet.Ch
 	return chunks
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
-	repo, err := remote.NewRepository(containerPath)
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath task.URLValue, chunkSize int) ([]proplet.ChunkPayload, error) {
+	reference := containerPath.String()
+	repo, err := remote.NewRepository(reference)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
+		return nil, fmt.Errorf("failed to create repository for %s: %w", reference, err)
 	}
 
 	c.setupAuthentication(repo)
 
-	manifest, err := c.fetchManifest(ctx, repo, containerPath)
+	manifest, err := c.fetchManifest(ctx, repo, reference)
 	if err != nil {
 		return nil, err
 	}
 
 	largestLayer, err := findLargestLayer(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find layer for %s: %w", containerPath, err)
+		return nil, fmt.Errorf("failed to find layer for %s: %w", reference, err)
 	}
 
 	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
 
 	layerReader, err := repo.Fetch(ctx, largestLayer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerPath, err)
+		return nil, fmt.Errorf("failed to fetch layer for %s: %w", reference, err)
 	}
 	defer layerReader.Close()
 
 	data, err := io.ReadAll(layerReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
+		return nil, fmt.Errorf("failed to read layer for %s: %w", reference, err)
 	}
 
-	return createChunks(data, containerPath, chunkSize), nil
+	return createChunks(data, reference, chunkSize), nil
 }
