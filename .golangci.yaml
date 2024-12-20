@@ -34,7 +34,6 @@ linters:
     - noctx
     - cyclop
     - tagalign
-    - recvcheck
 
 linters-settings:
   gocritic:
