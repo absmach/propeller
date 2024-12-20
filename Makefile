@@ -20,6 +20,8 @@ endef
 $(SERVICES):
 	$(call compile_service,$(@))
 
+
+# Install all non-WASM executables from the build directory to GOBIN with 'propeller-' prefix
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
