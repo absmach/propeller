@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/absmach/propeller/proplet"
-	"github.com/absmach/propeller/task"
 )
 
 const chunkBuffer = 10
@@ -15,7 +14,7 @@ type ProxyService struct {
 	orasconfig    *HTTPProxyConfig
 	mqttClient    *RegistryClient
 	logger        *slog.Logger
-	containerChan chan task.URLValue
+	containerChan chan string
 	dataChan      chan proplet.ChunkPayload
 }
 
@@ -29,7 +28,7 @@ func NewService(ctx context.Context, mqttCfg *MQTTProxyConfig, httpCfg *HTTPProx
 		orasconfig:    httpCfg,
 		mqttClient:    mqttClient,
 		logger:        logger,
-		containerChan: make(chan task.URLValue, 1),
+		containerChan: make(chan string, 1),
 		dataChan:      make(chan proplet.ChunkPayload, chunkBuffer),
 	}, nil
 }
@@ -38,7 +37,7 @@ func (s *ProxyService) MQTTClient() *RegistryClient {
 	return s.mqttClient
 }
 
-func (s *ProxyService) ContainerChan() chan task.URLValue {
+func (s *ProxyService) ContainerChan() chan string {
 	return s.containerChan
 }
 

@@ -17,10 +17,10 @@ const svcName = "proxy"
 type config struct {
 	LogLevel string `env:"PROXY_LOG_LEVEL"           envDefault:"info"`
 
-	BrokerURL  string `env:"PROXY_MQTT_ADDRESS"          envDefault:"tcp://localhost:1883"`
-	PropletKey string `env:"PROXY_PROPLET_KEY,notEmpty"`
-	PropletID  string `env:"PROXY_PROPLET_ID,notEmpty" `
-	ChannelID  string `env:"PROXY_CHANNEL_ID,notEmpty"`
+	BrokerURL  string `env:"PROPLET_MQTT_ADDRESS"          envDefault:"tcp://localhost:1883"`
+	PropletKey string `env:"PROPLET_THING_KEY,notEmpty"`
+	PropletID  string `env:"PROPLET_THING_ID,notEmpty" `
+	ChannelID  string `env:"PROPLET_CHANNEL_ID,notEmpty"`
 
 	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"             envDefault:"512000"`
 	Authenticate bool   `env:"PROXY_AUTHENTICATE"           envDefault:"false"`

@@ -167,20 +167,19 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		}
 
 		go func() {
-			p.logger.Info("Waiting for chunks", slog.String("app_name", req.imageURL.String()))
+			p.logger.Info("Waiting for chunks", slog.String("app_name", req.imageURL))
 
 			for {
 				p.chunksMutex.Lock()
-				urlStr := req.imageURL.String()
-				metadata, exists := p.chunkMetadata[urlStr]
-				receivedChunks := len(p.chunks[urlStr])
+				metadata, exists := p.chunkMetadata[req.imageURL]
+				receivedChunks := len(p.chunks[req.imageURL])
 				p.chunksMutex.Unlock()
 
 				if exists && receivedChunks == metadata.TotalChunks {
-					p.logger.Info("All chunks received, deploying app", slog.String("app_name", urlStr))
-					wasmBinary := assembleChunks(p.chunks[urlStr])
+					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
+					wasmBinary := assembleChunks(p.chunks[req.imageURL])
 					if err := p.runtime.StartApp(ctx, wasmBinary, req.ID, req.FunctionName, req.Params...); err != nil {
-						p.logger.Error("Failed to start app", slog.String("app_name", urlStr), slog.Any("error", err))
+						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
 					}
 
 					break

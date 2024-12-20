@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/absmach/propeller/proplet"
-	"github.com/absmach/propeller/task"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -43,7 +42,6 @@ func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
 		}
 	} else if c.Token != "" {
 		cred = auth.Credential{
-			Username:    c.Username,
 			AccessToken: c.Token,
 		}
 	}
@@ -124,37 +122,36 @@ func createChunks(data []byte, containerPath string, chunkSize int) []proplet.Ch
 	return chunks
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath task.URLValue, chunkSize int) ([]proplet.ChunkPayload, error) {
-	reference := containerPath.String()
-	repo, err := remote.NewRepository(reference)
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
+	repo, err := remote.NewRepository(containerPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository for %s: %w", reference, err)
+		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
 	}
 
 	c.setupAuthentication(repo)
 
-	manifest, err := c.fetchManifest(ctx, repo, reference)
+	manifest, err := c.fetchManifest(ctx, repo, containerPath)
 	if err != nil {
 		return nil, err
 	}
 
 	largestLayer, err := findLargestLayer(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find layer for %s: %w", reference, err)
+		return nil, fmt.Errorf("failed to find layer for %s: %w", containerPath, err)
 	}
 
 	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
 
 	layerReader, err := repo.Fetch(ctx, largestLayer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch layer for %s: %w", reference, err)
+		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerPath, err)
 	}
 	defer layerReader.Close()
 
 	data, err := io.ReadAll(layerReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read layer for %s: %w", reference, err)
+		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
 	}
 
-	return createChunks(data, reference, chunkSize), nil
+	return createChunks(data, containerPath, chunkSize), nil
 }

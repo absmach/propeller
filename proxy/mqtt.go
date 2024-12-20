@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/proplet"
-	"github.com/absmach/propeller/task"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -78,14 +77,14 @@ func (c *RegistryClient) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- task.URLValue) error {
+func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- string) error {
 	handler := func(client mqtt.Client, msg mqtt.Message) {
 		data := msg.Payload()
 
 		payLoad := struct {
-			Appname task.URLValue `json:"app_name"`
+			Appname string `json:"app_name"`
 		}{
-			Appname: task.URLValue{},
+			Appname: "",
 		}
 
 		err := json.Unmarshal(data, &payLoad)
@@ -97,7 +96,7 @@ func (c *RegistryClient) Subscribe(ctx context.Context, containerChan chan<- tas
 
 		select {
 		case containerChan <- payLoad.Appname:
-			log.Printf("Received container request: %s", payLoad.Appname.String())
+			log.Printf("Received container request: %s", payLoad.Appname)
 		case <-ctx.Done():
 
 			return

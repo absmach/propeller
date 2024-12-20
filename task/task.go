@@ -33,7 +33,7 @@ type Task struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	State      State     `json:"state"`
-	ImageURL   URLValue  `json:"image_url,omitempty"`
+	ImageURL   string    `json:"image_url,omitempty"`
 	File       []byte    `json:"file,omitempty"`
 	Inputs     []uint64  `json:"inputs,omitempty"`
 	Results    []uint64  `json:"results,omitempty"`

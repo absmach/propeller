@@ -102,28 +102,3 @@ export PROPLET_THING_ID=""
 export PROPLET_THING_KEY=""
 propeller-proplet
 ```
-
-To start the proxy, run the following command
-
-```bash
-export PROXY_REGISTRY_URL=""
-export PROXY_AUTHENTICATE="TRUE"
-export PROXY_REGISTRY_USERNAME=""
-export PROXY_REGISTRY_PASSWORD=""
-export PROXY_PROPLET_KEY=""
-export PROXY_PROPLET_ID=""
-export PROXY_CHANNEL_ID=""
-propeller-proxy
-```
-
-Subscibe to MQTT channel to download the requested binary
-
-```bash
-mosquitto_sub -I propeller -u $PROXY_PROPLET_ID -P $PROXY_PROPLET_KEY -t channels/$PROXY_CHANNEL_ID/messages/registry/server -h localhost
-```
-
-Publish to MQTT channel to request the container to download
-
-```bash
-mosquitto_pub -I propeller -u $PROXY_PROPLET_ID -P $PROXY_PROPLET_KEY -t channels/$PROXY_CHANNEL_ID/messages/registry/proplet -h localhost -m '{"app_name":"mrstevenyaga/add.wasm"}'
-```

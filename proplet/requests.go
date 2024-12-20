@@ -2,15 +2,13 @@ package proplet
 
 import (
 	"errors"
-
-	"github.com/absmach/propeller/task"
 )
 
 type startRequest struct {
 	ID           string
 	FunctionName string
 	WasmFile     []byte
-	imageURL     task.URLValue
+	imageURL     string
 	Params       []uint64
 }
 
@@ -21,7 +19,7 @@ func (r startRequest) Validate() error {
 	if r.FunctionName == "" {
 		return errors.New("function name is required")
 	}
-	if r.WasmFile == nil && r.imageURL == (task.URLValue{}) {
+	if r.WasmFile == nil && r.imageURL == "" {
 		return errors.New("either wasm file or wasm file download path is required")
 	}
 
