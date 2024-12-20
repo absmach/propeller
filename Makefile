@@ -21,9 +21,7 @@ $(SERVICES):
 	$(call compile_service,$(@))
 
 install:
-	for file in $(wildcard $(BUILD_DIR)/*[!.wasm]); do \
-		cp "$$file" "$(GOBIN)/propeller-$$(basename "$$file")"; \
-	done
+	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
 .PHONY: all $(SERVICES)
 all: $(SERVICES)
