@@ -1,11 +1,14 @@
 package proplet
 
-import "errors"
+import (
+	"errors"
+)
 
 type startRequest struct {
 	ID           string
 	FunctionName string
 	WasmFile     []byte
+	imageURL     string
 	Params       []uint64
 }
 
@@ -16,8 +19,8 @@ func (r startRequest) Validate() error {
 	if r.FunctionName == "" {
 		return errors.New("function name is required")
 	}
-	if r.WasmFile == nil {
-		return errors.New("wasm file is required")
+	if r.WasmFile == nil && r.imageURL == "" {
+		return errors.New("either wasm file or wasm file download path is required")
 	}
 
 	return nil

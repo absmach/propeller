@@ -6,7 +6,7 @@ TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
 EXAMPLES = addition long-addition
-SERVICES = manager proplet cli
+SERVICES = manager proplet cli proxy
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -20,12 +20,10 @@ endef
 $(SERVICES):
 	$(call compile_service,$(@))
 
+
+# Install all non-WASM executables from the build directory to GOBIN with 'propeller-' prefix
 install:
-	for file in $(BUILD_DIR)/*; do \
-		if [[ ! "$$file" =~ \.wasm$$ ]]; then \
-			cp "$$file" $(GOBIN)/propeller-`basename "$$file"`; \
-		fi \
-	done
+	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
 .PHONY: all $(SERVICES)
 all: $(SERVICES)

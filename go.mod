@@ -54,4 +54,11 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241216192217-9240e9c98484 // indirect
 	google.golang.org/grpc v1.69.0 // indirect
 	google.golang.org/protobuf v1.36.0 // indirect
+	oras.land/oras-go/v2 v2.5.0
+)
+
+require (
+	github.com/caarlos0/env/v11 v11.3.0 // indirect
+	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/opencontainers/image-spec v1.1.0 // indirect
 )

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net/url"
 	"sync"
 	"time"
 
@@ -21,22 +20,19 @@ const (
 )
 
 var (
-	RegistryAckTopicTemplate    = "channels/%s/messages/control/manager/registry"
-	updateRegistryTopicTemplate = "channels/%s/messages/control/manager/update"
-	aliveTopicTemplate          = "channels/%s/messages/control/proplet/alive"
-	discoveryTopicTemplate      = "channels/%s/messages/control/proplet/create"
-	startTopicTemplate          = "channels/%s/messages/control/manager/start"
-	stopTopicTemplate           = "channels/%s/messages/control/manager/stop"
-	registryResponseTopic       = "channels/%s/messages/registry/server"
-	fetchRequestTopicTemplate   = "channels/%s/messages/registry/proplet"
+	RegistryAckTopicTemplate  = "channels/%s/messages/control/manager/registry"
+	aliveTopicTemplate        = "channels/%s/messages/control/proplet/alive"
+	discoveryTopicTemplate    = "channels/%s/messages/control/proplet/create"
+	startTopicTemplate        = "channels/%s/messages/control/manager/start"
+	stopTopicTemplate         = "channels/%s/messages/control/manager/stop"
+	registryResponseTopic     = "channels/%s/messages/registry/server"
+	fetchRequestTopicTemplate = "channels/%s/messages/registry/proplet"
 )
 
 type PropletService struct {
 	channelID          string
 	thingID            string
 	thingKey           string
-	registryURL        string
-	registryToken      string
 	livelinessInterval time.Duration
 	pubsub             pkgmqtt.PubSub
 	chunks             map[string][][]byte
@@ -53,7 +49,7 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(ctx context.Context, channelID, thingID, thingKey, registryURL, registryToken string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+func NewService(ctx context.Context, channelID, thingID, thingKey string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
 	topic := fmt.Sprintf(discoveryTopicTemplate, channelID)
 	payload := map[string]interface{}{
 		"proplet_id":    thingID,
@@ -67,8 +63,6 @@ func NewService(ctx context.Context, channelID, thingID, thingKey, registryURL, 
 		channelID:          channelID,
 		thingID:            thingID,
 		thingKey:           thingKey,
-		registryURL:        registryURL,
-		registryToken:      registryToken,
 		livelinessInterval: livelinessInterval,
 		pubsub:             pubsub,
 		chunks:             make(map[string][][]byte),
@@ -125,11 +119,6 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
 	}
 
-	topic = fmt.Sprintf(updateRegistryTopicTemplate, p.channelID)
-	if err := p.pubsub.Subscribe(ctx, topic, p.registryUpdate(ctx)); err != nil {
-		return fmt.Errorf("failed to subscribe to update registry topic: %w", err)
-	}
-
 	logger.Info("Proplet service is running.")
 	<-ctx.Done()
 
@@ -152,6 +141,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			ID:           payload.ID,
 			FunctionName: payload.Name,
 			WasmFile:     payload.File,
+			imageURL:     payload.ImageURL,
 			Params:       payload.Inputs,
 		}
 		if err := req.Validate(); err != nil {
@@ -160,39 +150,44 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
-		if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
-			return err
-		}
-
-		if p.registryURL != "" {
-			payload := map[string]interface{}{
-				"app_name": req.FunctionName,
-			}
-			topic := fmt.Sprintf(fetchRequestTopicTemplate, p.channelID)
-			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
+		if req.WasmFile != nil {
+			if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
 				return err
 			}
 
-			go func() {
-				p.logger.Info("Waiting for chunks", slog.String("app_name", req.FunctionName))
+			return nil
+		}
 
-				for {
-					p.chunksMutex.Lock()
-					metadata, exists := p.chunkMetadata[req.FunctionName]
-					receivedChunks := len(p.chunks[req.FunctionName])
-					p.chunksMutex.Unlock()
+		pl := map[string]interface{}{
+			"app_name": req.imageURL,
+		}
+		tp := fmt.Sprintf(fetchRequestTopicTemplate, p.channelID)
+		if err := p.pubsub.Publish(ctx, tp, pl); err != nil {
+			return err
+		}
 
-					if exists && receivedChunks == metadata.TotalChunks {
-						p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.FunctionName))
-						go p.deployAndRunApp(ctx, req.FunctionName)
+		go func() {
+			p.logger.Info("Waiting for chunks", slog.String("app_name", req.imageURL))
 
-						break
+			for {
+				p.chunksMutex.Lock()
+				metadata, exists := p.chunkMetadata[req.imageURL]
+				receivedChunks := len(p.chunks[req.imageURL])
+				p.chunksMutex.Unlock()
+
+				if exists && receivedChunks == metadata.TotalChunks {
+					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
+					wasmBinary := assembleChunks(p.chunks[req.imageURL])
+					if err := p.runtime.StartApp(ctx, wasmBinary, req.ID, req.FunctionName, req.Params...); err != nil {
+						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
 					}
 
-					time.Sleep(pollingInterval)
+					break
 				}
-			}()
-		}
+
+				time.Sleep(pollingInterval)
+			}
+		}()
 
 		return nil
 	}
@@ -222,7 +217,7 @@ func (p *PropletService) handleStopCommand(ctx context.Context) func(topic strin
 	}
 }
 
-func (p *PropletService) handleChunk(ctx context.Context) func(topic string, msg map[string]interface{}) error {
+func (p *PropletService) handleChunk(_ context.Context) func(topic string, msg map[string]interface{}) error {
 	return func(topic string, msg map[string]interface{}) error {
 		data, err := json.Marshal(msg)
 		if err != nil {
@@ -249,27 +244,8 @@ func (p *PropletService) handleChunk(ctx context.Context) func(topic string, msg
 
 		log.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
 
-		if len(p.chunks[chunk.AppName]) == p.chunkMetadata[chunk.AppName].TotalChunks {
-			log.Printf("All chunks received for app '%s'. Deploying...\n", chunk.AppName)
-			go p.deployAndRunApp(ctx, chunk.AppName)
-		}
-
 		return nil
 	}
-}
-
-func (p *PropletService) deployAndRunApp(ctx context.Context, appName string) {
-	log.Printf("Assembling chunks for app '%s'\n", appName)
-
-	p.chunksMutex.Lock()
-	chunks := p.chunks[appName]
-	delete(p.chunks, appName)
-	p.chunksMutex.Unlock()
-
-	_ = ctx
-	_ = assembleChunks(chunks)
-
-	log.Printf("App '%s' started successfully\n", appName)
 }
 
 func assembleChunks(chunks [][]byte) []byte {
@@ -293,52 +269,4 @@ func (c *ChunkPayload) Validate() error {
 	}
 
 	return nil
-}
-
-func (p *PropletService) UpdateRegistry(ctx context.Context, registryURL, registryToken string) error {
-	if registryURL == "" {
-		return errors.New("registry URL cannot be empty")
-	}
-	if _, err := url.ParseRequestURI(registryURL); err != nil {
-		return fmt.Errorf("invalid registry URL '%s': %w", registryURL, err)
-	}
-
-	p.registryURL = registryURL
-	p.registryToken = registryToken
-
-	log.Printf("App Registry updated and persisted: %s\n", registryURL)
-
-	return nil
-}
-
-func (p *PropletService) registryUpdate(ctx context.Context) func(topic string, msg map[string]interface{}) error {
-	return func(topic string, msg map[string]interface{}) error {
-		data, err := json.Marshal(msg)
-		if err != nil {
-			return err
-		}
-
-		var payload struct {
-			RegistryURL   string `json:"registry_url"`
-			RegistryToken string `json:"registry_token"`
-		}
-		if err := json.Unmarshal(data, &payload); err != nil {
-			return err
-		}
-
-		ackTopic := fmt.Sprintf(RegistryAckTopicTemplate, p.channelID)
-
-		if err := p.UpdateRegistry(ctx, payload.RegistryURL, payload.RegistryToken); err != nil {
-			if err := p.pubsub.Publish(ctx, ackTopic, map[string]interface{}{"status": "failure", "error": err.Error()}); err != nil {
-				p.logger.Error("Failed to publish ack message", slog.String("ack_topic", ackTopic), slog.Any("error", err))
-			}
-		} else {
-			if err := p.pubsub.Publish(ctx, ackTopic, map[string]interface{}{"status": "success"}); err != nil {
-				p.logger.Error("Failed to publish ack message", slog.String("ack_topic", ackTopic), slog.Any("error", err))
-			}
-			p.logger.Info("App Registry configuration updated successfully", slog.String("ack_topic", ackTopic), slog.String("registry_url", payload.RegistryURL))
-		}
-
-		return nil
-	}
 }
