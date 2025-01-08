@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -120,7 +121,7 @@ func (w *wazeroRuntime) runOnHostRuntime(ctx context.Context, wasmBinary []byte,
 	if err != nil {
 		return fmt.Errorf("error getting current directory: %w", err)
 	}
-	f, err := os.Create(fmt.Sprintf("%s/%s.wasm", currentDir, id))
+	f, err := os.Create(filepath.Join(currentDir, id+".wasm"))
 	if err != nil {
 		return fmt.Errorf("error creating file: %w", err)
 	}
@@ -128,9 +129,11 @@ func (w *wazeroRuntime) runOnHostRuntime(ctx context.Context, wasmBinary []byte,
 	if _, err = f.Write(wasmBinary); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error closing file: %w", err)
+	}
 
-	cliArgs = append(cliArgs, fmt.Sprintf("%s/%s.wasm", currentDir, id))
+	cliArgs = append(cliArgs, filepath.Join(currentDir, id+".wasm"))
 	for i := range args {
 		cliArgs = append(cliArgs, strconv.FormatUint(args[i], 10))
 	}
@@ -164,7 +167,7 @@ func (w *wazeroRuntime) runOnHostRuntime(ctx context.Context, wasmBinary []byte,
 		}
 
 		w.logger.Info("Finished running app", slog.String("id", id))
-	}(fmt.Sprintf("%s/%s.wasm", currentDir, id))
+	}(filepath.Join(currentDir, id+".wasm"))
 
 	return nil
 }
