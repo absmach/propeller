@@ -146,13 +146,20 @@ func (w *wazeroRuntime) runOnHostRuntime(ctx context.Context, wasmBinary []byte,
 	}
 
 	go func(fileName string) {
+		var payload map[string]interface{}
+
 		if err := cmd.Wait(); err != nil {
 			w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
-		}
-
-		payload := map[string]interface{}{
-			"task_id": id,
-			"results": results.String(),
+			payload = map[string]interface{}{
+				"task_id": id,
+				"error":   err.Error(),
+				"results": results.String(),
+			}
+		} else {
+			payload = map[string]interface{}{
+				"task_id": id,
+				"results": results.String(),
+			}
 		}
 
 		topic := fmt.Sprintf(resultsTopic, w.channelID)

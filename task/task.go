@@ -38,6 +38,7 @@ type Task struct {
 	CLIArgs    []string  `json:"cli_args"`
 	Inputs     []uint64  `json:"inputs,omitempty"`
 	Results    any       `json:"results,omitempty"`
+	Error      string    `json:"error,omitempty"`
 	StartTime  time.Time `json:"start_time"`
 	FinishTime time.Time `json:"finish_time"`
 	CreatedAt  time.Time `json:"created_at"`

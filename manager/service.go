@@ -341,6 +341,10 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]int
 	t.UpdatedAt = time.Now()
 	t.FinishTime = time.Now()
 
+	if errMsg, ok := msg["error"].(string); ok {
+		t.Error = errMsg
+	}
+
 	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
 		return err
 	}
