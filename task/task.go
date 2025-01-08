@@ -35,8 +35,9 @@ type Task struct {
 	State      State     `json:"state"`
 	ImageURL   string    `json:"image_url,omitempty"`
 	File       []byte    `json:"file,omitempty"`
+	CLIArgs    []string  `json:"cli_args"`
 	Inputs     []uint64  `json:"inputs,omitempty"`
-	Results    []uint64  `json:"results,omitempty"`
+	Results    any       `json:"results,omitempty"`
 	StartTime  time.Time `json:"start_time"`
 	FinishTime time.Time `json:"finish_time"`
 	CreatedAt  time.Time `json:"created_at"`

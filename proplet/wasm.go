@@ -1,10 +1,14 @@
 package proplet
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
+	"strconv"
 	"sync"
 
 	"github.com/absmach/propeller/pkg/mqtt"
@@ -15,28 +19,34 @@ import (
 var resultsTopic = "channels/%s/messages/control/proplet/results"
 
 type Runtime interface {
-	StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error
+	StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, args ...uint64) error
 	StopApp(ctx context.Context, id string) error
 }
 
 type wazeroRuntime struct {
-	mutex     sync.Mutex
-	runtimes  map[string]wazero.Runtime
-	pubsub    mqtt.PubSub
-	channelID string
-	logger    *slog.Logger
+	mutex           sync.Mutex
+	runtimes        map[string]wazero.Runtime
+	pubsub          mqtt.PubSub
+	channelID       string
+	logger          *slog.Logger
+	hostWasmRuntime string
 }
 
-func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string) Runtime {
+func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID, hostWasmRuntime string) Runtime {
 	return &wazeroRuntime{
-		runtimes:  make(map[string]wazero.Runtime),
-		pubsub:    pubsub,
-		channelID: channelID,
-		logger:    logger,
+		runtimes:        make(map[string]wazero.Runtime),
+		pubsub:          pubsub,
+		channelID:       channelID,
+		logger:          logger,
+		hostWasmRuntime: hostWasmRuntime,
 	}
 }
 
-func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error {
+func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, args ...uint64) error {
+	if w.hostWasmRuntime != "" {
+		return w.runOnHostRuntime(ctx, wasmBinary, cliArgs, id, args...)
+	}
+
 	r := wazero.NewRuntime(ctx)
 
 	w.mutex.Lock()
@@ -101,6 +111,60 @@ func (w *wazeroRuntime) StopApp(ctx context.Context, id string) error {
 	}
 
 	delete(w.runtimes, id)
+
+	return nil
+}
+
+func (w *wazeroRuntime) runOnHostRuntime(ctx context.Context, wasmBinary []byte, cliArgs []string, id string, args ...uint64) error {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("error getting current directory: %w", err)
+	}
+	f, err := os.Create(fmt.Sprintf("%s/%s.wasm", currentDir, id))
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+
+	if _, err = f.Write(wasmBinary); err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
+	}
+	f.Close()
+
+	cliArgs = append(cliArgs, fmt.Sprintf("%s/%s.wasm", currentDir, id))
+	for i := range args {
+		cliArgs = append(cliArgs, strconv.FormatUint(args[i], 10))
+	}
+	cmd := exec.Command(w.hostWasmRuntime, cliArgs...)
+	results := bytes.Buffer{}
+	cmd.Stdout = &results
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("error starting command: %w", err)
+	}
+
+	go func(fileName string) {
+		if err := cmd.Wait(); err != nil {
+			w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
+		}
+
+		payload := map[string]interface{}{
+			"task_id": id,
+			"results": results.String(),
+		}
+
+		topic := fmt.Sprintf(resultsTopic, w.channelID)
+		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
+			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
+
+			return
+		}
+
+		if err := os.Remove(fileName); err != nil {
+			w.logger.Error("failed to remove file", slog.String("fileName", fileName), slog.String("error", err.Error()))
+		}
+
+		w.logger.Info("Finished running app", slog.String("id", id))
+	}(fmt.Sprintf("%s/%s.wasm", currentDir, id))
 
 	return nil
 }

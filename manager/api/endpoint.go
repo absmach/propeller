@@ -122,9 +122,6 @@ func updateTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 		if !ok {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
-		if err := req.validate(); err != nil {
-			return taskResponse{}, errors.Join(apiutil.ErrValidation, err)
-		}
 
 		task, err := svc.UpdateTask(ctx, req.Task)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 
 type startRequest struct {
 	ID           string
+	CLIArgs      []string
 	FunctionName string
 	WasmFile     []byte
 	imageURL     string

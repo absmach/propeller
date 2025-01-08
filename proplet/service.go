@@ -139,6 +139,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 
 		req := startRequest{
 			ID:           payload.ID,
+			CLIArgs:      payload.CLIArgs,
 			FunctionName: payload.Name,
 			WasmFile:     payload.File,
 			imageURL:     payload.ImageURL,
@@ -151,7 +152,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
 		if req.WasmFile != nil {
-			if err := p.runtime.StartApp(ctx, req.WasmFile, req.ID, req.FunctionName, req.Params...); err != nil {
+			if err := p.runtime.StartApp(ctx, req.WasmFile, req.CLIArgs, req.ID, req.FunctionName, req.Params...); err != nil {
 				return err
 			}
 
@@ -178,7 +179,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 				if exists && receivedChunks == metadata.TotalChunks {
 					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
 					wasmBinary := assembleChunks(p.chunks[req.imageURL])
-					if err := p.runtime.StartApp(ctx, wasmBinary, req.ID, req.FunctionName, req.Params...); err != nil {
+					if err := p.runtime.StartApp(ctx, wasmBinary, req.CLIArgs, req.ID, req.FunctionName, req.Params...); err != nil {
 						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
 					}
 
