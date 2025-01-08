@@ -1,4 +1,4 @@
-package propellerd
+package cli
 
 import (
 	"github.com/absmach/propeller/pkg/sdk"
