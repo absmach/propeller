@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
+	"github.com/absmach/propeller/cli"
 	"github.com/absmach/propeller/pkg/sdk"
-	"github.com/absmach/propeller/propellerd"
 	"github.com/spf13/cobra"
 )
 
@@ -15,15 +15,15 @@ func main() {
 		Long:  `Propeller CLI is a command line interface for interacting with Propeller components.`,
 		PersistentPreRun: func(_ *cobra.Command, _ []string) {
 			sdkConf := sdk.Config{
-				ManagerURL:      propellerd.DefManagerURL,
-				TLSVerification: propellerd.DefTLSVerification,
+				ManagerURL:      cli.DefManagerURL,
+				TLSVerification: cli.DefTLSVerification,
 			}
 			s := sdk.NewSDK(sdkConf)
-			propellerd.SetSDK(s)
+			cli.SetSDK(s)
 		},
 	}
 
-	tasksCmd := propellerd.NewTasksCmd()
+	tasksCmd := cli.NewTasksCmd()
 
 	rootCmd.AddCommand(tasksCmd)
 

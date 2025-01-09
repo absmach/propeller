@@ -1,4 +1,4 @@
-package propellerd
+package cli
 
 import (
 	"encoding/json"
