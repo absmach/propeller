@@ -43,7 +43,7 @@ if [ -z "$DOMAIN_ID" ]; then
 fi
 
 echo "Creating manager thing..."
-MANAGER_RESPONSE=$(./build/cli things create '{"name": "Propeller Manager", "tags": ["manager", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
+MANAGER_RESPONSE=$(./build/cli cliets create '{"name": "Propeller Manager", "tags": ["manager", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
 
 export MANAGER_THING_ID=$(echo $MANAGER_RESPONSE | jq -r .id)
 export MANAGER_THING_KEY=$(echo $MANAGER_RESPONSE | jq -r .credentials.secret)
@@ -65,7 +65,7 @@ if [ -z "$MANAGER_CHANNEL_ID" ]; then
 fi
 
 echo "Creating proplet thing..."
-PROPLET_RESPONSE=$(./build/cli things create '{"name": "Propeller Proplet", "tags": ["proplet", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
+PROPLET_RESPONSE=$(./build/cli clients create '{"name": "Propeller Proplet", "tags": ["proplet", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
 
 export PROPLET_THING_ID=$(echo $PROPLET_RESPONSE | jq -r .id)
 export PROPLET_THING_KEY=$(echo $PROPLET_RESPONSE | jq -r .credentials.secret)
@@ -76,10 +76,10 @@ if [ -z "$PROPLET_THING_ID" ] || [ -z "$PROPLET_THING_KEY" ]; then
 fi
 
 echo "Connecting manager thing to channel..."
-./build/cli things connect $MANAGER_THING_ID $MANAGER_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
+./build/cli clients connect $MANAGER_THING_ID $MANAGER_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
 
 echo "Connecting proplet thing to channel..."
-./build/cli things connect $PROPLET_THING_ID $PROPLET_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
+./build/cli clients connect $PROPLET_THING_ID $PROPLET_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
 
 echo "Setup completed successfully!"
 
