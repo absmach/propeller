@@ -1,11 +1,19 @@
 cmake_minimum_required(VERSION 3.20.0)
 
+set(BOARD esp32s3_devkitc)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(my_proplet)
+project(proplet_mqtt_client)
 
-add_subdirectory(src)
+include_directories(${ZEPHYR_BASE}/include/zephyr)
 
-add_subdirectory(modules/wamr)
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/modules/wamr/wasm-micro-runtime/product-mini/platforms/zephyr)
 
-link_wamr_to_zephyr(app)
+# Add WAMR include paths
+target_include_directories(app PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/modules/wamr/wasm-micro-runtime/core/iwasm/include
+)
+
+
+target_sources(app PRIVATE src/main.c src/wasm_handler.c)
 
