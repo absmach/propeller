@@ -1,0 +1,3 @@
+[submodule "embed-proplet/modules/wamr/wasm-micro-runtime"]
+	path = embed-proplet/modules/wamr/wasm-micro-runtime
+	url = https://github.com/bytecodealliance/wasm-micro-runtime.git
