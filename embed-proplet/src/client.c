@@ -18,11 +18,9 @@ LOG_MODULE_REGISTER(my_proplet_client, LOG_LEVEL_DBG);
 #define MQTT_TOPIC_WASM_BINARY     "my_proplet/wasm_binary"
 #define MQTT_TOPIC_EXEC_RESULT     "my_proplet/execution_result"
 
-/* Buffers for MQTT messages */
 static uint8_t rx_buffer[2048];
 static uint8_t tx_buffer[2048];
 
-/* MQTT client object & broker storage */
 static struct mqtt_client client;
 static struct sockaddr_storage broker_storage;
 
@@ -31,7 +29,6 @@ static struct sockaddr_storage broker_storage;
 #define WASM_STACK_SIZE          (8 * 1024)
 #define WASM_HEAP_SIZE           (8 * 1024)
 
-/* Forward declarations of any static (internal) functions */
 static void mqtt_evt_handler(struct mqtt_client *const c,
                              const struct mqtt_evt *evt);
 
@@ -39,9 +36,6 @@ static int mqtt_subscribe_to_topic(void);
 static int publish_execution_result(const char *result_str);
 static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size);
 
-/* -------------------------------------------------------------------------
- * 1. Prepare the broker
- * ------------------------------------------------------------------------- */
 int prepare_broker(void)
 {
     struct sockaddr_in *broker4 = (struct sockaddr_in *)&broker_storage;
@@ -57,9 +51,6 @@ int prepare_broker(void)
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * 2. Initialize the MQTT client structure
- * ------------------------------------------------------------------------- */
 void init_mqtt_client(void)
 {
     mqtt_client_init(&client);
@@ -70,25 +61,18 @@ void init_mqtt_client(void)
     client.client_id.utf8 = (uint8_t *)MQTT_CLIENT_ID;
     client.client_id.size = strlen(MQTT_CLIENT_ID);
 
-    /* MQTT version 3.1.1 */
     client.protocol_version = MQTT_VERSION_3_1_1;
 
-    /* Assign buffers */
     client.rx_buf = rx_buffer;
     client.rx_buf_size = sizeof(rx_buffer);
     client.tx_buf = tx_buffer;
     client.tx_buf_size = sizeof(tx_buffer);
 
-    /* Clean session */
     client.clean_session = 1;
 
-    /* Non-secure transport in this example (port 1883) */
     client.transport.type = MQTT_TRANSPORT_NON_SECURE;
 }
 
-/* -------------------------------------------------------------------------
- * 3. Connect to the broker
- * ------------------------------------------------------------------------- */
 int mqtt_connect_to_broker(void)
 {
     int ret = mqtt_connect(&client);
@@ -100,20 +84,12 @@ int mqtt_connect_to_broker(void)
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * 4. The main MQTT processing loop
- *    Typically called from your main() in a while(1) or timed loop.
- * ------------------------------------------------------------------------- */
 void mqtt_process_events(void)
 {
-    /* Let the MQTT client handle input and keepalive pings. */
     mqtt_input(&client);
     mqtt_live(&client);
 }
 
-/* -------------------------------------------------------------------------
- * Subscribe to the WASM binary topic
- * ------------------------------------------------------------------------- */
 static int mqtt_subscribe_to_topic(void)
 {
     struct mqtt_topic subscribe_topic = {
@@ -140,9 +116,6 @@ static int mqtt_subscribe_to_topic(void)
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * Publish the execution result back
- * ------------------------------------------------------------------------- */
 static int publish_execution_result(const char *result_str)
 {
     struct mqtt_publish_param param;
@@ -164,9 +137,6 @@ static int publish_execution_result(const char *result_str)
     return mqtt_publish(&client, &param);
 }
 
-/* -------------------------------------------------------------------------
- * Execute the WASM buffer: load, instantiate, call "add" function, publish
- * ------------------------------------------------------------------------- */
 static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
 {
     static bool wamr_initialized = false;
@@ -175,7 +145,6 @@ static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
         memset(&init_args, 0, sizeof(RuntimeInitArgs));
         init_args.mem_alloc_type = Alloc_With_Pool;
 
-        /* Provide a global heap for WAMR. */
         static uint8_t global_heap_buf[WASM_MAX_APP_MEMORY];
         init_args.mem_alloc_pool.heap_buf = global_heap_buf;
         init_args.mem_alloc_pool.heap_size = sizeof(global_heap_buf);
@@ -188,7 +157,6 @@ static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
         wamr_initialized = true;
     }
 
-    /* Load the module */
     WASMModuleCommon *wasm_module = wasm_runtime_load((uint8_t*)wasm_buf,
                                                       (uint32_t)wasm_size,
                                                       NULL, 0);
@@ -197,7 +165,6 @@ static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
         return -1;
     }
 
-    /* Instantiate */
     WASMModuleInstanceCommon *wasm_module_inst =
         wasm_runtime_instantiate(wasm_module,
                                  WASM_STACK_SIZE,
@@ -209,7 +176,6 @@ static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
         return -1;
     }
 
-    /* Find "add" function */
     const char *func_name = "add";
     wasm_function_inst_t func =
         wasm_runtime_lookup_function(wasm_module_inst, func_name, NULL);
@@ -218,22 +184,18 @@ static int execute_wasm_buffer(const uint8_t *wasm_buf, size_t wasm_size)
         goto clean;
     }
 
-    /* Prepare arguments: (i32, i32)->i32. We'll call add(3, 4). */
     uint32_t argv[2];
     argv[0] = 3;
     argv[1] = 4;
 
-    /* Call the function */
     if (!wasm_runtime_call_wasm(wasm_module_inst, func, 2, argv)) {
         LOG_ERR("Failed to call '%s'", func_name);
         goto clean;
     }
 
-    /* The result is now in argv[0] */
     int32_t result = (int32_t)argv[0];
     LOG_INF("WASM function '%s'(3,4) -> %d", func_name, result);
 
-    /* Publish result */
     char result_str[64];
     snprintf(result_str, sizeof(result_str),
              "Result from '%s'(3,4): %d", func_name, result);
@@ -245,9 +207,6 @@ clean:
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * MQTT event callback (handles connect ack, publish, etc.)
- * ------------------------------------------------------------------------- */
 static void mqtt_evt_handler(struct mqtt_client *const c,
                              const struct mqtt_evt *evt)
 {
@@ -266,7 +225,6 @@ static void mqtt_evt_handler(struct mqtt_client *const c,
 
         const struct mqtt_publish_param *p = &evt->param.publish;
 
-        /* Validate topic */
         LOG_INF("Topic: %.*s, payload len %d",
                 p->message.topic.topic.size,
                 (char *)p->message.topic.topic.utf8,
@@ -277,17 +235,14 @@ static void mqtt_evt_handler(struct mqtt_client *const c,
             break;
         }
 
-        /* Read the payload into rx_buffer */
         int ret = mqtt_read_publish_payload(c, rx_buffer, p->message.payload.len);
         if (ret < 0) {
             LOG_ERR("mqtt_read_publish_payload error: %d", ret);
             break;
         }
 
-        /* Execute as WASM module */
         execute_wasm_buffer(rx_buffer, p->message.payload.len);
 
-        /* Acknowledge QOS1 */
         struct mqtt_puback_param puback = {
             .message_id = p->message_id
         };
