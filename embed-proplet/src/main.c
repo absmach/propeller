@@ -2,10 +2,14 @@
 #include <net/mqtt.h>
 #include <net/socket.h>
 #include <net/net_config.h>
-#include <net/wifi.h>
 #include <json.h>
 #include <zephyr/random/random.h>
 #include "wasm_handler.h"
+#include <zephyr/net/wifi.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/wifi_mgmt.h>
 
 #define MQTT_BROKER_HOSTNAME "broker.supermq.example"
 #define MQTT_BROKER_PORT 1883
@@ -25,8 +29,8 @@ static int configure_broker(void)
     broker->sin_family = AF_INET;
     broker->sin_port = htons(MQTT_BROKER_PORT);
 
-    int ret = inet_pton(AF_INET, MQTT_BROKER_HOSTNAME, &broker->sin_addr);
-    if (ret != 1) {
+    int ret = net_addr_pton(AF_INET, MQTT_BROKER_HOSTNAME, &broker->sin_addr);
+    if (ret != 0) {
         printk("Failed to configure broker address.\n");
         return -EINVAL;
     }
@@ -119,15 +123,23 @@ static int wifi_connect(void)
         return -ENODEV;
     }
 
+    struct wifi_connect_req_params params = {
+        .ssid = CONFIG_WIFI_CREDENTIALS_STATIC_SSID,
+        .ssid_length = strlen(CONFIG_WIFI_CREDENTIALS_STATIC_SSID),
+        .psk = CONFIG_WIFI_CREDENTIALS_STATIC_PASSWORD,
+        .psk_length = strlen(CONFIG_WIFI_CREDENTIALS_STATIC_PASSWORD),
+        .channel = WIFI_CHANNEL_ANY,
+        .security = WIFI_SECURITY_TYPE_PSK,
+    };
+
     printk("Connecting to Wi-Fi...\n");
-    int ret = net_wifi_connect(iface);
+    int ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &params, sizeof(params));
     if (ret) {
         printk("Wi-Fi connection failed: %d\n", ret);
         return ret;
     }
 
-    k_sleep(K_SECONDS(5));
-
+    printk("Wi-Fi connected successfully.\n");
     return 0;
 }
 
