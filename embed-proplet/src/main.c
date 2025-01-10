@@ -10,6 +10,7 @@
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/dhcpv4_server.h>
 
 #define MQTT_BROKER_HOSTNAME "broker.supermq.example"
 #define MQTT_BROKER_PORT 1883
@@ -117,9 +118,9 @@ static int mqtt_client_setup(void)
 
 static int wifi_connect(void)
 {
-    struct net_if *iface = net_if_get_default();
-    if (!iface) {
-        printk("No default network interface found.\n");
+    struct net_if *sta_iface = net_if_get_wifi_sta();
+    if (!sta_iface) {
+        printk("No STA interface found.\n");
         return -ENODEV;
     }
 
@@ -133,7 +134,7 @@ static int wifi_connect(void)
     };
 
     printk("Connecting to Wi-Fi...\n");
-    int ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &params, sizeof(params));
+    int ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, sta_iface, &params, sizeof(params));
     if (ret) {
         printk("Wi-Fi connection failed: %d\n", ret);
         return ret;
@@ -142,6 +143,7 @@ static int wifi_connect(void)
     printk("Wi-Fi connected successfully.\n");
     return 0;
 }
+
 
 void main(void)
 {
