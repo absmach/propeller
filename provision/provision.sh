@@ -43,7 +43,7 @@ if [ -z "$DOMAIN_ID" ]; then
 fi
 
 echo "Creating manager thing..."
-MANAGER_RESPONSE=$(./build/cli cliets create '{"name": "Propeller Manager", "tags": ["manager", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
+MANAGER_RESPONSE=$(./build/cli clients create '{"name": "Propeller Manager", "tags": ["manager", "propeller"], "status": "enabled"}' $DOMAIN_ID $USER_TOKEN)
 
 export MANAGER_THING_ID=$(echo $MANAGER_RESPONSE | jq -r .id)
 export MANAGER_THING_KEY=$(echo $MANAGER_RESPONSE | jq -r .credentials.secret)
@@ -90,3 +90,24 @@ echo "MANAGER_CHANNEL_ID=$MANAGER_CHANNEL_ID"
 echo "PROPLET_CHANNEL_ID=$PROPLET_CHANNEL_ID"
 echo "PROPLET_THING_ID=$PROPLET_THING_ID"
 echo "PROPLET_THING_KEY=$PROPLET_THING_KEY"
+
+# Create config.toml with the exported variables
+echo "Creating config.toml file..."
+cat > config.toml << EOL
+# SuperMQ Configuration File
+
+[manager]
+thing_id = "${MANAGER_THING_ID}"
+thing_key = "${MANAGER_THING_KEY}"
+channel_id = "${MANAGER_CHANNEL_ID}"
+
+[proplet]
+thing_id = "${PROPLET_THING_ID}"
+thing_key = "${PROPLET_THING_KEY}"
+channel_id = "${PROPLET_CHANNEL_ID}"
+EOL
+
+# Move config.toml two directories back
+echo "Moving config.toml two directories back..."
+mv config.toml ../../config.toml
+echo "Configuration file moved to ../../config.toml"

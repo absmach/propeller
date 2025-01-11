@@ -16,6 +16,7 @@ import (
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/manager/api"
 	"github.com/absmach/propeller/manager/middleware"
+	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
@@ -32,15 +33,13 @@ const (
 	envPrefixHTTP = "MANAGER_HTTP_"
 )
 
-type config struct {
+type envConfig struct {
 	LogLevel    string        `env:"MANAGER_LOG_LEVEL"           envDefault:"info"`
 	InstanceID  string        `env:"MANAGER_INSTANCE_ID"`
 	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
 	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
 	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
-	ChannelID   string        `env:"MANAGER_CHANNEL_ID,notEmpty"`
-	ThingID     string        `env:"MANAGER_THING_ID,notEmpty"`
-	ThingKey    string        `env:"MANAGER_THING_KEY,notEmpty"`
+	ConfigPath  string        `env:"CONFIG_PATH"                 envDefault:"config.toml"`
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
@@ -50,7 +49,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	cfg := config{}
+	cfg := envConfig{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
 	}
@@ -89,7 +88,14 @@ func main() {
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	// Load TOML configuration
+	conf, err := config.LoadConfig(cfg.ConfigPath)
+	if err != nil {
+		logger.Error("failed to load TOML configuration", slog.String("error", err.Error()))
+		return
+	}
+
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, conf.Manager.ThingID, conf.Manager.ThingKey, conf.Manager.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
 
@@ -102,7 +108,7 @@ func main() {
 		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
-		cfg.ChannelID,
+		conf.Manager.ChannelID,
 		logger,
 	)
 	svc = middleware.Logging(logger, svc)

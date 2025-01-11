@@ -1222,12 +1222,10 @@ services:
       SMQ_UI_LOG_LEVEL: ${SMQ_UI_LOG_LEVEL}
       SMQ_UI_PORT: ${SMQ_UI_PORT}
       SMQ_HTTP_ADAPTER_URL: ${SMQ_HTTP_ADAPTER_URL}
-      SMQ_READER_URL: ${SMQ_READER_URL}
       SMQ_CLIENTS_URL: ${SMQ_CLIENTS_URL}
       SMQ_USERS_URL: ${SMQ_USERS_URL}
       SMQ_INVITATIONS_URL: ${SMQ_INVITATIONS_URL}
       SMQ_DOMAINS_URL: ${SMQ_DOMAINS_URL}
-      SMQ_BOOTSTRAP_URL: ${SMQ_BOOTSTRAP_URL}
       SMQ_UI_HOST_URL: ${SMQ_UI_HOST_URL}
       SMQ_UI_VERIFICATION_TLS: ${SMQ_UI_VERIFICATION_TLS}
       SMQ_UI_CONTENT_TYPE: ${SMQ_UI_CONTENT_TYPE}
@@ -1269,3 +1267,4 @@ services:
       - supermq-base-net
     volumes:
       - supermq-ui-db-volume:/var/lib/postgresql/data
+      
