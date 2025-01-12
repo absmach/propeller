@@ -118,11 +118,16 @@ static int mqtt_client_setup(void)
 
 static int wifi_connect(void)
 {
-    struct net_if *sta_iface = net_if_get_wifi_sta();
+    struct net_if *sta_iface = net_if_get_wifi_sta();  // Get the station interface
     if (!sta_iface) {
         printk("No STA interface found.\n");
         return -ENODEV;
     }
+
+    printk("STA interface found: %p\n", sta_iface);
+
+    net_if_up(sta_iface);  // Bring up the STA interface
+    printk("STA interface brought up.\n");
 
     struct wifi_connect_req_params params = {
         .ssid = CONFIG_WIFI_CREDENTIALS_STATIC_SSID,
