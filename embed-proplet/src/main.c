@@ -134,7 +134,8 @@ static int wifi_connect(void)
         .ssid_length = strlen(CONFIG_WIFI_CREDENTIALS_STATIC_SSID),
         .psk = CONFIG_WIFI_CREDENTIALS_STATIC_PASSWORD,
         .psk_length = strlen(CONFIG_WIFI_CREDENTIALS_STATIC_PASSWORD),
-        .channel = WIFI_CHANNEL_ANY,
+        .channel = 6,
+        .band = WIFI_FREQ_BAND_2_4_GHZ,
         .security = WIFI_SECURITY_TYPE_PSK,
     };
 
