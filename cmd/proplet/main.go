@@ -62,9 +62,12 @@ func main() {
 		return
 	}
 
-	runtime := runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
-	if cfg.ExternalWasmRuntime != "" {
+	var runtime proplet.Runtime
+	switch cfg.ExternalWasmRuntime != "" {
+	case true:
 		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
+	case false:
+		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 	}
 
 	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
