@@ -11,6 +11,7 @@ import (
 	"github.com/absmach/magistrala/pkg/server"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/proplet/runtimes"
 	"github.com/caarlos0/env/v11"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -60,9 +61,13 @@ func main() {
 
 		return
 	}
-	wazero := proplet.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
 
-	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, wazero)
+	runtime := runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
+	if cfg.ExternalWasmRuntime != "" {
+		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
+	}
+
+	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 
