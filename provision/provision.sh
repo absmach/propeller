@@ -105,6 +105,11 @@ channel_id = "${MANAGER_CHANNEL_ID}"
 thing_id = "${PROPLET_THING_ID}"
 thing_key = "${PROPLET_THING_KEY}"
 channel_id = "${PROPLET_CHANNEL_ID}"
+
+[proxy]
+thing_id = "${PROPLET_THING_ID}"
+thing_key = "${PROPLET_THING_KEY}"
+channel_id = "${PROPLET_CHANNEL_ID}"
 EOL
 
 echo "Moving config.toml"

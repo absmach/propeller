@@ -6,34 +6,37 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"time"
 
+	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/proxy"
 	"github.com/caarlos0/env/v11"
 	"golang.org/x/sync/errgroup"
 )
 
-const svcName = "proxy"
+const (
+	svcName = "proxy"
+)
 
-type config struct {
-	LogLevel string `env:"PROXY_LOG_LEVEL"           envDefault:"info"`
+type envConfig struct {
+	LogLevel    string        `env:"PROXY_LOG_LEVEL"           envDefault:"info"`
+	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
+	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT"        envDefault:"30s"`
+	ConfigPath  string        `env:"CONFIG_PATH"               envDefault:"config.toml"`
 
-	BrokerURL  string `env:"PROPLET_MQTT_ADDRESS"          envDefault:"tcp://localhost:1883"`
-	PropletKey string `env:"PROPLET_THING_KEY,notEmpty"`
-	PropletID  string `env:"PROPLET_THING_ID,notEmpty" `
-	ChannelID  string `env:"PROPLET_CHANNEL_ID,notEmpty"`
-
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"             envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE"           envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN"         envDefault:""`
-	Username     string `env:"PROXY_REGISTRY_USERNAME"      envDefault:""`
-	Password     string `env:"PROXY_REGISTRY_PASSWORD"      envDefault:""`
+	// HTTP Registry configuration
+	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"         envDefault:"512000"`
+	Authenticate bool   `env:"PROXY_AUTHENTICATE"        envDefault:"false"`
+	Token        string `env:"PROXY_REGISTRY_TOKEN"      envDefault:""`
+	Username     string `env:"PROXY_REGISTRY_USERNAME"   envDefault:""`
+	Password     string `env:"PROXY_REGISTRY_PASSWORD"   envDefault:""`
 	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty"`
 }
 
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
 
-	cfg := config{}
+	cfg := envConfig{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
 	}
@@ -48,11 +51,17 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
+	conf, err := config.LoadConfig(cfg.ConfigPath)
+	if err != nil {
+		logger.Error("failed to load TOML configuration", slog.String("error", err.Error()))
+		return
+	}
+
 	mqttCfg := proxy.MQTTProxyConfig{
-		BrokerURL: cfg.BrokerURL,
-		Password:  cfg.PropletKey,
-		PropletID: cfg.PropletID,
-		ChannelID: cfg.ChannelID,
+		BrokerURL: cfg.MQTTAddress,
+		Password:  conf.Proxy.ThingKey,
+		PropletID: conf.Proxy.ThingID,
+		ChannelID: conf.Proxy.ChannelID,
 	}
 
 	httpCfg := proxy.HTTPProxyConfig{

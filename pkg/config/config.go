@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Manager ManagerConfig `toml:"manager"`
 	Proplet PropletConfig `toml:"proplet"`
+	Proxy   ProxyConfig   `toml:"proxy"`
 }
 
 type ManagerConfig struct {
@@ -19,6 +20,12 @@ type ManagerConfig struct {
 }
 
 type PropletConfig struct {
+	ThingID   string `toml:"thing_id"`
+	ThingKey  string `toml:"thing_key"`
+	ChannelID string `toml:"channel_id"`
+}
+
+type ProxyConfig struct {
 	ThingID   string `toml:"thing_id"`
 	ThingKey  string `toml:"thing_key"`
 	ChannelID string `toml:"channel_id"`
