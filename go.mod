@@ -13,6 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f
 	github.com/opencontainers/image-spec v1.1.0
+	github.com/pelletier/go-toml v1.9.5
 	github.com/prometheus/client_golang v1.20.5
 	github.com/spf13/cobra v1.8.1
 	github.com/tetratelabs/wazero v1.8.2
