@@ -14,7 +14,7 @@ void main(void)
 {
     LOG_INF("Starting Proplet...");
 
-    /* Initialize Wi-Fi and connect */
+    /* Initialize Wi-Fi */
     wifi_manager_init();
     if (wifi_manager_connect(WIFI_SSID, WIFI_PSK) != 0) {
         LOG_ERR("Wi-Fi connection failed");
@@ -22,10 +22,11 @@ void main(void)
     }
 
     /* Wait for Wi-Fi connection */
-    while (!wifi_manager_is_connected()) {
-        k_sleep(K_MSEC(500));
+    if (!wifi_manager_wait_for_connection(K_SECONDS(10))) {
+        LOG_ERR("Wi-Fi connection timed out");
+        return;
     }
-    LOG_INF("Wi-Fi connected");
+    LOG_INF("Wi-Fi connected, proceeding with MQTT initialization");
 
     /* Initialize MQTT client */
     if (mqtt_client_init_and_connect() != 0) {
@@ -49,7 +50,7 @@ void main(void)
 
     /* Main loop for MQTT processing */
     while (1) {
-        mqtt_client_process(); 
+        mqtt_client_process();
         k_sleep(K_SECONDS(5));
     }
 }
