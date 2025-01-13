@@ -8,7 +8,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME "192.168.1.100" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "192.168.88.179" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
 
 #define DISCOVERY_TOPIC_TEMPLATE "channels/%s/messages/control/proplet/create"
@@ -25,7 +25,7 @@ static uint8_t tx_buffer[TX_BUFFER_SIZE];
 static struct mqtt_client client_ctx;
 static struct sockaddr_storage broker_addr;
 
-/* Flags to indicate connection status */
+/* Flag to indicate connection status */
 static bool mqtt_connected = false;
 
 static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt *evt)
@@ -126,14 +126,14 @@ int mqtt_client_discovery_announce(const char *proplet_id, const char *channel_i
         .message = {
             .topic = {
                 .topic = {
-                    .utf8 = (uint8_t *)topic,  // Correctly assign UTF-8 pointer
-                    .size = strlen(topic),     // Length of the topic string
+                    .utf8 = (uint8_t *)topic,
+                    .size = strlen(topic),
                 },
-                .qos = MQTT_QOS_1_AT_LEAST_ONCE, // QoS is part of mqtt_topic
+                .qos = MQTT_QOS_1_AT_LEAST_ONCE,
             },
             .payload = {
-                .data = (uint8_t *)payload,  // Correctly assign payload data
-                .len = strlen(payload),      // Length of the payload string
+                .data = (uint8_t *)payload,
+                .len = strlen(payload),
             },
         },
         .message_id = 0,
@@ -160,17 +160,17 @@ int mqtt_client_subscribe(const char *channel_id)
     struct mqtt_topic topics[] = {
         {
             .topic = {
-                .utf8 = (uint8_t *)start_topic, // Correctly assign UTF-8 pointer
-                .size = strlen(start_topic),   // Length of the topic string
+                .utf8 = (uint8_t *)start_topic,
+                .size = strlen(start_topic),
             },
-            .qos = MQTT_QOS_1_AT_LEAST_ONCE,   // QoS level
+            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
         },
         {
             .topic = {
-                .utf8 = (uint8_t *)stop_topic, // Correctly assign UTF-8 pointer
-                .size = strlen(stop_topic),   // Length of the topic string
+                .utf8 = (uint8_t *)stop_topic,
+                .size = strlen(stop_topic),
             },
-            .qos = MQTT_QOS_1_AT_LEAST_ONCE,   // QoS level
+            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
         },
     };
 

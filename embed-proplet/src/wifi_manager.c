@@ -8,7 +8,7 @@ LOG_MODULE_REGISTER(wifi_manager);
 static struct net_if *ap_iface;
 static struct net_if *sta_iface;
 static struct net_mgmt_event_callback cb;
-static struct k_sem wifi_connected_sem; // Semaphore for Wi-Fi connection
+static struct k_sem wifi_connected_sem;
 
 #define MACSTR "%02X:%02X:%02X:%02X:%02X:%02X"
 #define MAC2STR(mac) mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
@@ -18,7 +18,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
     switch (mgmt_event) {
     case NET_EVENT_WIFI_CONNECT_RESULT:
         LOG_INF("Connected to Wi-Fi");
-        k_sem_give(&wifi_connected_sem); // Signal Wi-Fi connection
+        k_sem_give(&wifi_connected_sem);
         break;
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         LOG_INF("Disconnected from Wi-Fi");
@@ -72,7 +72,7 @@ static void enable_dhcpv4_server(const char *ip_address, const char *netmask)
 
 void wifi_manager_init(void)
 {
-    k_sem_init(&wifi_connected_sem, 0, 1); // Initialize semaphore with 0 count
+    k_sem_init(&wifi_connected_sem, 0, 1);
 
     net_mgmt_init_event_callback(&cb, wifi_event_handler,
                                  NET_EVENT_WIFI_CONNECT_RESULT |
