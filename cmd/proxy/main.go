@@ -54,6 +54,7 @@ func main() {
 	conf, err := config.LoadConfig(cfg.ConfigPath)
 	if err != nil {
 		logger.Error("failed to load TOML configuration", slog.String("error", err.Error()))
+
 		return
 	}
 
