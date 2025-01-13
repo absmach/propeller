@@ -34,6 +34,13 @@ void main(void)
         return;
     }
 
+    /* Wait for MQTT connection to be established */
+    LOG_INF("Waiting for MQTT connection...");
+    while (!mqtt_connected) {
+        k_sleep(K_MSEC(100));
+    }
+    LOG_INF("MQTT connected successfully.");
+
     /* Publish discovery announcement */
     if (mqtt_client_discovery_announce(PROPLET_ID, CHANNEL_ID) != 0) {
         LOG_ERR("Discovery announcement failed");
