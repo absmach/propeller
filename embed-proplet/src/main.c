@@ -7,8 +7,8 @@ LOG_MODULE_REGISTER(main);
 
 #define WIFI_SSID "Octavifi"
 #define WIFI_PSK  "Unic0rn_2030"
-#define PROPLET_ID "proplet-esp32s3"
-#define CHANNEL_ID "default_channel"
+#define PROPLET_ID "proplet1"
+#define CHANNEL_ID "channel1"
 
 void main(void)
 {
@@ -22,7 +22,7 @@ void main(void)
     }
 
     /* Wait for Wi-Fi connection */
-    if (!wifi_manager_wait_for_connection(K_SECONDS(10))) {
+    if (!wifi_manager_wait_for_connection(K_SECONDS(60))) {
         LOG_ERR("Wi-Fi connection timed out");
         return;
     }
