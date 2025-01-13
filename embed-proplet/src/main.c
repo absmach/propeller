@@ -12,42 +12,44 @@ LOG_MODULE_REGISTER(main);
 
 void main(void)
 {
-    LOG_INF("Proplet starting...");
+    LOG_INF("Starting Proplet...");
 
-    /* Initialize Wi-Fi */
+    /* Initialize Wi-Fi and connect */
     wifi_manager_init();
-
-    /* Connect to Wi-Fi */
-    int ret = wifi_manager_connect(WIFI_SSID, WIFI_PSK);
-    if (ret != 0) {
-        LOG_ERR("Failed to connect to Wi-Fi, ret=%d", ret);
+    if (wifi_manager_connect(WIFI_SSID, WIFI_PSK) != 0) {
+        LOG_ERR("Wi-Fi connection failed");
         return;
     }
 
-    /* Initialize and connect MQTT client */
-    ret = mqtt_client_init_and_connect();
-    if (ret != 0) {
-        LOG_ERR("Failed to initialize MQTT client, exiting");
+    /* Wait for Wi-Fi connection */
+    while (!wifi_manager_is_connected()) {
+        k_sleep(K_MSEC(500));
+    }
+    LOG_INF("Wi-Fi connected");
+
+    /* Initialize MQTT client */
+    if (mqtt_client_init_and_connect() != 0) {
+        LOG_ERR("MQTT client initialization failed");
         return;
     }
 
-    /* Announce discovery */
-    ret = mqtt_client_discovery_announce(PROPLET_ID, CHANNEL_ID);
-    if (ret != 0) {
-        LOG_ERR("Failed to publish discovery announcement, exiting");
+    /* Publish discovery announcement */
+    if (mqtt_client_discovery_announce(PROPLET_ID, CHANNEL_ID) != 0) {
+        LOG_ERR("Discovery announcement failed");
         return;
     }
 
     /* Subscribe to topics */
-    ret = mqtt_client_subscribe(CHANNEL_ID);
-    if (ret != 0) {
-        LOG_ERR("Failed to subscribe to topics, exiting");
+    if (mqtt_client_subscribe(CHANNEL_ID) != 0) {
+        LOG_ERR("Topic subscription failed");
         return;
     }
 
-    /* Main loop for processing MQTT events */
+    LOG_INF("Proplet ready");
+
+    /* Main loop for MQTT processing */
     while (1) {
-        mqtt_client_process(); /* Process MQTT events */
-        k_sleep(K_SECONDS(5)); /* Sleep for a while */
+        mqtt_client_process(); 
+        k_sleep(K_SECONDS(5));
     }
 }

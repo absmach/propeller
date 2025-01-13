@@ -125,3 +125,20 @@ int wifi_manager_enable_ap(const char *ssid, const char *psk, const char *ip_add
     LOG_INF("Enabling AP mode with SSID: %s", ssid);
     return net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap_iface, &params, sizeof(params));
 }
+
+bool wifi_manager_is_connected(void)
+{
+    struct wifi_iface_status status;
+
+    if (!sta_iface) {
+        LOG_ERR("STA interface not initialized");
+        return false;
+    }
+
+    if (net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, sta_iface, &status, sizeof(status)) != 0) {
+        LOG_ERR("Failed to get Wi-Fi interface status");
+        return false;
+    }
+
+    return status.state == WIFI_STATE_COMPLETED;
+}
