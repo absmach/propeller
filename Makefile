@@ -43,6 +43,9 @@ stop-supermq:
 $(EXAMPLES):
 	GOOS=js GOARCH=wasm tinygo build -o build/$@.wasm -target wasi examples/$@/$@.go
 
+provision:
+	cd provision && ./provision.sh
+
 help:
 	@echo "Usage: make <target>"
 	@echo ""
@@ -54,4 +57,5 @@ help:
 	@echo "  lint:             run golangci-lint"
 	@echo "  start-magistrala: start the magistrala docker compose"
 	@echo "  stop-magistrala:  stop the magistrala docker compose"
+	@echo "  provision:     run the provision script"
 	@echo "  help:             display this help message"

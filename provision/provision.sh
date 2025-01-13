@@ -76,10 +76,10 @@ if [ -z "$PROPLET_THING_ID" ] || [ -z "$PROPLET_THING_KEY" ]; then
 fi
 
 echo "Connecting manager thing to channel..."
-./build/cli clients connect $MANAGER_THING_ID $MANAGER_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
+./build/cli clients connect $MANAGER_THING_ID $MANAGER_CHANNEL_ID '["publish","subscribe"]' $DOMAIN_ID $USER_TOKEN
 
 echo "Connecting proplet thing to channel..."
-./build/cli clients connect $PROPLET_THING_ID $PROPLET_CHANNEL_ID $DOMAIN_ID $USER_TOKEN
+./build/cli clients connect $PROPLET_THING_ID $PROPLET_CHANNEL_ID '["publish","subscribe"]' $DOMAIN_ID $USER_TOKEN
 
 echo "Setup completed successfully!"
 
@@ -107,7 +107,5 @@ thing_key = "${PROPLET_THING_KEY}"
 channel_id = "${PROPLET_CHANNEL_ID}"
 EOL
 
-# Move config.toml two directories back
-echo "Moving config.toml two directories back..."
+echo "Moving config.toml"
 mv config.toml ../../config.toml
-echo "Configuration file moved to ../../config.toml"
