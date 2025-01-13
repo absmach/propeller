@@ -66,7 +66,7 @@ func main() {
 	switch cfg.ExternalWasmRuntime != "" {
 	case true:
 		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
-	case false:
+	default:
 		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 	}
 
