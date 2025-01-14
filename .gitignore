@@ -1,6 +1,3 @@
 # Propellerd Build
 build
 config.toml
-
-provision/supermq
-provision/config.toml
