@@ -46,6 +46,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateToken, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created access token")
 
 		domain := smqSDK.Domain{
 			Name:       "demo",
@@ -58,6 +59,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateDomain, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created domain")
 
 		managerThing := smqSDK.Client{
 			Name:   "Propeller Manager",
@@ -70,6 +72,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created manager client")
 
 		propletThing := smqSDK.Client{
 			Name:   "Propeller Proplet",
@@ -82,6 +85,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created proplet client")
 
 		managerChannel := smqSDK.Channel{
 			Name:   "Propeller Manager",
@@ -92,6 +96,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedChannelCreation, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created manager channel")
 
 		conns := smqSDK.Connection{
 			ClientIDs: []string{
@@ -111,6 +116,7 @@ var provisionCmd = &cobra.Command{
 			logErrorCmd(*cmd, errors.Wrap(errFailedConnectionCreation, err))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created connections")
 
 		res := Result{
 			ManagerThing:   managerThing,
@@ -151,6 +157,7 @@ channel_id = "%s"`,
 			logErrorCmd(*cmd, errors.New("failed to create config file"))
 			return
 		}
+		logSuccessCmd(*cmd, "Successfully created config file")
 
 		logJSONCmd(*cmd, res)
 	},

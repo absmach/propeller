@@ -43,3 +43,7 @@ func logErrorCmd(cmd cobra.Command, err error) {
 func logOKCmd(cmd cobra.Command) {
 	fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n\n", color.BlueString("ok"))
 }
+
+func logSuccessCmd(cmd cobra.Command, msg string) {
+	fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", color.GreenString(msg))
+}
