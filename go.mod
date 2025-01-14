@@ -1,10 +1,11 @@
 module github.com/absmach/propeller
 
-go 1.23.0
+go 1.23.4
 
 require (
 	github.com/0x6flab/namegenerator v1.4.0
 	github.com/absmach/magistrala v0.15.1
+	github.com/absmach/supermq v0.16.1-0.20250113091433-3a11b54394b2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/fatih/color v1.18.0
