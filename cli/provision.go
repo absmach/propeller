@@ -137,22 +137,22 @@ var provisionCmd = &cobra.Command{
 			PropletChannel: managerChannel,
 		}
 
-		configContent := fmt.Sprintf(`# SuperMQ Environment Configuration
+		configContent := fmt.Sprintf(`# SuperMQ Configuration
 
-# Manager Configuration
-MANAGER_THING_ID=%s
-MANAGER_THING_KEY=%s
-MANAGER_CHANNEL_ID=%s
+[manager]
+thing_id = "%s"
+thing_key = "%s"
+channel_id = "%s"
 
-# Proplet Configuration
-PROPLET_THING_ID=%s
-PROPLET_THING_KEY=%s
-PROPLET_CHANNEL_ID=%s
+[proplet]
+thing_id = "%s"
+thing_key = "%s"
+channel_id = "%s"
 
-# Proxy Configuration
-PROXY_THING_ID=%s
-PROXY_THING_KEY=%s
-PROXY_CHANNEL_ID=%s`,
+[proxy]
+thing_id = "%s"
+thing_key = "%s"
+channel_id = "%s"`,
 			managerThing.ID,
 			managerThing.Credentials.Secret,
 			managerChannel.ID,
@@ -164,12 +164,12 @@ PROXY_CHANNEL_ID=%s`,
 			managerChannel.ID,
 		)
 
-		if err := os.WriteFile(".env", []byte(configContent), filePermission); err != nil {
-			logErrorCmd(*cmd, errors.New("failed to create .env file"))
+		if err := os.WriteFile("config.toml", []byte(configContent), filePermission); err != nil {
+			logErrorCmd(*cmd, errors.New("failed to create config.toml file"))
 
 			return
 		}
-		logSuccessCmd(*cmd, "Successfully created .env file")
+		logSuccessCmd(*cmd, "Successfully created config.toml file")
 
 		logJSONCmd(*cmd, res)
 	},
