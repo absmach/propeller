@@ -19,6 +19,8 @@ var (
 	smqSDKInstance smqSDK.SDK
 )
 
+const filePermission = 0o644
+
 // SetSuperMQSDK sets supermq SDK instance.
 func SetSuperMQSDK(s smqSDK.SDK) {
 	smqSDKInstance = s
@@ -44,6 +46,7 @@ var provisionCmd = &cobra.Command{
 		tkn, err := smqSDKInstance.CreateToken(u)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateToken, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created access token")
@@ -57,6 +60,7 @@ var provisionCmd = &cobra.Command{
 		domain, err = smqSDKInstance.CreateDomain(domain, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateDomain, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created domain")
@@ -70,6 +74,7 @@ var provisionCmd = &cobra.Command{
 		managerThing, err = smqSDKInstance.CreateClient(managerThing, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created manager client")
@@ -83,6 +88,7 @@ var provisionCmd = &cobra.Command{
 		propletThing, err = smqSDKInstance.CreateClient(propletThing, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created proplet client")
@@ -94,6 +100,7 @@ var provisionCmd = &cobra.Command{
 		managerChannel, err = smqSDKInstance.CreateChannel(managerChannel, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedChannelCreation, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created manager channel")
@@ -114,6 +121,7 @@ var provisionCmd = &cobra.Command{
 		err = smqSDKInstance.Connect(conns, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedConnectionCreation, err))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created connections")
@@ -153,8 +161,9 @@ channel_id = "%s"`,
 			managerChannel.ID,
 		)
 
-		if err := os.WriteFile("config.toml", []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile("config.toml", []byte(configContent), filePermission); err != nil {
 			logErrorCmd(*cmd, errors.New("failed to create config file"))
+
 			return
 		}
 		logSuccessCmd(*cmd, "Successfully created config file")

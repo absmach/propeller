@@ -11,9 +11,9 @@ SERVICES = manager proplet cli proxy
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
 	go build -ldflags "-s -w \
-	-X 'github.com/absmach/supermq.BuildTime=$(TIME)' \
-	-X 'github.com/absmach/supermq.Version=$(VERSION)' \
-	-X 'github.com/absmach/supermq.Commit=$(COMMIT)'" \
+	-X 'github.com/absmach/magistrala.BuildTime=$(TIME)' \
+	-X 'github.com/absmach/magistrala.Version=$(VERSION)' \
+	-X 'github.com/absmach/magistrala.Commit=$(COMMIT)'" \
 	-o ${BUILD_DIR}/$(1) cmd/$(1)/main.go
 endef
 
@@ -34,10 +34,10 @@ clean:
 lint:
 	golangci-lint run  --config .golangci.yaml
 
-start-supermq:
+start-magistrala:
 	docker compose -f docker/compose.yaml up -d
 
-stop-supermq:
+stop-magistrala:
 	docker compose -f docker/compose.yaml down
 
 $(EXAMPLES):
