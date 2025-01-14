@@ -2,6 +2,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/kernel.h>
+#include <zephyr/random/random.h>
 
 LOG_MODULE_REGISTER(mqtt_client);
 
@@ -29,10 +30,8 @@ static struct sockaddr_storage broker_addr;
 static struct zsock_pollfd fds[1];
 static int nfds;
 
-/* Flag to indicate connection status */
 bool mqtt_connected = false;
 
-/* Prepare the file descriptor for polling */
 static void prepare_fds(struct mqtt_client *client)
 {
     if (client->transport.type == MQTT_TRANSPORT_NON_SECURE) {
@@ -108,7 +107,6 @@ int mqtt_client_init_and_connect(void)
 {
     int ret;
 
-    /* Resolve broker address */
     struct sockaddr_in *broker = (struct sockaddr_in *)&broker_addr;
     broker->sin_family = AF_INET;
     broker->sin_port = htons(MQTT_BROKER_PORT);
@@ -117,8 +115,7 @@ int mqtt_client_init_and_connect(void)
         LOG_ERR("Failed to resolve broker address, ret=%d", ret);
         return ret;
     }
-
-    /* Initialize MQTT client */
+    
     mqtt_client_init(&client_ctx);
     client_ctx.broker = &broker_addr;
     client_ctx.evt_cb = mqtt_event_handler;
@@ -126,15 +123,12 @@ int mqtt_client_init_and_connect(void)
     client_ctx.client_id.size = strlen(CLIENT_ID);
     client_ctx.protocol_version = MQTT_VERSION_3_1_1;
     client_ctx.transport.type = MQTT_TRANSPORT_NON_SECURE;
-
-    /* Assign buffers */
     client_ctx.rx_buf = rx_buffer;
     client_ctx.rx_buf_size = sizeof(rx_buffer);
     client_ctx.tx_buf = tx_buffer;
     client_ctx.tx_buf_size = sizeof(tx_buffer);
 
     while (!mqtt_connected) {
-        /* Attempt to connect */
         ret = mqtt_connect(&client_ctx);
         if (ret != 0) {
             LOG_ERR("MQTT connect failed [%d]. Retrying...", ret);
@@ -143,8 +137,7 @@ int mqtt_client_init_and_connect(void)
         }
 
         /* Poll the socket for a response */
-        LOG_INF("Waiting for CONNACK...");
-        ret = poll_mqtt_socket(&client_ctx, 5000);  // 5-second timeout
+        ret = poll_mqtt_socket(&client_ctx, 5000);
         if (ret < 0) {
             LOG_ERR("Socket poll failed, ret=%d", ret);
             mqtt_abort(&client_ctx);
@@ -155,10 +148,8 @@ int mqtt_client_init_and_connect(void)
             continue;
         }
 
-        /* Process the incoming data */
         mqtt_input(&client_ctx);
 
-        /* If not connected, abort and retry */
         if (!mqtt_connected) {
             LOG_ERR("MQTT connection not established. Retrying...");
             mqtt_abort(&client_ctx);
@@ -179,29 +170,37 @@ int mqtt_client_discovery_announce(const char *proplet_id, const char *channel_i
              "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
              proplet_id, channel_id);
 
-    struct mqtt_publish_param param = {
-        .message = {
-            .topic = {
-                .topic = {
-                    .utf8 = topic,
-                    .size = strlen(topic),
-                },
-                .qos = MQTT_QOS_1_AT_LEAST_ONCE,
-            },
-            .payload = {
-                .data = payload,
-                .len = strlen(payload),
-            },
-        },
-        .message_id = 0,
-        .dup_flag = 0,
-        .retain_flag = 0,
-    };
+    LOG_DBG("Topic: %s (Length: %zu)", topic, strlen(topic));
+    LOG_DBG("Payload: %s (Length: %zu)", payload, strlen(payload));
+
+    if (strlen(topic) >= sizeof(topic) || strlen(payload) >= sizeof(payload)) {
+        LOG_ERR("Topic or payload size exceeds the maximum allowable size.");
+        return -EINVAL;
+    }
 
     if (!mqtt_connected) {
         LOG_ERR("MQTT client is not connected. Discovery announcement aborted.");
         return -ENOTCONN;
     }
+
+    struct mqtt_publish_param param = {
+        .message = {
+            .topic = {
+                .topic = {
+                    .utf8 = (uint8_t *)topic,
+                    .size = strlen(topic),
+                },
+                .qos = MQTT_QOS_1_AT_LEAST_ONCE,
+            },
+            .payload = {
+                .data = (uint8_t *)payload,
+                .len = strlen(payload),
+            },
+        },
+        .message_id = sys_rand32_get() & 0xFFFF,
+        .dup_flag = 0,
+        .retain_flag = 0
+    };
 
     int ret = mqtt_publish(&client_ctx, &param);
     if (ret != 0) {
