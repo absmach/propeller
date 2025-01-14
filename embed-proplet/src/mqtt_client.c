@@ -25,60 +25,73 @@ static uint8_t tx_buffer[TX_BUFFER_SIZE];
 static struct mqtt_client client_ctx;
 static struct sockaddr_storage broker_addr;
 
+/* Socket descriptor */
+static struct zsock_pollfd fds[1];
+static int nfds;
+
 /* Flag to indicate connection status */
 bool mqtt_connected = false;
+
+/* Prepare the file descriptor for polling */
+static void prepare_fds(struct mqtt_client *client)
+{
+    if (client->transport.type == MQTT_TRANSPORT_NON_SECURE) {
+        fds[0].fd = client->transport.tcp.sock;
+    }
+#if defined(CONFIG_MQTT_LIB_TLS)
+    else if (client->transport.type == MQTT_TRANSPORT_SECURE) {
+        fds[0].fd = client->transport.tls.sock;
+    }
+#endif
+    fds[0].events = ZSOCK_POLLIN;
+    nfds = 1;
+}
+
+static void clear_fds(void)
+{
+    nfds = 0;
+}
+
+static int poll_mqtt_socket(struct mqtt_client *client, int timeout)
+{
+    prepare_fds(client);
+
+    if (nfds <= 0) {
+        return -EINVAL;
+    }
+
+    int rc = zsock_poll(fds, nfds, timeout);
+    if (rc < 0) {
+        LOG_ERR("Socket poll error [%d]", rc);
+    }
+
+    return rc;
+}
 
 static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt *evt)
 {
     switch (evt->type) {
-    case MQTT_EVT_CONNACK: {
-        const struct mqtt_connack_param *connack = &evt->param.connack;
-
-        if (evt->result == 0 && connack->return_code == MQTT_CONNECTION_ACCEPTED) {
+    case MQTT_EVT_CONNACK:
+        if (evt->result != 0) {
+            LOG_ERR("MQTT connection failed [%d]", evt->result);
+        } else {
             mqtt_connected = true;
             LOG_INF("MQTT connection accepted by broker");
-        } else {
-            mqtt_connected = false;
-
-            LOG_ERR("MQTT connection failed. Result: %d, Return Code: %d", evt->result, connack->return_code);
-
-            switch (connack->return_code) {
-            case MQTT_UNACCEPTABLE_PROTOCOL_VERSION:
-                LOG_ERR("Error: MQTT_UNACCEPTABLE_PROTOCOL_VERSION - The server does not support the MQTT protocol version requested.");
-                break;
-            case MQTT_IDENTIFIER_REJECTED:
-                LOG_ERR("Error: MQTT_IDENTIFIER_REJECTED - The client identifier is not allowed by the server.");
-                break;
-            case MQTT_SERVER_UNAVAILABLE:
-                LOG_ERR("Error: MQTT_SERVER_UNAVAILABLE - The MQTT service is unavailable.");
-                break;
-            case MQTT_BAD_USER_NAME_OR_PASSWORD:
-                LOG_ERR("Error: MQTT_BAD_USER_NAME_OR_PASSWORD - Username or password is malformed.");
-                break;
-            case MQTT_NOT_AUTHORIZED:
-                LOG_ERR("Error: MQTT_NOT_AUTHORIZED - The client is not authorized to connect.");
-                break;
-            default:
-                LOG_ERR("Error: Unknown connection return code (%d)", connack->return_code);
-                break;
-            }
         }
         break;
-    }
 
     case MQTT_EVT_DISCONNECT:
         mqtt_connected = false;
+        clear_fds();
         LOG_INF("Disconnected from MQTT broker");
         break;
 
-    case MQTT_EVT_PUBLISH: {
-        const struct mqtt_publish_param *publish = &evt->param.publish;
-        LOG_INF("Message received on topic: %s", publish->message.topic.topic.utf8);
+    case MQTT_EVT_PUBLISH:
+        LOG_INF("Message received on topic");
         break;
-    }
 
     case MQTT_EVT_SUBACK:
-        LOG_INF("Subscribed to topic(s)");
+        LOG_INF("Subscribed successfully");
         break;
 
     case MQTT_EVT_PUBACK:
@@ -86,7 +99,7 @@ static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt
         break;
 
     default:
-        LOG_WRN("Unhandled MQTT event: %d", evt->type);
+        LOG_WRN("Unhandled MQTT event [%d]", evt->type);
         break;
     }
 }
@@ -120,37 +133,63 @@ int mqtt_client_init_and_connect(void)
     client_ctx.tx_buf = tx_buffer;
     client_ctx.tx_buf_size = sizeof(tx_buffer);
 
-    /* Connect to broker */
-    ret = mqtt_connect(&client_ctx);
-    if (ret != 0) {
-        LOG_ERR("MQTT connect failed, ret=%d", ret);
-        return ret;
+    while (!mqtt_connected) {
+        /* Attempt to connect */
+        ret = mqtt_connect(&client_ctx);
+        if (ret != 0) {
+            LOG_ERR("MQTT connect failed [%d]. Retrying...", ret);
+            k_sleep(K_SECONDS(5));
+            continue;
+        }
+
+        /* Poll the socket for a response */
+        LOG_INF("Waiting for CONNACK...");
+        ret = poll_mqtt_socket(&client_ctx, 5000);  // 5-second timeout
+        if (ret < 0) {
+            LOG_ERR("Socket poll failed, ret=%d", ret);
+            mqtt_abort(&client_ctx);
+            continue;
+        } else if (ret == 0) {
+            LOG_ERR("Poll timed out waiting for CONNACK. Retrying...");
+            mqtt_abort(&client_ctx);
+            continue;
+        }
+
+        /* Process the incoming data */
+        mqtt_input(&client_ctx);
+
+        /* If not connected, abort and retry */
+        if (!mqtt_connected) {
+            LOG_ERR("MQTT connection not established. Retrying...");
+            mqtt_abort(&client_ctx);
+        }
     }
 
-    LOG_INF("MQTT client initialized and connected");
+    LOG_INF("MQTT client connected successfully");
     return 0;
 }
 
 int mqtt_client_discovery_announce(const char *proplet_id, const char *channel_id)
 {
     char topic[128];
-    snprintf(topic, sizeof(topic), DISCOVERY_TOPIC_TEMPLATE, channel_id);
-
     char payload[128];
+
+    snprintf(topic, sizeof(topic), DISCOVERY_TOPIC_TEMPLATE, channel_id);
     snprintf(payload, sizeof(payload),
-             "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}", proplet_id, channel_id);
+             "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
+             proplet_id, channel_id);
 
     struct mqtt_publish_param param = {
         .message = {
             .topic = {
                 .topic = {
-                    .utf8 = (uint8_t *)topic,
+                    .utf8 = topic,
                     .size = strlen(topic),
                 },
                 .qos = MQTT_QOS_1_AT_LEAST_ONCE,
             },
             .payload = {
-                .data = (uint8_t *)payload,
+                .data = payload,
                 .len = strlen(payload),
             },
         },
@@ -167,29 +206,11 @@ int mqtt_client_discovery_announce(const char *proplet_id, const char *channel_i
     int ret = mqtt_publish(&client_ctx, &param);
     if (ret != 0) {
         LOG_ERR("Failed to publish discovery announcement. Error code: %d", ret);
-
-        switch (ret) {
-        case -ENOTCONN:
-            LOG_ERR("Error: MQTT client is not connected to the broker.");
-            break;
-        case -EIO:
-            LOG_ERR("Error: I/O error occurred while publishing.");
-            break;
-        case -EINVAL:
-            LOG_ERR("Error: Invalid parameter provided to publish.");
-            break;
-        case -ENOMEM:
-            LOG_ERR("Error: Insufficient memory to process the publish request.");
-            break;
-        default:
-            LOG_ERR("Error: Unknown publishing error.");
-            break;
-        }
         return ret;
     }
 
     LOG_INF("Discovery announcement published successfully to topic: %s", topic);
-    return ret;
+    return 0;
 }
 
 int mqtt_client_subscribe(const char *channel_id)
@@ -234,7 +255,10 @@ int mqtt_client_subscribe(const char *channel_id)
 void mqtt_client_process(void)
 {
     if (mqtt_connected) {
-        mqtt_input(&client_ctx);
+        int ret = poll_mqtt_socket(&client_ctx, mqtt_keepalive_time_left(&client_ctx));
+        if (ret > 0) {
+            mqtt_input(&client_ctx);
+        }
         mqtt_live(&client_ctx);
     }
 }

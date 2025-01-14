@@ -28,17 +28,12 @@ void main(void)
     }
     LOG_INF("Wi-Fi connected, proceeding with MQTT initialization");
 
-    /* Initialize MQTT client */
-    if (mqtt_client_init_and_connect() != 0) {
-        LOG_ERR("MQTT client initialization failed");
-        return;
+    /* Initialize and connect MQTT client */
+    while (mqtt_client_init_and_connect() != 0) {
+        LOG_ERR("MQTT client initialization failed. Retrying...");
+        k_sleep(K_SECONDS(5));
     }
 
-    /* Wait for MQTT connection to be established */
-    LOG_INF("Waiting for MQTT connection...");
-    while (!mqtt_connected) {
-        k_sleep(K_MSEC(100));
-    }
     LOG_INF("MQTT connected successfully.");
 
     /* Publish discovery announcement */
@@ -58,6 +53,6 @@ void main(void)
     /* Main loop for MQTT processing */
     while (1) {
         mqtt_client_process();
-        k_sleep(K_SECONDS(5));
+        k_sleep(K_MSEC(100));  // Adjusted for better responsiveness
     }
 }
