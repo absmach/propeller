@@ -1,3 +1,5 @@
 # Propellerd Build
 build
 config.toml
+
+.env

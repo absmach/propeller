@@ -8,21 +8,24 @@ import (
 	"os"
 	"time"
 
-	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/proxy"
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
 	svcName = "proxy"
+	pathEnv = ".env"
 )
 
 type envConfig struct {
 	LogLevel    string        `env:"PROXY_LOG_LEVEL"           envDefault:"info"`
 	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
 	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT"        envDefault:"30s"`
-	ConfigPath  string        `env:"CONFIG_PATH"               envDefault:"config.toml"`
+	ThingID     string        `env:"PROXY_THING_ID"`
+	ThingKey    string        `env:"PROXY_THING_KEY"`
+	ChannelID   string        `env:"PROXY_CHANNEL_ID"`
 
 	// HTTP Registry configuration
 	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"         envDefault:"512000"`
@@ -35,6 +38,10 @@ type envConfig struct {
 
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
+
+	if _, err := os.Stat(pathEnv); err == nil {
+		_ = godotenv.Load(pathEnv)
+	}
 
 	cfg := envConfig{}
 	if err := env.Parse(&cfg); err != nil {
@@ -51,18 +58,11 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	conf, err := config.LoadConfig(cfg.ConfigPath)
-	if err != nil {
-		logger.Error("failed to load TOML configuration", slog.String("error", err.Error()))
-
-		return
-	}
-
 	mqttCfg := proxy.MQTTProxyConfig{
 		BrokerURL: cfg.MQTTAddress,
-		Password:  conf.Proxy.ThingKey,
-		PropletID: conf.Proxy.ThingID,
-		ChannelID: conf.Proxy.ChannelID,
+		Password:  cfg.ThingKey,
+		PropletID: cfg.ThingID,
+		ChannelID: cfg.ChannelID,
 	}
 
 	httpCfg := proxy.HTTPProxyConfig{

@@ -9,15 +9,18 @@ import (
 	"time"
 
 	"github.com/absmach/magistrala/pkg/server"
-	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
 	"github.com/caarlos0/env/v11"
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	"golang.org/x/sync/errgroup"
 )
 
-const svcName = "proplet"
+const (
+	svcName = "proplet"
+	pathEnv = ".env"
+)
 
 type envConfig struct {
 	LogLevel            string        `env:"PROPLET_LOG_LEVEL"           envDefault:"info"`
@@ -27,12 +30,18 @@ type envConfig struct {
 	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
 	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
 	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME"     envDefault:""`
-	ConfigPath          string        `env:"CONFIG_PATH"                 envDefault:"config.toml"`
+	ThingID             string        `env:"PROPLET_THING_ID"`
+	ThingKey           string        `env:"PROPLET_THING_KEY"`
+	ChannelID          string        `env:"PROPLET_CHANNEL_ID"`
 }
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
+
+	if _, err := os.Stat(pathEnv); err == nil {
+		_ = godotenv.Load(pathEnv)
+	}
 
 	cfg := envConfig{}
 	if err := env.Parse(&cfg); err != nil {
@@ -53,14 +62,7 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	conf, err := config.LoadConfig(cfg.ConfigPath)
-	if err != nil {
-		logger.Error("failed to load TOML configuration", slog.String("error", err.Error()))
-
-		return
-	}
-
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, conf.Proplet.ThingID, conf.Proplet.ThingKey, conf.Proplet.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
 
@@ -70,12 +72,12 @@ func main() {
 	var runtime proplet.Runtime
 	switch cfg.ExternalWasmRuntime != "" {
 	case true:
-		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, conf.Proplet.ChannelID, cfg.ExternalWasmRuntime)
+		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
 	default:
-		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, conf.Proplet.ChannelID)
+		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 	}
 
-	service, err := proplet.NewService(ctx, conf.Proplet.ChannelID, conf.Proplet.ThingID, conf.Proplet.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
+	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 

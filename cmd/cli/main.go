@@ -5,7 +5,7 @@ import (
 
 	"github.com/absmach/propeller/cli"
 	"github.com/absmach/propeller/pkg/sdk"
-	smqsdk "github.com/absmach/supermq/pkg/sdk"
+	smqsdk "github.com/absmach/magistrala/pkg/sdk/go"
 	"github.com/spf13/cobra"
 )
 
@@ -13,9 +13,8 @@ func main() {
 	msgContentType := string(smqsdk.CTJSONSenML)
 	smqSDKConf := smqsdk.Config{
 		UsersURL:       "http://localhost:9002",
-		ClientsURL:     "http://localhost:9006",
-		DomainsURL:     "http://localhost:9003",
-		ChannelsURL:    "http://localhost:9005",
+		ThingsURL:     "http://localhost:9000",
+		DomainsURL:     "http://localhost:8189",
 		MsgContentType: smqsdk.ContentType(msgContentType),
 	}
 
