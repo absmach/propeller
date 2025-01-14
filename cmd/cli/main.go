@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
+	smqsdk "github.com/absmach/magistrala/pkg/sdk/go"
 	"github.com/absmach/propeller/cli"
 	"github.com/absmach/propeller/pkg/sdk"
-	smqsdk "github.com/absmach/magistrala/pkg/sdk/go"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +13,7 @@ func main() {
 	msgContentType := string(smqsdk.CTJSONSenML)
 	smqSDKConf := smqsdk.Config{
 		UsersURL:       "http://localhost:9002",
-		ThingsURL:     "http://localhost:9000",
+		ThingsURL:      "http://localhost:9000",
 		DomainsURL:     "http://localhost:8189",
 		MsgContentType: smqsdk.ContentType(msgContentType),
 	}
