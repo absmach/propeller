@@ -7,6 +7,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/random/random.h>
 #include <zephyr/sys/base64.h>
+#include <zephyr/fs/fs.h>
+#include <zephyr/storage/disk_access.h>
 
 LOG_MODULE_REGISTER(mqtt_client);
 
@@ -61,7 +63,7 @@ struct chunk_tracker {
     int total_chunks;
     int received_chunks;
     bool *chunk_received;
-    FILE *file;
+    uint8_t *file_data;
 };
 
 static const struct json_obj_descr start_command_descr[] = {
@@ -512,31 +514,40 @@ void handle_registry_response(const char *payload) {
 
     if (app_chunk_tracker == NULL) {
         app_chunk_tracker = malloc(sizeof(struct chunk_tracker));
-        app_chunk_tracker->total_chunks = resp.total_chunks;
-        app_chunk_tracker->received_chunks = 0;
-        app_chunk_tracker->chunk_received = calloc(resp.total_chunks, sizeof(bool));
-        char filename[100];
-        snprintf(filename, sizeof(filename), "%s.wasm", resp.app_name);
-        app_chunk_tracker->file = fopen(filename, "wb");
-        if (!app_chunk_tracker->file) {
-            LOG_ERR("Failed to open file for writing chunks");
-            free(app_chunk_tracker->chunk_received);
-            free(app_chunk_tracker);
+        if (!app_chunk_tracker) {
+            LOG_ERR("Failed to allocate memory for chunk tracker");
             return;
         }
+
+        app_chunk_tracker->total_chunks = resp.total_chunks;
+        app_chunk_tracker->received_chunks = 0;
+
+        app_chunk_tracker->chunk_received = calloc(resp.total_chunks, sizeof(bool));
+        app_chunk_tracker->file_data = malloc(resp.total_chunks * 256); // Assuming 256 bytes per chunk
+        if (!app_chunk_tracker->chunk_received || !app_chunk_tracker->file_data) {
+            LOG_ERR("Failed to allocate memory for chunk data");
+            free(app_chunk_tracker->chunk_received);
+            free(app_chunk_tracker);
+            app_chunk_tracker = NULL;
+            return;
+        }
+    }
+
+    if (app_chunk_tracker->total_chunks != resp.total_chunks) {
+        LOG_ERR("Inconsistent total chunks value: %d != %d", app_chunk_tracker->total_chunks, resp.total_chunks);
+        return;
     }
 
     uint8_t binary_data[256];
     size_t binary_data_len = sizeof(binary_data);
 
-    ret = base64_decode(binary_data, sizeof(binary_data), resp.data, strlen(resp.data), &binary_data_len);
-    if (ret != 0) {
+    ret = base64_decode(binary_data, sizeof(binary_data), &binary_data_len, (const uint8_t *)resp.data, strlen(resp.data));
+    if (ret < 0) {
         LOG_ERR("Failed to decode Base64 data for chunk %d", resp.chunk_idx);
         return;
     }
 
-    fseek(app_chunk_tracker->file, resp.chunk_idx * binary_data_len, SEEK_SET);
-    fwrite(binary_data, 1, binary_data_len, app_chunk_tracker->file);
+    memcpy(&app_chunk_tracker->file_data[resp.chunk_idx * binary_data_len], binary_data, binary_data_len);
 
     if (!app_chunk_tracker->chunk_received[resp.chunk_idx]) {
         app_chunk_tracker->chunk_received[resp.chunk_idx] = true;
@@ -546,10 +557,12 @@ void handle_registry_response(const char *payload) {
     LOG_INF("Chunk %d/%d received for app: %s", app_chunk_tracker->received_chunks, app_chunk_tracker->total_chunks, resp.app_name);
 
     if (app_chunk_tracker->received_chunks == app_chunk_tracker->total_chunks) {
-        LOG_INF("All chunks received for app: %s. Assembling binary file.", resp.app_name);
-        fclose(app_chunk_tracker->file);
+        LOG_INF("All chunks received for app: %s. Binary is ready in memory.", resp.app_name);
+
+        // Process the complete binary in `app_chunk_tracker->file_data`
 
         free(app_chunk_tracker->chunk_received);
+        free(app_chunk_tracker->file_data);
         free(app_chunk_tracker);
         app_chunk_tracker = NULL;
 
