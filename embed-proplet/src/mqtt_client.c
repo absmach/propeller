@@ -94,7 +94,27 @@ static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt
         break;
 
     case MQTT_EVT_PUBACK:
-        LOG_INF("Message published successfully");
+        LOG_INF("QoS 1 Message published successfully");
+        break;
+
+    case MQTT_EVT_PUBREC:
+        LOG_INF("QoS 2 publish received");
+        break;
+
+    case MQTT_EVT_PUBREL:
+        LOG_INF("QoS 2 publish released");
+        break;
+
+    case MQTT_EVT_PUBCOMP:
+        LOG_INF("QoS 2 publish complete");
+        break;
+
+    case MQTT_EVT_UNSUBACK:
+        LOG_INF("Unsubscribed successfully");
+        break;
+
+    case MQTT_EVT_PINGRESP:
+        LOG_INF("Ping response received from broker");
         break;
 
     default:
