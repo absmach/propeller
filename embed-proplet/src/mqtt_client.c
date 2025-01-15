@@ -9,6 +9,7 @@
 #include <zephyr/sys/base64.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/storage/disk_access.h>
+#include "wasm_handler.h"
 
 LOG_MODULE_REGISTER(mqtt_client);
 
@@ -542,65 +543,32 @@ void handle_registry_response(const char *payload) {
 
     LOG_INF("Registry response received:");
     LOG_INF("App Name: %s", resp.app_name);
-    LOG_INF("Chunk Index: %d", resp.chunk_idx);
-    LOG_INF("Total Chunks: %d", resp.total_chunks);
 
-    if (app_chunk_tracker == NULL) {
-        app_chunk_tracker = malloc(sizeof(struct chunk_tracker));
-        if (!app_chunk_tracker) {
-            LOG_ERR("Failed to allocate memory for chunk tracker");
-            return;
-        }
-
-        app_chunk_tracker->total_chunks = resp.total_chunks;
-        app_chunk_tracker->received_chunks = 0;
-
-        app_chunk_tracker->chunk_received = calloc(resp.total_chunks, sizeof(bool));
-        app_chunk_tracker->file_data = malloc(resp.total_chunks * 256); // Assuming 256 bytes per chunk
-        if (!app_chunk_tracker->chunk_received || !app_chunk_tracker->file_data) {
-            LOG_ERR("Failed to allocate memory for chunk data");
-            free(app_chunk_tracker->chunk_received);
-            free(app_chunk_tracker);
-            app_chunk_tracker = NULL;
-            return;
-        }
-    }
-
-    if (app_chunk_tracker->total_chunks != resp.total_chunks) {
-        LOG_ERR("Inconsistent total chunks value: %d != %d", app_chunk_tracker->total_chunks, resp.total_chunks);
+    size_t decoded_len = (strlen(resp.data) * 3) / 4;
+    uint8_t *binary_data = malloc(decoded_len);
+    if (!binary_data) {
+        LOG_ERR("Failed to allocate memory for decoded binary");
         return;
     }
 
-    uint8_t binary_data[256];
-    size_t binary_data_len = sizeof(binary_data);
-
-    ret = base64_decode(binary_data, sizeof(binary_data), &binary_data_len, (const uint8_t *)resp.data, strlen(resp.data));
+    size_t binary_data_len = decoded_len;
+    ret = base64_decode(binary_data, decoded_len, &binary_data_len, (const uint8_t *)resp.data, strlen(resp.data));
     if (ret < 0) {
-        LOG_ERR("Failed to decode Base64 data for chunk %d", resp.chunk_idx);
+        LOG_ERR("Failed to decode Base64 data, error: %d", ret);
+        free(binary_data);
         return;
     }
 
-    memcpy(&app_chunk_tracker->file_data[resp.chunk_idx * binary_data_len], binary_data, binary_data_len);
+    LOG_INF("Successfully decoded Wasm binary. Executing now...");
 
-    if (!app_chunk_tracker->chunk_received[resp.chunk_idx]) {
-        app_chunk_tracker->chunk_received[resp.chunk_idx] = true;
-        app_chunk_tracker->received_chunks++;
+    ret = execute_wasm_from_memory(binary_data, binary_data_len);
+    if (ret < 0) {
+        LOG_ERR("Failed to execute Wasm binary, error: %d", ret);
+    } else {
+        LOG_INF("Wasm binary executed successfully");
     }
 
-    LOG_INF("Chunk %d/%d received for app: %s", app_chunk_tracker->received_chunks, app_chunk_tracker->total_chunks, resp.app_name);
-
-    if (app_chunk_tracker->received_chunks == app_chunk_tracker->total_chunks) {
-        LOG_INF("All chunks received for app: %s. Binary is ready in memory.", resp.app_name);
-
-        // Process the complete binary in `app_chunk_tracker->file_data`
-
-        free(app_chunk_tracker->chunk_received);
-        free(app_chunk_tracker->file_data);
-        free(app_chunk_tracker);
-        app_chunk_tracker = NULL;
-
-        LOG_INF("WASM binary assembled successfully for app: %s", resp.app_name);
-    }
+    free(binary_data);
 }
 
 void mqtt_client_process(void)
