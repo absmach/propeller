@@ -16,6 +16,7 @@ void main(void)
 {
     LOG_INF("Starting Proplet...");
 
+    // Initialize Wi-Fi
     wifi_manager_init();
     if (wifi_manager_connect(WIFI_SSID, WIFI_PSK) != 0) {
         LOG_ERR("Wi-Fi connection failed");
@@ -29,18 +30,21 @@ void main(void)
 
     LOG_INF("Wi-Fi connected, proceeding with MQTT initialization");
 
-    while (mqtt_client_connect() != 0) {
+    // Initialize MQTT client
+    while (mqtt_client_connect(PROPLET_ID, CHANNEL_ID) != 0) {
         LOG_ERR("MQTT client initialization failed. Retrying...");
         k_sleep(K_SECONDS(5));
     }
 
     LOG_INF("MQTT connected successfully.");
 
+    // Publish discovery message
     if (publish_discovery(PROPLET_ID, CHANNEL_ID) != 0) {
         LOG_ERR("Discovery announcement failed");
         return;
     }
 
+    // Subscribe to topics
     if (subscribe(CHANNEL_ID) != 0) {
         LOG_ERR("Topic subscription failed");
         return;
@@ -48,6 +52,7 @@ void main(void)
 
     LOG_INF("Proplet ready");
 
+    // Main loop
     while (1) {
         mqtt_client_process();
 

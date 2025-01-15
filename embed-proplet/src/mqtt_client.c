@@ -27,6 +27,10 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define FETCH_REQUEST_TOPIC_TEMPLATE "channels/%s/messages/registry/proplet"
 #define RESULTS_TOPIC_TEMPLATE      "channels/%s/messages/control/proplet/results"
 
+#define WILL_MESSAGE_TEMPLATE "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}"
+#define WILL_QOS MQTT_QOS_1_AT_LEAST_ONCE
+#define WILL_RETAIN 1
+
 #define CLIENT_ID "proplet-esp32s3"
 
 /* Buffers for MQTT client */
@@ -268,7 +272,7 @@ void publish_registry_request(const char *channel_id, const char *app_name)
     publish(channel_id, FETCH_REQUEST_TOPIC_TEMPLATE, payload);
 }
 
-int mqtt_client_connect(void)
+int mqtt_client_connect(const char *proplet_id, const char *channel_id)
 {
     int ret;
 
@@ -280,18 +284,43 @@ int mqtt_client_connect(void)
         LOG_ERR("Failed to resolve broker address, ret=%d", ret);
         return ret;
     }
-    
+
     mqtt_client_init(&client_ctx);
+
+    char will_topic_str[128];
+    snprintf(will_topic_str, sizeof(will_topic_str), ALIVE_TOPIC_TEMPLATE, channel_id);
+
+    char will_message_str[256];
+    snprintf(will_message_str, sizeof(will_message_str), WILL_MESSAGE_TEMPLATE, proplet_id, channel_id);
+
+    struct mqtt_utf8 will_message = {
+        .utf8 = (const uint8_t *)will_message_str,
+        .size = strlen(will_message_str),
+    };
+
+    struct mqtt_topic will_topic = {
+        .topic = {
+            .utf8 = (const uint8_t *)will_topic_str,
+            .size = strlen(will_topic_str),
+        },
+        .qos = WILL_QOS,
+    };
+
     client_ctx.broker = &broker_addr;
     client_ctx.evt_cb = mqtt_event_handler;
     client_ctx.client_id.utf8 = CLIENT_ID;
     client_ctx.client_id.size = strlen(CLIENT_ID);
     client_ctx.protocol_version = MQTT_VERSION_3_1_1;
     client_ctx.transport.type = MQTT_TRANSPORT_NON_SECURE;
+
     client_ctx.rx_buf = rx_buffer;
-    client_ctx.rx_buf_size = sizeof(rx_buffer);
+    client_ctx.rx_buf_size = RX_BUFFER_SIZE;
     client_ctx.tx_buf = tx_buffer;
-    client_ctx.tx_buf_size = sizeof(tx_buffer);
+    client_ctx.tx_buf_size = TX_BUFFER_SIZE;
+
+    client_ctx.will_topic = &will_topic;
+    client_ctx.will_message = &will_message;
+    client_ctx.will_retain = WILL_RETAIN;
 
     while (!mqtt_connected) {
         ret = mqtt_connect(&client_ctx);
@@ -453,7 +482,7 @@ void handle_stop_command(const char *payload) {
     struct stop_command cmd;
     int ret;
 
-    ret = json_obj_parse(payload, strlen(payload), stop_command_descr, ARRAY_SIZE(stop_command_descr), &cmd);
+    ret = json_obj_parse((char *)payload, strlen(payload), stop_command_descr, ARRAY_SIZE(stop_command_descr), &cmd);
     if (ret < 0) {
         LOG_ERR("Failed to parse stop command payload, error: %d", ret);
         return;
