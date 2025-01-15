@@ -323,9 +323,11 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
     client_ctx.will_retain = WILL_RETAIN;
 
     while (!mqtt_connected) {
+        LOG_INF("Attempting to connect to the MQTT broker...");
+
         ret = mqtt_connect(&client_ctx);
         if (ret != 0) {
-            LOG_ERR("MQTT connect failed [%d]. Retrying...", ret);
+            LOG_ERR("MQTT connect failed [%d]. Retrying in 5 seconds...", ret);
             k_sleep(K_SECONDS(5));
             continue;
         }
@@ -333,12 +335,14 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
         /* Poll the socket for a response */
         ret = poll_mqtt_socket(&client_ctx, 5000);
         if (ret < 0) {
-            LOG_ERR("Socket poll failed, ret=%d", ret);
+            LOG_ERR("Socket poll failed, ret=%d. Retrying in 5 seconds...", ret);
             mqtt_abort(&client_ctx);
+            k_sleep(K_SECONDS(5));
             continue;
         } else if (ret == 0) {
-            LOG_ERR("Poll timed out waiting for CONNACK. Retrying...");
+            LOG_ERR("Poll timed out waiting for CONNACK. Retrying in 5 seconds...");
             mqtt_abort(&client_ctx);
+            k_sleep(K_SECONDS(5));
             continue;
         }
 
@@ -364,11 +368,8 @@ int publish_discovery(const char *proplet_id, const char *channel_id)
              "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
              proplet_id, channel_id);
 
-    LOG_DBG("Topic: %s (Length: %zu)", topic, strlen(topic));
-    LOG_DBG("Payload: %s (Length: %zu)", payload, strlen(payload));
-
     if (strlen(topic) >= sizeof(topic) || strlen(payload) >= sizeof(payload)) {
-        LOG_ERR("Topic or payload size exceeds the maximum allowable size.");
+        LOG_ERR("Discovery topic or payload size exceeds maximum allowable size.");
         return -EINVAL;
     }
 
@@ -376,6 +377,8 @@ int publish_discovery(const char *proplet_id, const char *channel_id)
         LOG_ERR("MQTT client is not connected. Discovery announcement aborted.");
         return -ENOTCONN;
     }
+
+    LOG_INF("Publishing discovery announcement for Proplet ID: %s, Channel ID: %s", proplet_id, channel_id);
 
     struct mqtt_publish_param param = {
         .message = {
@@ -446,16 +449,17 @@ int subscribe(const char *channel_id)
         .message_id = 1,
     };
 
+    LOG_INF("Subscribing to topics for channel ID: %s", channel_id);
+
     int ret = mqtt_subscribe(&client_ctx, &sub_list);
     if (ret != 0) {
-        LOG_ERR("Failed to subscribe to topics, ret=%d", ret);
+        LOG_ERR("Failed to subscribe to topics for channel ID: %s. Error code: %d", channel_id, ret);
     } else {
-        LOG_INF("Subscribed to topics successfully");
+        LOG_INF("Successfully subscribed to topics for channel ID: %s", channel_id);
     }
 
     return ret;
 }
-
 
 void handle_start_command(const char *payload) {
     struct start_command cmd;

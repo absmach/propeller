@@ -40,6 +40,7 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt
         break;
     }
     default:
+        LOG_DBG("Unhandled Wi-Fi event: %u", mgmt_event);
         break;
     }
 }
@@ -104,8 +105,20 @@ int wifi_manager_connect(const char *ssid, const char *psk)
         .band = WIFI_FREQ_BAND_2_4_GHZ,
     };
 
-    LOG_INF("Connecting to SSID: %s", ssid);
-    return net_mgmt(NET_REQUEST_WIFI_CONNECT, sta_iface, &params, sizeof(params));
+    while (1) {
+        LOG_INF("Attempting to connect to Wi-Fi...");
+
+        int ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, sta_iface, &params, sizeof(params));
+        if (ret == 0) {
+            LOG_DBG("Connection request sent, waiting for confirmation...");
+            k_sem_take(&wifi_connected_sem, K_FOREVER);
+            LOG_INF("Successfully connected to Wi-Fi");
+            return 0;
+        }
+
+        LOG_ERR("Connection attempt failed (error: %d). Retrying in 5 seconds...", ret);
+        k_sleep(K_SECONDS(5));
+    }
 }
 
 int wifi_manager_enable_ap(const char *ssid, const char *psk, const char *ip_address, const char *netmask)
@@ -129,9 +142,4 @@ int wifi_manager_enable_ap(const char *ssid, const char *psk, const char *ip_add
 
     LOG_INF("Enabling AP mode with SSID: %s", ssid);
     return net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap_iface, &params, sizeof(params));
-}
-
-bool wifi_manager_wait_for_connection(k_timeout_t timeout)
-{
-    return k_sem_take(&wifi_connected_sem, timeout) == 0;
 }
