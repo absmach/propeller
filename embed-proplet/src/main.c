@@ -10,49 +10,53 @@ LOG_MODULE_REGISTER(main);
 #define PROPLET_ID "proplet1"
 #define CHANNEL_ID "channel1"
 
+const char *channel_id = CHANNEL_ID;
+
 void main(void)
 {
     LOG_INF("Starting Proplet...");
 
-    /* Initialize Wi-Fi */
     wifi_manager_init();
     if (wifi_manager_connect(WIFI_SSID, WIFI_PSK) != 0) {
         LOG_ERR("Wi-Fi connection failed");
         return;
     }
 
-    /* Wait for Wi-Fi connection */
     if (!wifi_manager_wait_for_connection(K_SECONDS(60))) {
         LOG_ERR("Wi-Fi connection timed out");
         return;
     }
+
     LOG_INF("Wi-Fi connected, proceeding with MQTT initialization");
 
-    /* Initialize and connect MQTT client */
-    while (mqtt_client_init_and_connect() != 0) {
+    while (mqtt_client_connect() != 0) {
         LOG_ERR("MQTT client initialization failed. Retrying...");
         k_sleep(K_SECONDS(5));
     }
 
     LOG_INF("MQTT connected successfully.");
 
-    /* Publish discovery announcement */
-    if (mqtt_client_discovery_announce(PROPLET_ID, CHANNEL_ID) != 0) {
+    if (publish_discovery(PROPLET_ID, CHANNEL_ID) != 0) {
         LOG_ERR("Discovery announcement failed");
         return;
     }
 
-    /* Subscribe to topics */
-    if (mqtt_client_subscribe(CHANNEL_ID) != 0) {
+    if (subscribe(CHANNEL_ID) != 0) {
         LOG_ERR("Topic subscription failed");
         return;
     }
 
     LOG_INF("Proplet ready");
 
-    /* Main loop for MQTT processing */
     while (1) {
         mqtt_client_process();
-        k_sleep(K_MSEC(100));  // Adjusted for better responsiveness
+
+        if (mqtt_connected) {
+            publish_alive_message(CHANNEL_ID);
+        } else {
+            LOG_WRN("MQTT client is not connected");
+        }
+
+        k_sleep(K_SECONDS(30));
     }
 }
