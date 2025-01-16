@@ -1,4 +1,4 @@
-package proplet
+package runtimes
 
 import (
 	"context"
@@ -8,16 +8,10 @@ import (
 	"sync"
 
 	"github.com/absmach/propeller/pkg/mqtt"
+	"github.com/absmach/propeller/proplet"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
-
-var resultsTopic = "channels/%s/messages/control/proplet/results"
-
-type Runtime interface {
-	StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error
-	StopApp(ctx context.Context, id string) error
-}
 
 type wazeroRuntime struct {
 	mutex     sync.Mutex
@@ -27,7 +21,7 @@ type wazeroRuntime struct {
 	logger    *slog.Logger
 }
 
-func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string) Runtime {
+func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string) proplet.Runtime {
 	return &wazeroRuntime{
 		runtimes:  make(map[string]wazero.Runtime),
 		pubsub:    pubsub,
@@ -36,7 +30,7 @@ func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string)
 	}
 }
 
-func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, id, functionName string, args ...uint64) error {
+func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, args ...uint64) error {
 	r := wazero.NewRuntime(ctx)
 
 	w.mutex.Lock()
@@ -74,7 +68,7 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, id, fun
 			"results": results,
 		}
 
-		topic := fmt.Sprintf(resultsTopic, w.channelID)
+		topic := fmt.Sprintf(proplet.ResultsTopic, w.channelID)
 		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
 			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
 

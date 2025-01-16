@@ -11,6 +11,7 @@ import (
 	"github.com/absmach/magistrala/pkg/server"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/proplet/runtimes"
 	"github.com/caarlos0/env/v11"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -19,15 +20,16 @@ import (
 const svcName = "proplet"
 
 type config struct {
-	LogLevel           string        `env:"PROPLET_LOG_LEVEL"           envDefault:"info"`
-	InstanceID         string        `env:"PROPLET_INSTANCE_ID"`
-	MQTTAddress        string        `env:"PROPLET_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
-	MQTTTimeout        time.Duration `env:"PROPLET_MQTT_TIMEOUT"        envDefault:"30s"`
-	MQTTQoS            byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
-	LivelinessInterval time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
-	ChannelID          string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
-	ThingID            string        `env:"PROPLET_THING_ID,notEmpty"`
-	ThingKey           string        `env:"PROPLET_THING_KEY,notEmpty"`
+	LogLevel            string        `env:"PROPLET_LOG_LEVEL"                 envDefault:"info"`
+	InstanceID          string        `env:"PROPLET_INSTANCE_ID"`
+	MQTTAddress         string        `env:"PROPLET_MQTT_ADDRESS"              envDefault:"tcp://localhost:1883"`
+	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT"              envDefault:"30s"`
+	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"                  envDefault:"2"`
+	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"       envDefault:"10s"`
+	ChannelID           string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
+	ThingID             string        `env:"PROPLET_THING_ID,notEmpty"`
+	ThingKey            string        `env:"PROPLET_THING_KEY,notEmpty"`
+	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME"     envDefault:""`
 }
 
 func main() {
@@ -59,9 +61,16 @@ func main() {
 
 		return
 	}
-	wazero := proplet.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
 
-	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, wazero)
+	var runtime proplet.Runtime
+	switch cfg.ExternalWasmRuntime != "" {
+	case true:
+		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
+	default:
+		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
+	}
+
+	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ThingID, cfg.ThingKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 

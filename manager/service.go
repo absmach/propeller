@@ -332,27 +332,18 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]int
 		return errors.New("task id is empty")
 	}
 
-	results, ok := msg["results"].([]interface{})
-	if !ok {
-		return errors.New("invalid results")
-	}
-	data := make([]uint64, len(results))
-	for i := range results {
-		r, ok := results[i].(float64)
-		if !ok {
-			return errors.New("invalid result")
-		}
-		data[i] = uint64(r)
-	}
-
 	t, err := svc.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	t.Results = data
+	t.Results = msg["results"]
 	t.State = task.Completed
 	t.UpdatedAt = time.Now()
 	t.FinishTime = time.Now()
+
+	if errMsg, ok := msg["error"].(string); ok {
+		t.Error = errMsg
+	}
 
 	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
 		return err
