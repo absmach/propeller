@@ -35,6 +35,6 @@ void main(void)
             LOG_WRN("MQTT client is not connected");
         }
 
-        k_sleep(K_SECONDS(30));
+        k_sleep(K_SECONDS(1));
     }
 }
