@@ -7,7 +7,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/random/random.h>
 #include <zephyr/sys/base64.h>
-#include <zephyr/fs/fs.h>
 #include <zephyr/storage/disk_access.h>
 #include "wasm_handler.h"
 
@@ -17,75 +16,98 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define TX_BUFFER_SIZE 256
 
 #define MQTT_BROKER_HOSTNAME "192.168.88.179" /* Replace with your broker's IP */
-#define MQTT_BROKER_PORT 1883
+#define MQTT_BROKER_PORT     1883
 
-#define REGISTRY_ACK_TOPIC_TEMPLATE "channels/%s/messages/control/manager/registry"
-#define ALIVE_TOPIC_TEMPLATE        "channels/%s/messages/control/proplet/alive"
-#define DISCOVERY_TOPIC_TEMPLATE    "channels/%s/messages/control/proplet/create"
-#define START_TOPIC_TEMPLATE        "channels/%s/messages/control/manager/start"
-#define STOP_TOPIC_TEMPLATE         "channels/%s/messages/control/manager/stop"
-#define REGISTRY_RESPONSE_TOPIC     "channels/%s/messages/registry/server"
+#define REGISTRY_ACK_TOPIC_TEMPLATE  "channels/%s/messages/control/manager/registry"
+#define ALIVE_TOPIC_TEMPLATE         "channels/%s/messages/control/proplet/alive"
+#define DISCOVERY_TOPIC_TEMPLATE     "channels/%s/messages/control/proplet/create"
+#define START_TOPIC_TEMPLATE         "channels/%s/messages/control/manager/start"
+#define STOP_TOPIC_TEMPLATE          "channels/%s/messages/control/manager/stop"
+#define REGISTRY_RESPONSE_TOPIC      "channels/%s/messages/registry/server"
 #define FETCH_REQUEST_TOPIC_TEMPLATE "channels/%s/messages/registry/proplet"
-#define RESULTS_TOPIC_TEMPLATE      "channels/%s/messages/control/proplet/results"
+#define RESULTS_TOPIC_TEMPLATE       "channels/%s/messages/control/proplet/results"
 
 #define WILL_MESSAGE_TEMPLATE "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}"
-#define WILL_QOS MQTT_QOS_1_AT_LEAST_ONCE
-#define WILL_RETAIN 1
+#define WILL_QOS              MQTT_QOS_1_AT_LEAST_ONCE
+#define WILL_RETAIN           1
 
 #define CLIENT_ID "proplet-esp32s3"
 
-/* Buffers for MQTT client */
+#define MAX_ID_LEN         64
+#define MAX_NAME_LEN       64
+#define MAX_STATE_LEN      16
+#define MAX_URL_LEN        256
+#define MAX_TIMESTAMP_LEN  32
+#define MAX_BASE64_LEN     256
+#define MAX_INPUTS         16
+#define MAX_RESULTS        16
+
+/* 
+ * Keep the most recent "start" Task here, so if 
+ * we fetch the WASM from the registry, we can call 
+ * the WASM with the same inputs. 
+ *
+ * If you support multiple tasks in parallel, you'll need
+ * a more robust approach than a single global.
+ */
+static struct task g_current_task;
+
 static uint8_t rx_buffer[RX_BUFFER_SIZE];
 static uint8_t tx_buffer[TX_BUFFER_SIZE];
 
-/* MQTT client context */
 static struct mqtt_client client_ctx;
 static struct sockaddr_storage broker_addr;
 
-/* Socket descriptor */
 static struct zsock_pollfd fds[1];
 static int nfds;
 
 bool mqtt_connected = false;
-struct start_command {
-    char task_id[50];
-    char app_name[50];
-    char wasm_file[100];
-};
 
-struct stop_command {
-    char task_id[50];
+struct task {
+    char     id[MAX_ID_LEN];
+    char     name[MAX_NAME_LEN];
+    char     state[MAX_STATE_LEN];
+    char     image_url[MAX_URL_LEN];
+
+    char     file[MAX_BASE64_LEN];  
+    size_t   file_len;     
+
+    uint64_t inputs[MAX_INPUTS];
+    size_t   inputs_count;
+    uint64_t results[MAX_RESULTS];
+    size_t   results_count;
+
+    char     start_time[MAX_TIMESTAMP_LEN];
+    char     finish_time[MAX_TIMESTAMP_LEN];
+    char     created_at[MAX_TIMESTAMP_LEN];
+    char     updated_at[MAX_TIMESTAMP_LEN];
 };
 
 struct registry_response {
-    char app_name[50];
-    int chunk_idx;
-    int total_chunks;
-    char data[256];
+    char app_name[64];
+    char data[MAX_BASE64_LEN];
 };
 
-struct chunk_tracker {
-    int total_chunks;
-    int received_chunks;
-    bool *chunk_received;
-    uint8_t *file_data;
-};
+static const struct json_obj_descr task_descr[] = {
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "id",         id,        JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "name",       name,      JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "state",      state,     JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "image_url",  image_url, JSON_TOK_STRING),
 
-static const struct json_obj_descr start_command_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct start_command, task_id, JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM(struct start_command, app_name, JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM(struct start_command, wasm_file, JSON_TOK_STRING),
-};
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "file",       file,      JSON_TOK_STRING),
 
-static const struct json_obj_descr stop_command_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct stop_command, task_id, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_ARRAY_NAMED(struct task, "inputs",    inputs,  MAX_INPUTS,  inputs_count,  JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_ARRAY_NAMED(struct task, "results",   results, MAX_RESULTS, results_count, JSON_TOK_NUMBER),
+
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "start_time",  start_time,  JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "finish_time", finish_time, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "created_at",  created_at,  JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "updated_at",  updated_at,  JSON_TOK_STRING),
 };
 
 static const struct json_obj_descr registry_response_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct registry_response, app_name, JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM(struct registry_response, chunk_idx, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_PRIM(struct registry_response, total_chunks, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_PRIM(struct registry_response, data, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct registry_response, "app_name", app_name, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM_NAMED(struct registry_response, "data",     data,     JSON_TOK_STRING),
 };
 
 static void prepare_fds(struct mqtt_client *client)
@@ -110,7 +132,6 @@ static void clear_fds(void)
 static int poll_mqtt_socket(struct mqtt_client *client, int timeout)
 {
     prepare_fds(client);
-
     if (nfds <= 0) {
         return -EINVAL;
     }
@@ -119,7 +140,6 @@ static int poll_mqtt_socket(struct mqtt_client *client, int timeout)
     if (rc < 0) {
         LOG_ERR("Socket poll error [%d]", rc);
     }
-
     return rc;
 }
 
@@ -141,45 +161,49 @@ static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt
         LOG_INF("Disconnected from MQTT broker");
         break;
 
-    case MQTT_EVT_PUBLISH:
-        {
-            const struct mqtt_publish_param *pub = &evt->param.publish;
-            char payload[PAYLOAD_BUFFER_SIZE];
-            char start_topic[128];
-            char stop_topic[128];
-            char registry_response_topic[128];
-            int ret;
+    case MQTT_EVT_PUBLISH: {
+        const struct mqtt_publish_param *pub = &evt->param.publish;
+        char payload[PAYLOAD_BUFFER_SIZE];
+        int ret;
 
-            extern const char *channel_id;
+        extern const char *channel_id;
 
-            snprintf(start_topic, sizeof(start_topic), START_TOPIC_TEMPLATE, channel_id);
-            snprintf(stop_topic, sizeof(stop_topic), STOP_TOPIC_TEMPLATE, channel_id);
-            snprintf(registry_response_topic, sizeof(registry_response_topic), REGISTRY_RESPONSE_TOPIC, channel_id);
+        char start_topic[128];
+        char stop_topic[128];
+        char registry_response_topic[128];
 
-            LOG_INF("Message received on topic: %s", pub->message.topic.topic.utf8);
+        snprintf(start_topic,              sizeof(start_topic),              START_TOPIC_TEMPLATE,        channel_id);
+        snprintf(stop_topic,               sizeof(stop_topic),               STOP_TOPIC_TEMPLATE,         channel_id);
+        snprintf(registry_response_topic,  sizeof(registry_response_topic),  REGISTRY_RESPONSE_TOPIC,     channel_id);
 
-            ret = mqtt_read_publish_payload(&client_ctx, payload, MIN(pub->message.payload.len, PAYLOAD_BUFFER_SIZE - 1));
-            if (ret < 0) {
-                LOG_ERR("Failed to read payload [%d]", ret);
-                return;
-            }
+        LOG_INF("Message received on topic: %s", pub->message.topic.topic.utf8);
 
-            // Null-terminate the payload
-            payload[ret] = '\0';
-
-            LOG_INF("Payload: %s", payload);
-
-            if (strncmp(pub->message.topic.topic.utf8, start_topic, pub->message.topic.topic.size) == 0) {
-                handle_start_command(payload);
-            } else if (strncmp(pub->message.topic.topic.utf8, stop_topic, pub->message.topic.topic.size) == 0) {
-                handle_stop_command(payload);
-            } else if (strncmp(pub->message.topic.topic.utf8, registry_response_topic, pub->message.topic.topic.size) == 0) {
-                handle_registry_response(payload);
-            } else {
-                LOG_WRN("Unknown topic");
-            }
-            break;
+        ret = mqtt_read_publish_payload(
+            &client_ctx,
+            payload,
+            MIN(pub->message.payload.len, PAYLOAD_BUFFER_SIZE - 1)
+        );
+        if (ret < 0) {
+            LOG_ERR("Failed to read payload [%d]", ret);
+            return;
         }
+        payload[ret] = '\0'; /* Null-terminate */
+        LOG_INF("Payload: %s", payload);
+
+        if (strncmp(pub->message.topic.topic.utf8, start_topic, pub->message.topic.topic.size) == 0) {
+            handle_start_command(payload);
+        }
+        else if (strncmp(pub->message.topic.topic.utf8, stop_topic, pub->message.topic.topic.size) == 0) {
+            handle_stop_command(payload);
+        }
+        else if (strncmp(pub->message.topic.topic.utf8, registry_response_topic, pub->message.topic.topic.size) == 0) {
+            handle_registry_response(payload);
+        }
+        else {
+            LOG_WRN("Unknown topic");
+        }
+        break;
+    }
 
     case MQTT_EVT_SUBACK:
         LOG_INF("Subscribed successfully");
@@ -192,19 +216,15 @@ static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt
     case MQTT_EVT_PUBREC:
         LOG_INF("QoS 2 publish received");
         break;
-
     case MQTT_EVT_PUBREL:
         LOG_INF("QoS 2 publish released");
         break;
-
     case MQTT_EVT_PUBCOMP:
         LOG_INF("QoS 2 publish complete");
         break;
-
     case MQTT_EVT_UNSUBACK:
         LOG_INF("Unsubscribed successfully");
         break;
-
     case MQTT_EVT_PINGRESP:
         LOG_INF("Ping response received from broker");
         break;
@@ -215,35 +235,36 @@ static void mqtt_event_handler(struct mqtt_client *client, const struct mqtt_evt
     }
 }
 
+static void prepare_publish_param(struct mqtt_publish_param *param,
+                                  const char *topic_str,
+                                  const char *payload)
+{
+    memset(param, 0, sizeof(*param));
+
+    param->message.topic.topic.utf8 = topic_str;
+    param->message.topic.topic.size = strlen(topic_str);
+    param->message.topic.qos        = MQTT_QOS_1_AT_LEAST_ONCE;
+
+    param->message.payload.data = (uint8_t *)payload;
+    param->message.payload.len  = strlen(payload);
+
+    param->message_id = sys_rand32_get() & 0xFFFF;
+    param->dup_flag   = 0;
+    param->retain_flag= 0;
+}
+
 int publish(const char *channel_id, const char *topic_template, const char *payload)
 {
-    char topic[128];
-
-    snprintf(topic, sizeof(topic), topic_template, channel_id);
-
     if (!mqtt_connected) {
-        LOG_ERR("MQTT client is not connected. Cannot publish to topic: %s", topic);
+        LOG_ERR("MQTT client is not connected. Cannot publish.");
         return -ENOTCONN;
     }
 
-    struct mqtt_publish_param param = {
-        .message = {
-            .topic = {
-                .topic = {
-                    .utf8 = topic,
-                    .size = strlen(topic),
-                },
-                .qos = MQTT_QOS_1_AT_LEAST_ONCE,
-            },
-            .payload = {
-                .data = (uint8_t *)payload,
-                .len = strlen(payload),
-            },
-        },
-        .message_id = sys_rand32_get() & 0xFFFF,
-        .dup_flag = 0,
-        .retain_flag = 0
-    };
+    char topic[128];
+    snprintf(topic, sizeof(topic), topic_template, channel_id);
+
+    struct mqtt_publish_param param;
+    prepare_publish_param(&param, topic, payload);
 
     int ret = mqtt_publish(&client_ctx, &param);
     if (ret != 0) {
@@ -255,29 +276,14 @@ int publish(const char *channel_id, const char *topic_template, const char *payl
     return 0;
 }
 
-void publish_alive_message(const char *channel_id)
-{
-    char payload[128];
-    snprintf(payload, sizeof(payload),
-             "{\"status\":\"alive\",\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
-             CLIENT_ID, channel_id);
-    publish(channel_id, ALIVE_TOPIC_TEMPLATE, payload);
-}
-
-void publish_registry_request(const char *channel_id, const char *app_name)
-{
-    char payload[128];
-    snprintf(payload, sizeof(payload), "{\"app_name\":\"%s\"}", app_name);
-    publish(channel_id, FETCH_REQUEST_TOPIC_TEMPLATE, payload);
-}
-
 int mqtt_client_connect(const char *proplet_id, const char *channel_id)
 {
     int ret;
-
     struct sockaddr_in *broker = (struct sockaddr_in *)&broker_addr;
+
     broker->sin_family = AF_INET;
-    broker->sin_port = htons(MQTT_BROKER_PORT);
+    broker->sin_port   = htons(MQTT_BROKER_PORT);
+
     ret = net_addr_pton(AF_INET, MQTT_BROKER_HOSTNAME, &broker->sin_addr);
     if (ret != 0) {
         LOG_ERR("Failed to resolve broker address, ret=%d", ret);
@@ -290,7 +296,8 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
     snprintf(will_topic_str, sizeof(will_topic_str), ALIVE_TOPIC_TEMPLATE, channel_id);
 
     char will_message_str[256];
-    snprintf(will_message_str, sizeof(will_message_str), WILL_MESSAGE_TEMPLATE, proplet_id, channel_id);
+    snprintf(will_message_str, sizeof(will_message_str),
+             WILL_MESSAGE_TEMPLATE, proplet_id, channel_id);
 
     struct mqtt_utf8 will_message = {
         .utf8 = (const uint8_t *)will_message_str,
@@ -305,21 +312,21 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
         .qos = WILL_QOS,
     };
 
-    client_ctx.broker = &broker_addr;
-    client_ctx.evt_cb = mqtt_event_handler;
-    client_ctx.client_id.utf8 = CLIENT_ID;
-    client_ctx.client_id.size = strlen(CLIENT_ID);
-    client_ctx.protocol_version = MQTT_VERSION_3_1_1;
-    client_ctx.transport.type = MQTT_TRANSPORT_NON_SECURE;
+    client_ctx.broker          = &broker_addr;
+    client_ctx.evt_cb          = mqtt_event_handler;
+    client_ctx.client_id.utf8  = CLIENT_ID;
+    client_ctx.client_id.size  = strlen(CLIENT_ID);
+    client_ctx.protocol_version= MQTT_VERSION_3_1_1;
+    client_ctx.transport.type  = MQTT_TRANSPORT_NON_SECURE;
 
-    client_ctx.rx_buf = rx_buffer;
-    client_ctx.rx_buf_size = RX_BUFFER_SIZE;
-    client_ctx.tx_buf = tx_buffer;
-    client_ctx.tx_buf_size = TX_BUFFER_SIZE;
+    client_ctx.rx_buf          = rx_buffer;
+    client_ctx.rx_buf_size     = RX_BUFFER_SIZE;
+    client_ctx.tx_buf          = tx_buffer;
+    client_ctx.tx_buf_size     = TX_BUFFER_SIZE;
 
-    client_ctx.will_topic = &will_topic;
-    client_ctx.will_message = &will_message;
-    client_ctx.will_retain = WILL_RETAIN;
+    client_ctx.will_topic      = &will_topic;
+    client_ctx.will_message    = &will_message;
+    client_ctx.will_retain     = WILL_RETAIN;
 
     while (!mqtt_connected) {
         LOG_INF("Attempting to connect to the MQTT broker...");
@@ -338,7 +345,8 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
             mqtt_abort(&client_ctx);
             k_sleep(K_SECONDS(5));
             continue;
-        } else if (ret == 0) {
+        }
+        else if (ret == 0) {
             LOG_ERR("Poll timed out waiting for CONNACK. Retrying in 5 seconds...");
             mqtt_abort(&client_ctx);
             k_sleep(K_SECONDS(5));
@@ -357,66 +365,15 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id)
     return 0;
 }
 
-int publish_discovery(const char *proplet_id, const char *channel_id)
-{
-    char topic[128];
-    char payload[128];
-
-    snprintf(topic, sizeof(topic), DISCOVERY_TOPIC_TEMPLATE, channel_id);
-    snprintf(payload, sizeof(payload),
-             "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
-             proplet_id, channel_id);
-
-    if (strlen(topic) >= sizeof(topic) || strlen(payload) >= sizeof(payload)) {
-        LOG_ERR("Discovery topic or payload size exceeds maximum allowable size.");
-        return -EINVAL;
-    }
-
-    if (!mqtt_connected) {
-        LOG_ERR("MQTT client is not connected. Discovery announcement aborted.");
-        return -ENOTCONN;
-    }
-
-    LOG_INF("Publishing discovery announcement for Proplet ID: %s, Channel ID: %s", proplet_id, channel_id);
-
-    struct mqtt_publish_param param = {
-        .message = {
-            .topic = {
-                .topic = {
-                    .utf8 = (uint8_t *)topic,
-                    .size = strlen(topic),
-                },
-                .qos = MQTT_QOS_1_AT_LEAST_ONCE,
-            },
-            .payload = {
-                .data = (uint8_t *)payload,
-                .len = strlen(payload),
-            },
-        },
-        .message_id = sys_rand32_get() & 0xFFFF,
-        .dup_flag = 0,
-        .retain_flag = 0
-    };
-
-    int ret = mqtt_publish(&client_ctx, &param);
-    if (ret != 0) {
-        LOG_ERR("Failed to publish discovery announcement. Error code: %d", ret);
-        return ret;
-    }
-
-    LOG_INF("Discovery announcement published successfully to topic: %s", topic);
-    return 0;
-}
-
 int subscribe(const char *channel_id)
 {
     char start_topic[128];
     char stop_topic[128];
     char registry_response_topic[128];
 
-    snprintf(start_topic, sizeof(start_topic), START_TOPIC_TEMPLATE, channel_id);
-    snprintf(stop_topic, sizeof(stop_topic), STOP_TOPIC_TEMPLATE, channel_id);
-    snprintf(registry_response_topic, sizeof(registry_response_topic), REGISTRY_RESPONSE_TOPIC, channel_id);
+    snprintf(start_topic,             sizeof(start_topic),             START_TOPIC_TEMPLATE,        channel_id);
+    snprintf(stop_topic,              sizeof(stop_topic),              STOP_TOPIC_TEMPLATE,         channel_id);
+    snprintf(registry_response_topic, sizeof(registry_response_topic), REGISTRY_RESPONSE_TOPIC,     channel_id);
 
     struct mqtt_topic topics[] = {
         {
@@ -443,7 +400,7 @@ int subscribe(const char *channel_id)
     };
 
     struct mqtt_subscription_list sub_list = {
-        .list = topics,
+        .list       = topics,
         .list_count = ARRAY_SIZE(topics),
         .message_id = 1,
     };
@@ -452,7 +409,7 @@ int subscribe(const char *channel_id)
 
     int ret = mqtt_subscribe(&client_ctx, &sub_list);
     if (ret != 0) {
-        LOG_ERR("Failed to subscribe to topics for channel ID: %s. Error code: %d", channel_id, ret);
+        LOG_ERR("Failed to subscribe to topics for channel ID: %s. Error: %d", channel_id, ret);
     } else {
         LOG_INF("Successfully subscribed to topics for channel ID: %s", channel_id);
     }
@@ -460,57 +417,175 @@ int subscribe(const char *channel_id)
     return ret;
 }
 
-void handle_start_command(const char *payload) {
-    struct start_command cmd;
-    int ret;
-
-    ret = json_obj_parse((char *)payload, strlen(payload), start_command_descr, ARRAY_SIZE(start_command_descr), &cmd);
-
-    if (ret < 0) {
-        LOG_ERR("Failed to parse start command payload, error: %d", ret);
-        return;
-    }
-
-    LOG_INF("Starting task:");
-    LOG_INF("Task ID: %s", cmd.task_id);
-    LOG_INF("Function: %s", cmd.app_name);
-    LOG_INF("Wasm File: %s", cmd.wasm_file);
-
-    // TODO: Use WAMR runtime to start the task
-    // Example:
-    // wamr_start_app(cmd.wasm_file, cmd.app_name);
-}
-
-void handle_stop_command(const char *payload) {
-    struct stop_command cmd;
-    int ret;
-
-    ret = json_obj_parse((char *)payload, strlen(payload), stop_command_descr, ARRAY_SIZE(stop_command_descr), &cmd);
-    if (ret < 0) {
-        LOG_ERR("Failed to parse stop command payload, error: %d", ret);
-        return;
-    }
-
-    LOG_INF("Stopping task:");
-    LOG_INF("Task ID: %s", cmd.task_id);
-
-    // TODO: Use WAMR runtime to stop the task
-    // Example:
-    // wamr_stop_app(cmd.task_id);
-}
-
-void request_registry_file(const char *channel_id, const char *app_name)
+void handle_start_command(const char *payload)
 {
-    char registry_payload[128];
+    struct task t;
+    memset(&t, 0, sizeof(t));
 
-    snprintf(registry_payload, sizeof(registry_payload),
-             "{\"app_name\":\"%s\"}",
-             app_name);
+    int ret = json_obj_parse(payload, strlen(payload),
+                             task_descr,
+                             ARRAY_SIZE(task_descr),
+                             &t);
+    if (ret < 0) {
+        LOG_ERR("Failed to parse START task payload, error: %d", ret);
+        return;
+    }
 
-    if (publish(channel_id, FETCH_REQUEST_TOPIC_TEMPLATE, registry_payload) != 0) {
+    LOG_INF("Starting task: ID=%s, Name=%s, State=%s", t.id, t.name, t.state);
+    LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
+    LOG_INF("inputs_count=%zu", t.inputs_count);
+
+    memcpy(&g_current_task, &t, sizeof(struct task));
+
+    if (strlen(t.file) > 0) {
+        static uint8_t wasm_binary[MAX_BASE64_LEN];
+        size_t wasm_decoded_len = 0;
+
+        ret = base64_decode(wasm_binary, sizeof(wasm_binary),
+                            &wasm_decoded_len,
+                            (const uint8_t *)t.file,
+                            strlen(t.file));
+        if (ret < 0) {
+            LOG_ERR("Failed to decode base64 WASM (task.file). Err=%d", ret);
+            return;
+        }
+        g_current_task.file_len = wasm_decoded_len;
+        LOG_INF("Decoded WASM size: %zu", g_current_task.file_len);
+
+        execute_wasm_module(g_current_task.id,
+                            wasm_binary,
+                            g_current_task.file_len,
+                            g_current_task.inputs,
+                            g_current_task.inputs_count);
+    }
+
+    else if (strlen(t.image_url) > 0) {
+        LOG_INF("Requesting WASM from registry: %s", t.image_url);
+        extern const char *channel_id;
+        publish_registry_request(channel_id, t.image_url);
+    }
+    else {
+        LOG_WRN("No file or image_url specified; cannot start WASM task!");
+    }
+}
+
+void handle_stop_command(const char *payload)
+{
+    struct task t;
+    memset(&t, 0, sizeof(t));
+
+    int ret = json_obj_parse(payload, strlen(payload),
+                             task_descr,
+                             ARRAY_SIZE(task_descr),
+                             &t);
+    if (ret < 0) {
+        LOG_ERR("Failed to parse STOP task payload, error: %d", ret);
+        return;
+    }
+
+    LOG_INF("Stopping task: ID=%s, Name=%s, State=%s", t.id, t.name, t.state);
+    stop_wasm_app(t.id);
+}
+
+/**
+ *   We receive a single chunk "data" field with the full base64 WASM.
+ */
+int handle_registry_response(const char *payload)
+{
+    struct registry_response resp;
+    memset(&resp, 0, sizeof(resp));
+
+    int ret = json_obj_parse(payload, strlen(payload),
+                             registry_response_descr,
+                             ARRAY_SIZE(registry_response_descr),
+                             &resp);
+    if (ret < 0) {
+        LOG_ERR("Failed to parse registry response, error: %d", ret);
+        return -1;
+    }
+
+    LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
+
+    size_t encoded_len = strlen(resp.data);
+    size_t decoded_len = (encoded_len * 3) / 4;
+    uint8_t *binary_data = malloc(decoded_len);
+    if (!binary_data) {
+        LOG_ERR("Failed to allocate memory for decoded binary");
+        return -1;
+    }
+
+    size_t actual_decoded_len = decoded_len;
+    ret = base64_decode(binary_data,
+                        decoded_len,
+                        &actual_decoded_len,
+                        (const uint8_t *)resp.data,
+                        encoded_len);
+    if (ret < 0) {
+        LOG_ERR("Failed to decode base64 single-chunk, err=%d", ret);
+        free(binary_data);
+        return -1;
+    }
+
+    LOG_INF("Decoded single-chunk WASM size: %zu. Executing now...", actual_decoded_len);
+
+    execute_wasm_module(g_current_task.id,
+                        binary_data,
+                        actual_decoded_len,
+                        g_current_task.inputs,
+                        g_current_task.inputs_count);
+
+    free(binary_data);
+
+    LOG_INF("WASM binary executed from single-chunk registry response.");
+    return 0;
+}
+
+void publish_alive_message(const char *channel_id)
+{
+    char payload[128];
+    snprintf(payload, sizeof(payload),
+             "{\"status\":\"alive\",\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
+             CLIENT_ID, channel_id);
+    publish(channel_id, ALIVE_TOPIC_TEMPLATE, payload);
+}
+
+int publish_discovery(const char *proplet_id, const char *channel_id)
+{
+    char topic[128];
+    char payload[128];
+
+    snprintf(topic,   sizeof(topic),   DISCOVERY_TOPIC_TEMPLATE, channel_id);
+    snprintf(payload, sizeof(payload),
+             "{\"proplet_id\":\"%s\",\"mg_channel_id\":\"%s\"}",
+             proplet_id, channel_id);
+
+    if (!mqtt_connected) {
+        LOG_ERR("MQTT client is not connected. Discovery aborted.");
+        return -ENOTCONN;
+    }
+
+    struct mqtt_publish_param param;
+    prepare_publish_param(&param, topic, payload);
+
+    int ret = mqtt_publish(&client_ctx, &param);
+    if (ret != 0) {
+        LOG_ERR("Failed to publish discovery. Error: %d", ret);
+        return ret;
+    }
+
+    LOG_INF("Discovery published successfully to topic: %s", topic);
+    return 0;
+}
+
+void publish_registry_request(const char *channel_id, const char *app_name)
+{
+    char payload[128];
+    snprintf(payload, sizeof(payload), "{\"app_name\":\"%s\"}", app_name);
+
+    if (publish(channel_id, FETCH_REQUEST_TOPIC_TEMPLATE, payload) != 0) {
         LOG_ERR("Failed to request registry file");
     } else {
-        LOG_INF("Requested registry file for app: %s", app_name);
+        LOG_INF("Requested registry file for: %s", app_name);
     }
 }
 
@@ -527,44 +602,6 @@ void publish_results(const char *channel_id, const char *task_id, const char *re
     } else {
         LOG_INF("Published results for task: %s", task_id);
     }
-}
-
-int handle_registry_response(const char *payload) {
-    struct registry_response resp;
-    int ret;
-
-    ret = json_obj_parse((char *)payload, strlen(payload), registry_response_descr, ARRAY_SIZE(registry_response_descr), &resp);
-    if (ret < 0) {
-        LOG_ERR("Failed to parse registry response, error: %d", ret);
-        return -1;
-    }
-
-    LOG_INF("Registry response received:");
-    LOG_INF("App Name: %s", resp.app_name);
-
-    size_t decoded_len = (strlen(resp.data) * 3) / 4;
-    uint8_t *binary_data = malloc(decoded_len);
-    if (!binary_data) {
-        LOG_ERR("Failed to allocate memory for decoded binary");
-        return -1;
-    }
-
-    size_t binary_data_len = decoded_len;
-    ret = base64_decode(binary_data, decoded_len, &binary_data_len, (const uint8_t *)resp.data, strlen(resp.data));
-    if (ret < 0) {
-        LOG_ERR("Failed to decode Base64 data, error: %d", ret);
-        free(binary_data);
-        return -1;
-    }
-
-    LOG_INF("Successfully decoded Wasm binary. Executing now...");
-
-    execute_wasm_module(binary_data, binary_data_len);
-    free(binary_data);
-
-    LOG_INF("Wasm binary executed");
-
-    return 0;
 }
 
 void mqtt_client_process(void)

@@ -24,7 +24,6 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id);
  */
 int mqtt_client_connect(const char *proplet_id, const char *channel_id);
 
-
 /**
  * @brief Subscribe to topics for a specific channel.
  *
