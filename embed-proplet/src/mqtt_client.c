@@ -49,7 +49,7 @@ static int nfds;
 bool mqtt_connected = false;
 struct start_command {
     char task_id[50];
-    char function_name[50];
+    char app_name[50];
     char wasm_file[100];
 };
 
@@ -73,7 +73,7 @@ struct chunk_tracker {
 
 static const struct json_obj_descr start_command_descr[] = {
     JSON_OBJ_DESCR_PRIM(struct start_command, task_id, JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM(struct start_command, function_name, JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM(struct start_command, app_name, JSON_TOK_STRING),
     JSON_OBJ_DESCR_PRIM(struct start_command, wasm_file, JSON_TOK_STRING),
 };
 
@@ -473,12 +473,12 @@ void handle_start_command(const char *payload) {
 
     LOG_INF("Starting task:");
     LOG_INF("Task ID: %s", cmd.task_id);
-    LOG_INF("Function: %s", cmd.function_name);
+    LOG_INF("Function: %s", cmd.app_name);
     LOG_INF("Wasm File: %s", cmd.wasm_file);
 
     // TODO: Use WAMR runtime to start the task
     // Example:
-    // wamr_start_app(cmd.wasm_file, cmd.function_name);
+    // wamr_start_app(cmd.wasm_file, cmd.app_name);
 }
 
 void handle_stop_command(const char *payload) {
