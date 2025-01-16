@@ -25,6 +25,14 @@ require (
 )
 
 require (
+	github.com/absmach/senml v1.0.6 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/smartystreets/goconvey v1.8.1 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+	moul.io/http2curl v1.0.0 // indirect
+)
+
+require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -56,7 +64,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250106144421-5f5ef82da422 // indirect
-	google.golang.org/grpc v1.69.2 // indirect
+	google.golang.org/grpc v1.69.4 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
 	oras.land/oras-go/v2 v2.5.0
 )

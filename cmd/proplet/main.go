@@ -12,6 +12,7 @@ import (
 	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/proplet/runtimes"
 	"github.com/caarlos0/env/v11"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -30,9 +31,6 @@ type envConfig struct {
 	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"            envDefault:"2"`
 	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
 	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME"     envDefault:""`
-	ThingID             string        `env:"PROPLET_THING_ID"`
-	ThingKey           string        `env:"PROPLET_THING_KEY"`
-	ChannelID          string        `env:"PROPLET_CHANNEL_ID"`
 }
 
 func main() {
@@ -84,7 +82,7 @@ func main() {
 	var runtime proplet.Runtime
 	switch cfg.ExternalWasmRuntime != "" {
 	case true:
-		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
+		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, channelID, cfg.ExternalWasmRuntime)
 	default:
 		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, channelID)
 	}
