@@ -1,18 +1,18 @@
 CRT_LOCATION = certs
-O = Supermq
-OU_CA = supermq_ca
-OU_CRT = supermq_crt
-EA = info@supermq.com
-CN_CA = Supermq_Self_Signed_CA
+O = Magistrala
+OU_CA = magistrala_ca
+OU_CRT = magistrala_crt
+EA = info@magistrala.com
+CN_CA = Magistrala_Self_Signed_CA
 CN_SRV = localhost
 THING_SECRET = <THING_SECRET> # e.g. 8f65ed04-0770-4ce4-a291-6d1bf2000f4d
 CRT_FILE_NAME = thing
-CLIENTS_GRPC_SERVER_CONF_FILE_NAME=thing-grpc-server.conf
-CLIENTS_GRPC_CLIENT_CONF_FILE_NAME=thing-grpc-client.conf
-CLIENTS_GRPC_SERVER_CN=clients
-CLIENTS_GRPC_CLIENT_CN=clients-client
-CLIENTS_GRPC_SERVER_CRT_FILE_NAME=clients-grpc-server
-CLIENTS_GRPC_CLIENT_CRT_FILE_NAME=clients-grpc-client
+THINGS_GRPC_SERVER_CONF_FILE_NAME=thing-grpc-server.conf
+THINGS_GRPC_CLIENT_CONF_FILE_NAME=thing-grpc-client.conf
+THINGS_GRPC_SERVER_CN=things
+THINGS_GRPC_CLIENT_CN=things-client
+THINGS_GRPC_SERVER_CRT_FILE_NAME=things-grpc-server
+THINGS_GRPC_CLIENT_CRT_FILE_NAME=things-grpc-client
 AUTH_GRPC_SERVER_CONF_FILE_NAME=auth-grpc-server.conf
 AUTH_GRPC_CLIENT_CONF_FILE_NAME=auth-grpc-client.conf
 AUTH_GRPC_SERVER_CN=auth
@@ -31,8 +31,8 @@ CN = mg.svc
 C  = RS
 ST = RS
 L  = BELGRADE
-O  = SUPERMQ
-OU = SUPERMQ
+O  = MAGISTRALA
+OU = MAGISTRALA
 
 [v3_req]
 subjectAltName = @alt_names
@@ -48,27 +48,27 @@ It can be downloaded from $(DOWNLOAD_URL).
 
 etc, etc.
 endef
-all: clean_certs ca server_cert clients_grpc_certs auth_grpc_certs
+all: clean_certs ca server_cert things_grpc_certs auth_grpc_certs
 
 # CA name and key is "ca".
 ca:
 	openssl req -newkey rsa:2048 -x509 -nodes -sha512 -days 1095 \
 				-keyout $(CRT_LOCATION)/ca.key -out $(CRT_LOCATION)/ca.crt -subj "/CN=$(CN_CA)/O=$(O)/OU=$(OU_CA)/emailAddress=$(EA)"
 
-# Server cert and key name is "supermq-server".
+# Server cert and key name is "magistrala-server".
 server_cert:
-	# Create supermq server key and CSR.
-	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/supermq-server.key \
-				-out $(CRT_LOCATION)/supermq-server.csr -subj "/CN=$(CN_SRV)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
+	# Create magistrala server key and CSR.
+	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/magistrala-server.key \
+				-out $(CRT_LOCATION)/magistrala-server.csr -subj "/CN=$(CN_SRV)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
 
 	# Sign server CSR.
-	openssl x509 -req -days 1000 -in $(CRT_LOCATION)/supermq-server.csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/supermq-server.crt
+	openssl x509 -req -days 1000 -in $(CRT_LOCATION)/magistrala-server.csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/magistrala-server.crt
 
 	# Remove CSR.
-	rm $(CRT_LOCATION)/supermq-server.csr
+	rm $(CRT_LOCATION)/magistrala-server.csr
 
 thing_cert:
-	# Create supermq server key and CSR.
+	# Create magistrala server key and CSR.
 	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/$(CRT_FILE_NAME).key \
 				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(THING_SECRET)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
 
@@ -78,47 +78,47 @@ thing_cert:
 	# Remove CSR.
 	rm $(CRT_LOCATION)/$(CRT_FILE_NAME).csr
 
-clients_grpc_certs:
+things_grpc_certs:
 	# Things server grpc certificates
-	$(file > $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).conf,$(subst <<SERVICE_NAME>>,$(CLIENTS_GRPC_SERVER_CN),$(GRPC_CERT_CONFIG)) )
+	$(file > $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).conf,$(subst <<SERVICE_NAME>>,$(THINGS_GRPC_SERVER_CN),$(GRPC_CERT_CONFIG)) )
 
 	openssl req -new -sha256  -newkey rsa:4096 -nodes \
-				-keyout $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).key  \
-				-out $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).csr \
-				-config $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).conf \
+				-keyout $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).key  \
+				-out $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).csr \
+				-config $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).conf \
 				-extensions v3_req
 
 	openssl x509 -req -sha256 \
-			-in $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).csr \
+			-in $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).csr \
 			-CA $(CRT_LOCATION)/ca.crt \
 			-CAkey $(CRT_LOCATION)/ca.key \
 			-CAcreateserial \
-			-out $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).crt \
+			-out $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).crt \
 			-days 365 \
-			-extfile $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).conf \
+			-extfile $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).conf \
 			-extensions v3_req
 
-	rm -rf  $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).csr $(CRT_LOCATION)/$(CLIENTS_GRPC_SERVER_CRT_FILE_NAME).conf
+	rm -rf  $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).csr $(CRT_LOCATION)/$(THINGS_GRPC_SERVER_CRT_FILE_NAME).conf
 	# Things client grpc certificates
-	$(file > $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).conf,$(subst <<SERVICE_NAME>>,$(CLIENTS_GRPC_CLIENT_CN),$(GRPC_CERT_CONFIG)) )
+	$(file > $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).conf,$(subst <<SERVICE_NAME>>,$(THINGS_GRPC_CLIENT_CN),$(GRPC_CERT_CONFIG)) )
 
 	openssl req -new -sha256 -newkey rsa:4096 -nodes \
-				-keyout $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).key  \
-				-out $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).csr \
-				-config $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).conf \
+				-keyout $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).key  \
+				-out $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).csr \
+				-config $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).conf \
 				-extensions v3_req
 
 	openssl x509 -req -sha256 \
-			-in $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).csr \
+			-in $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).csr \
 			-CA $(CRT_LOCATION)/ca.crt \
 			-CAkey $(CRT_LOCATION)/ca.key \
 			-CAcreateserial \
-			-out $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).crt \
+			-out $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).crt \
 			-days 365 \
-			-extfile $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).conf \
+			-extfile $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).conf \
 			-extensions v3_req
 
-	rm -rf  $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).csr $(CRT_LOCATION)/$(CLIENTS_GRPC_CLIENT_CRT_FILE_NAME).conf
+	rm -rf  $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).csr $(CRT_LOCATION)/$(THINGS_GRPC_CLIENT_CRT_FILE_NAME).conf
 
 auth_grpc_certs:
 	# Auth gRPC server certificate
