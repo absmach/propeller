@@ -16,14 +16,13 @@ var (
 	errFailedClientCreation     = errors.New("failed to create client")
 	errFailedConnectionCreation = errors.New("failed to create connection")
 
-	smqSDKInstance smqSDK.SDK
+	smqsdk smqSDK.SDK
 )
 
 const filePermission = 0o644
 
-// SetSuperMQSDK sets supermq SDK instance.
-func SetSuperMQSDK(s smqSDK.SDK) {
-	smqSDKInstance = s
+func SetSuperMQSDK(sdk smqSDK.SDK) {
+	smqsdk = sdk
 }
 
 type Result struct {
@@ -42,8 +41,7 @@ var provisionCmd = &cobra.Command{
 			Identity: "admin@example.com",
 			Secret:   "12345678",
 		}
-
-		tkn, err := smqSDKInstance.CreateToken(u)
+		tkn, err := smqsdk.CreateToken(u)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateToken, err))
 
@@ -56,8 +54,7 @@ var provisionCmd = &cobra.Command{
 			Alias:      "demo",
 			Permission: "admin",
 		}
-
-		domain, err = smqSDKInstance.CreateDomain(domain, tkn.AccessToken)
+		domain, err = smqsdk.CreateDomain(domain, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedToCreateDomain, err))
 
@@ -70,8 +67,7 @@ var provisionCmd = &cobra.Command{
 			Tags:   []string{"manager", "propeller"},
 			Status: "enabled",
 		}
-
-		managerThing, err = smqSDKInstance.CreateThing(managerThing, domain.ID, tkn.AccessToken)
+		managerThing, err = smqsdk.CreateThing(managerThing, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
 
@@ -84,8 +80,7 @@ var provisionCmd = &cobra.Command{
 			Tags:   []string{"proplet", "propeller"},
 			Status: "enabled",
 		}
-
-		propletThing, err = smqSDKInstance.CreateThing(propletThing, domain.ID, tkn.AccessToken)
+		propletThing, err = smqsdk.CreateThing(propletThing, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedClientCreation, err))
 
@@ -97,7 +92,7 @@ var provisionCmd = &cobra.Command{
 			Name:   "Propeller Manager",
 			Status: "enabled",
 		}
-		managerChannel, err = smqSDKInstance.CreateChannel(managerChannel, domain.ID, tkn.AccessToken)
+		managerChannel, err = smqsdk.CreateChannel(managerChannel, domain.ID, tkn.AccessToken)
 		if err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedChannelCreation, err))
 
@@ -109,8 +104,7 @@ var provisionCmd = &cobra.Command{
 			ThingID:   managerThing.ID,
 			ChannelID: managerChannel.ID,
 		}
-		err = smqSDKInstance.Connect(managerConns, domain.ID, tkn.AccessToken)
-		if err != nil {
+		if err = smqsdk.Connect(managerConns, domain.ID, tkn.AccessToken); err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedConnectionCreation, err))
 
 			return
@@ -121,9 +115,7 @@ var provisionCmd = &cobra.Command{
 			ThingID:   propletThing.ID,
 			ChannelID: managerChannel.ID,
 		}
-
-		err = smqSDKInstance.Connect(propletConns, domain.ID, tkn.AccessToken)
-		if err != nil {
+		if err = smqsdk.Connect(propletConns, domain.ID, tkn.AccessToken); err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedConnectionCreation, err))
 
 			return
