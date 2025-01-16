@@ -4,7 +4,7 @@
 
 LOG_MODULE_REGISTER(wasm_handler);
 
-void execute_wasm_from_memory(const uint8_t *wasm_data, size_t wasm_size)
+void execute_wasm_module(const uint8_t *wasm_data, size_t wasm_size)
 {
     RuntimeInitArgs init_args = { .mem_alloc_type = Alloc_With_System_Allocator };
     if (!wasm_runtime_full_init(&init_args)) {

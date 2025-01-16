@@ -104,6 +104,6 @@ void handle_stop_command(const char *payload);
  *
  * @param payload The JSON payload containing the chunk details.
  */
-void handle_registry_response(const char *payload);
+int handle_registry_response(const char *payload);
 
 #endif /* MQTT_CLIENT_H */

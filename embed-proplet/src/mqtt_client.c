@@ -88,8 +88,6 @@ static const struct json_obj_descr registry_response_descr[] = {
     JSON_OBJ_DESCR_PRIM(struct registry_response, data, JSON_TOK_STRING),
 };
 
-static struct chunk_tracker *app_chunk_tracker = NULL;
-
 static void prepare_fds(struct mqtt_client *client)
 {
     if (client->transport.type == MQTT_TRANSPORT_NON_SECURE) {
@@ -531,14 +529,14 @@ void publish_results(const char *channel_id, const char *task_id, const char *re
     }
 }
 
-void handle_registry_response(const char *payload) {
+int handle_registry_response(const char *payload) {
     struct registry_response resp;
     int ret;
 
     ret = json_obj_parse((char *)payload, strlen(payload), registry_response_descr, ARRAY_SIZE(registry_response_descr), &resp);
     if (ret < 0) {
         LOG_ERR("Failed to parse registry response, error: %d", ret);
-        return;
+        return -1;
     }
 
     LOG_INF("Registry response received:");
@@ -548,7 +546,7 @@ void handle_registry_response(const char *payload) {
     uint8_t *binary_data = malloc(decoded_len);
     if (!binary_data) {
         LOG_ERR("Failed to allocate memory for decoded binary");
-        return;
+        return -1;
     }
 
     size_t binary_data_len = decoded_len;
@@ -556,19 +554,17 @@ void handle_registry_response(const char *payload) {
     if (ret < 0) {
         LOG_ERR("Failed to decode Base64 data, error: %d", ret);
         free(binary_data);
-        return;
+        return -1;
     }
 
     LOG_INF("Successfully decoded Wasm binary. Executing now...");
 
-    ret = execute_wasm_from_memory(binary_data, binary_data_len);
-    if (ret < 0) {
-        LOG_ERR("Failed to execute Wasm binary, error: %d", ret);
-    } else {
-        LOG_INF("Wasm binary executed successfully");
-    }
-
+    execute_wasm_module(binary_data, binary_data_len);
     free(binary_data);
+
+    LOG_INF("Wasm binary executed");
+
+    return 0;
 }
 
 void mqtt_client_process(void)
