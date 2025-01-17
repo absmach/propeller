@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/absmach/magistrala/pkg/server"
+	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/proplet/runtimes"
@@ -17,19 +18,22 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const svcName = "proplet"
+const (
+	svcName    = "proplet"
+	configPath = "config.toml"
+)
 
 type config struct {
-	LogLevel            string        `env:"PROPLET_LOG_LEVEL"                 envDefault:"info"`
+	LogLevel            string        `env:"PROPLET_LOG_LEVEL"             envDefault:"info"`
 	InstanceID          string        `env:"PROPLET_INSTANCE_ID"`
-	MQTTAddress         string        `env:"PROPLET_MQTT_ADDRESS"              envDefault:"tcp://localhost:1883"`
-	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT"              envDefault:"30s"`
-	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"                  envDefault:"2"`
-	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"       envDefault:"10s"`
-	ChannelID           string        `env:"PROPLET_CHANNEL_ID,notEmpty"`
-	ThingID             string        `env:"PROPLET_THING_ID,notEmpty"`
-	ThingKey            string        `env:"PROPLET_THING_KEY,notEmpty"`
-	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME"     envDefault:""`
+	MQTTAddress         string        `env:"PROPLET_MQTT_ADDRESS"          envDefault:"tcp://localhost:1883"`
+	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT"          envDefault:"30s"`
+	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"              envDefault:"2"`
+	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"   envDefault:"10s"`
+	ChannelID           string        `env:"PROPLET_CHANNEL_ID"`
+	ThingID             string        `env:"PROPLET_THING_ID"`
+	ThingKey            string        `env:"PROPLET_THING_KEY"`
+	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME" envDefault:""`
 }
 
 func main() {
@@ -43,6 +47,22 @@ func main() {
 
 	if cfg.InstanceID == "" {
 		cfg.InstanceID = uuid.NewString()
+	}
+
+	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+		_, err := os.Stat(configPath)
+		switch err {
+		case nil:
+			conf, err := propeller.LoadConfig(configPath)
+			if err != nil {
+				log.Fatalf("failed to load TOML configuration: %s", err.Error())
+			}
+			cfg.ThingID = conf.Proplet.ThingID
+			cfg.ThingKey = conf.Proplet.ThingKey
+			cfg.ChannelID = conf.Proplet.ChannelID
+		default:
+			log.Fatalf("failed to load TOML configuration: %s", err.Error())
+		}
 	}
 
 	var level slog.Level

@@ -13,6 +13,7 @@ import (
 	"github.com/absmach/magistrala/pkg/prometheus"
 	"github.com/absmach/magistrala/pkg/server"
 	httpserver "github.com/absmach/magistrala/pkg/server/http"
+	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/manager/api"
 	"github.com/absmach/propeller/manager/middleware"
@@ -30,6 +31,7 @@ const (
 	svcName       = "manager"
 	defHTTPPort   = "7070"
 	envPrefixHTTP = "MANAGER_HTTP_"
+	configPath    = "config.toml"
 )
 
 type config struct {
@@ -38,9 +40,9 @@ type config struct {
 	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
 	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
 	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
-	ChannelID   string        `env:"MANAGER_CHANNEL_ID,notEmpty"`
-	ThingID     string        `env:"MANAGER_THING_ID,notEmpty"`
-	ThingKey    string        `env:"MANAGER_THING_KEY,notEmpty"`
+	ChannelID   string        `env:"MANAGER_CHANNEL_ID"`
+	ThingID     string        `env:"MANAGER_THING_ID"`
+	ThingKey    string        `env:"MANAGER_THING_KEY"`
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
@@ -57,6 +59,22 @@ func main() {
 
 	if cfg.InstanceID == "" {
 		cfg.InstanceID = uuid.NewString()
+	}
+
+	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+		_, err := os.Stat(configPath)
+		switch err {
+		case nil:
+			conf, err := propeller.LoadConfig(configPath)
+			if err != nil {
+				log.Fatalf("failed to load TOML configuration: %s", err.Error())
+			}
+			cfg.ThingID = conf.Manager.ThingID
+			cfg.ThingKey = conf.Manager.ThingKey
+			cfg.ChannelID = conf.Manager.ChannelID
+		default:
+			log.Fatalf("failed to load TOML configuration: %s", err.Error())
+		}
 	}
 
 	var level slog.Level
