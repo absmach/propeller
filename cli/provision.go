@@ -200,6 +200,8 @@ var provisionCmd = &cobra.Command{
 
 		if err := form.Run(); err != nil {
 			logErrorCmd(*cmd, errors.Wrap(errFailedConnectionCreation, err))
+
+			return
 		}
 
 		configContent := fmt.Sprintf(`# SuperMQ Configuration
