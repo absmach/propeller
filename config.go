@@ -1,4 +1,4 @@
-package config
+package propeller
 
 import (
 	"fmt"
@@ -42,10 +42,10 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("error parsing config file: %w", err)
 	}
 
-	var config Config
-	if err := tree.Unmarshal(&config); err != nil {
+	var cfg Config
+	if err := tree.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	return &config, nil
+	return &cfg, nil
 }

@@ -13,10 +13,10 @@ import (
 	"github.com/absmach/magistrala/pkg/prometheus"
 	"github.com/absmach/magistrala/pkg/server"
 	httpserver "github.com/absmach/magistrala/pkg/server/http"
+	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/manager/api"
 	"github.com/absmach/propeller/manager/middleware"
-	"github.com/absmach/propeller/pkg/config"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
@@ -34,12 +34,15 @@ const (
 	configPath    = "config.toml"
 )
 
-type envConfig struct {
+type config struct {
 	LogLevel    string        `env:"MANAGER_LOG_LEVEL"           envDefault:"info"`
 	InstanceID  string        `env:"MANAGER_INSTANCE_ID"`
 	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
 	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
 	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
+	ChannelID   string        `env:"MANAGER_CHANNEL_ID"`
+	ThingID     string        `env:"MANAGER_THING_ID"`
+	ThingKey    string        `env:"MANAGER_THING_KEY"`
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
@@ -49,22 +52,29 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	var conf *config.Config
-	if _, err := os.Stat(configPath); err == nil {
-		var err error
-		conf, err = config.LoadConfig(configPath)
-		if err != nil {
-			log.Fatalf("failed to load TOML configuration: %s", err.Error())
-		}
-	}
-
-	cfg := envConfig{}
+	cfg := config{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
 	}
 
 	if cfg.InstanceID == "" {
 		cfg.InstanceID = uuid.NewString()
+	}
+
+	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+		_, err := os.Stat(configPath)
+		switch err {
+		case nil:
+			conf, err := propeller.LoadConfig(configPath)
+			if err != nil {
+				log.Fatalf("failed to load TOML configuration: %s", err.Error())
+			}
+			cfg.ThingID = conf.Manager.ThingID
+			cfg.ThingKey = conf.Manager.ThingKey
+			cfg.ChannelID = conf.Manager.ChannelID
+		default:
+			log.Fatalf("failed to load TOML configuration: %s", err.Error())
+		}
 	}
 
 	var level slog.Level
@@ -97,14 +107,7 @@ func main() {
 	}
 	tracer := tp.Tracer(svcName)
 
-	var thingID, thingKey, channelID string
-	if conf != nil {
-		thingID = conf.Manager.ThingID
-		thingKey = conf.Manager.ThingKey
-		channelID = conf.Manager.ChannelID
-	}
-
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, thingID, thingKey, channelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
 
@@ -117,7 +120,7 @@ func main() {
 		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
-		channelID,
+		cfg.ChannelID,
 		logger,
 	)
 	svc = middleware.Logging(logger, svc)

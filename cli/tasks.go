@@ -6,15 +6,13 @@ import (
 )
 
 var (
-	DefTLSVerification        = false
-	DefManagerURL             = "http://localhost:7070"
-	defOffset          uint64 = 0
-	defLimit           uint64 = 10
+	defOffset uint64 = 0
+	defLimit  uint64 = 10
 )
 
 var psdk sdk.SDK
 
-func SetSDK(s sdk.SDK) {
+func SetPropellerSDK(s sdk.SDK) {
 	psdk = s
 }
 
@@ -153,14 +151,6 @@ func NewTasksCmd() *cobra.Command {
 		cmd.AddCommand(&tasksCmd[i])
 	}
 
-	cmd.PersistentFlags().StringVarP(
-		&DefManagerURL,
-		"manager-url",
-		"m",
-		DefManagerURL,
-		"Manager URL",
-	)
-
 	cmd.PersistentFlags().Uint64VarP(
 		&defOffset,
 		"offset",
@@ -175,14 +165,6 @@ func NewTasksCmd() *cobra.Command {
 		"l",
 		defLimit,
 		"Limit",
-	)
-
-	cmd.PersistentFlags().BoolVarP(
-		&DefTLSVerification,
-		"tls-verification",
-		"v",
-		DefTLSVerification,
-		"TLS Verification",
 	)
 
 	return &cmd

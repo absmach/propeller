@@ -9,34 +9,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func main() {
-	msgContentType := string(smqsdk.CTJSONSenML)
-	smqSDKConf := smqsdk.Config{
-		UsersURL:       "http://localhost:9002",
-		ThingsURL:      "http://localhost:9000",
-		DomainsURL:     "http://localhost:8189",
-		MsgContentType: smqsdk.ContentType(msgContentType),
-	}
+var (
+	tlsVerification = false
+	managerURL      = "http://localhost:7070"
+	usersURL        = "http://localhost:9002"
+	thingsURL       = "http://localhost:9000"
+	domainsURL      = "http://localhost:8189"
+	msgContentType  = string(smqsdk.CTJSONSenML)
+)
 
+func main() {
 	rootCmd := &cobra.Command{
 		Use:   "propeller-cli",
 		Short: "Propeller CLI",
 		Long:  `Propeller CLI is a command line interface for interacting with Propeller components.`,
 		PersistentPreRun: func(_ *cobra.Command, _ []string) {
-			// Initialize Propeller SDK
 			sdkConf := sdk.Config{
-				ManagerURL:      cli.DefManagerURL,
-				TLSVerification: cli.DefTLSVerification,
+				ManagerURL:      managerURL,
+				TLSVerification: tlsVerification,
 			}
 			s := sdk.NewSDK(sdkConf)
-			cli.SetSDK(s)
+			cli.SetPropellerSDK(s)
 
-			// Initialize SuperMQ SDK
+			smqSDKConf := smqsdk.Config{
+				UsersURL:       usersURL,
+				ThingsURL:      thingsURL,
+				DomainsURL:     domainsURL,
+				MsgContentType: smqsdk.ContentType(msgContentType),
+			}
+
 			if smqSDKConf.MsgContentType == "" {
 				smqSDKConf.MsgContentType = smqsdk.ContentType(msgContentType)
 			}
-			smqs := smqsdk.NewSDK(smqSDKConf)
-			cli.SetSuperMQSDK(smqs)
+			sdk := smqsdk.NewSDK(smqSDKConf)
+			cli.SetSuperMQSDK(sdk)
 		},
 	}
 
@@ -44,6 +50,54 @@ func main() {
 	provisionCmd := cli.NewProvisionCmd()
 
 	rootCmd.AddCommand(tasksCmd, provisionCmd)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&managerURL,
+		"manager-url",
+		"m",
+		managerURL,
+		"Manager URL",
+	)
+
+	rootCmd.PersistentFlags().BoolVarP(
+		&tlsVerification,
+		"tls-verification",
+		"v",
+		tlsVerification,
+		"TLS Verification",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&usersURL,
+		"users-url",
+		"u",
+		usersURL,
+		"Users service URL",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&thingsURL,
+		"things-url",
+		"t",
+		thingsURL,
+		"Things service URL",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&domainsURL,
+		"domains-url",
+		"d",
+		domainsURL,
+		"Domains service URL",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&msgContentType,
+		"content-type",
+		"c",
+		msgContentType,
+		"Message content type",
+	)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

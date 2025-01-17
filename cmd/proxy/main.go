@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/absmach/propeller/pkg/config"
+	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/proxy"
 	"github.com/caarlos0/env/v11"
 	"golang.org/x/sync/errgroup"
@@ -19,35 +19,45 @@ const (
 	configPath = "config.toml"
 )
 
-type envConfig struct {
-	LogLevel    string        `env:"PROXY_LOG_LEVEL"           envDefault:"info"`
-	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
-	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT"        envDefault:"30s"`
+type config struct {
+	LogLevel    string        `env:"PROXY_LOG_LEVEL"    envDefault:"info"`
+	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
+	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT" envDefault:"30s"`
+	ChannelID   string        `env:"PROPLET_CHANNEL_ID"`
+	ThingID     string        `env:"PROPLET_THING_ID"`
+	ThingKey    string        `env:"PROPLET_THING_KEY"`
 
 	// HTTP Registry configuration
-	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"         envDefault:"512000"`
-	Authenticate bool   `env:"PROXY_AUTHENTICATE"        envDefault:"false"`
-	Token        string `env:"PROXY_REGISTRY_TOKEN"      envDefault:""`
-	Username     string `env:"PROXY_REGISTRY_USERNAME"   envDefault:""`
-	Password     string `env:"PROXY_REGISTRY_PASSWORD"   envDefault:""`
+	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
+	Authenticate bool   `env:"PROXY_AUTHENTICATE"          envDefault:"false"`
+	Token        string `env:"PROXY_REGISTRY_TOKEN"        envDefault:""`
+	Username     string `env:"PROXY_REGISTRY_USERNAME"     envDefault:""`
+	Password     string `env:"PROXY_REGISTRY_PASSWORD"     envDefault:""`
 	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty"`
 }
 
 func main() {
 	g, ctx := errgroup.WithContext(context.Background())
 
-	var conf *config.Config
-	if _, err := os.Stat(configPath); err == nil {
-		var err error
-		conf, err = config.LoadConfig(configPath)
-		if err != nil {
-			log.Fatalf("failed to load TOML configuration: %s", err.Error())
-		}
-	}
-
-	cfg := envConfig{}
+	cfg := config{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
+	}
+
+	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+		_, err := os.Stat(configPath)
+		switch err {
+		case nil:
+			conf, err := propeller.LoadConfig(configPath)
+			if err != nil {
+				log.Fatalf("failed to load TOML configuration: %s", err.Error())
+			}
+			cfg.ThingID = conf.Proxy.ThingID
+			cfg.ThingKey = conf.Proxy.ThingKey
+			cfg.ChannelID = conf.Proxy.ChannelID
+		default:
+			log.Fatalf("failed to load TOML configuration: %s", err.Error())
+		}
 	}
 
 	var level slog.Level
@@ -60,18 +70,11 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	var thingID, thingKey, channelID string
-	if conf != nil {
-		thingID = conf.Proxy.ThingID
-		thingKey = conf.Proxy.ThingKey
-		channelID = conf.Proxy.ChannelID
-	}
-
 	mqttCfg := proxy.MQTTProxyConfig{
 		BrokerURL: cfg.MQTTAddress,
-		Password:  thingKey,
-		PropletID: thingID,
-		ChannelID: channelID,
+		Password:  cfg.ThingKey,
+		PropletID: cfg.ThingID,
+		ChannelID: cfg.ChannelID,
 	}
 
 	httpCfg := proxy.HTTPProxyConfig{

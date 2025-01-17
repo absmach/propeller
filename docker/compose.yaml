@@ -12,8 +12,6 @@ volumes:
   magistrala-mqtt-broker-volume:
   magistrala-spicedb-db-volume:
   magistrala-auth-db-volume:
-  magistrala-invitations-db-volume:
-  magistrala-ui-db-volume:
 
 services:
   spicedb:
@@ -150,23 +148,6 @@ services:
         target: /auth-grpc-client-ca${MG_AUTH_GRPC_CLIENT_CA_CERTS:+.crt}
         bind:
           create_host_path: true
-
-  invitations-db:
-    image: postgres:16.2-alpine
-    container_name: magistrala-invitations-db
-    restart: on-failure
-    command: postgres -c "max_connections=${MG_POSTGRES_MAX_CONNECTIONS}"
-    environment:
-      POSTGRES_USER: ${MG_INVITATIONS_DB_USER}
-      POSTGRES_PASSWORD: ${MG_INVITATIONS_DB_PASS}
-      POSTGRES_DB: ${MG_INVITATIONS_DB_NAME}
-      MG_POSTGRES_MAX_CONNECTIONS: ${MG_POSTGRES_MAX_CONNECTIONS}
-    ports:
-      - 6021:5432
-    networks:
-      - magistrala-base-net
-    volumes:
-      - magistrala-invitations-db-volume:/var/lib/postgresql/data
 
   nginx:
     image: nginx:1.25.4-alpine
@@ -393,8 +374,6 @@ services:
       MG_GOOGLE_CLIENT_SECRET: ${MG_GOOGLE_CLIENT_SECRET}
       MG_GOOGLE_REDIRECT_URL: ${MG_GOOGLE_REDIRECT_URL}
       MG_GOOGLE_STATE: ${MG_GOOGLE_STATE}
-      MG_OAUTH_UI_REDIRECT_URL: ${MG_OAUTH_UI_REDIRECT_URL}
-      MG_OAUTH_UI_ERROR_URL: ${MG_OAUTH_UI_ERROR_URL}
       MG_USERS_DELETE_INTERVAL: ${MG_USERS_DELETE_INTERVAL}
       MG_USERS_DELETE_AFTER: ${MG_USERS_DELETE_AFTER}
       MG_SPICEDB_PRE_SHARED_KEY: ${MG_SPICEDB_PRE_SHARED_KEY}
