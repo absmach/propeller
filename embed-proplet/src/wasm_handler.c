@@ -50,8 +50,7 @@ void execute_wasm_module(const char *task_id,
     }
 
     char error_buf[128];
-    wasm_module_t module = wasm_runtime_load(wasm_data, wasm_size,
-                                             error_buf, sizeof(error_buf));
+    wasm_module_t module = wasm_runtime_load(wasm_data, wasm_size, error_buf, sizeof(error_buf));
     if (!module) {
         LOG_ERR("Failed to load WASM module: %s", error_buf);
         return;
@@ -77,32 +76,56 @@ void execute_wasm_module(const char *task_id,
     wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, "main");
     if (!func) {
         LOG_WRN("Function 'main' not found in WASM module. No entry point to call.");
+        wasm_runtime_deinstantiate(module_inst);
+        wasm_runtime_unload(module);
         return;
     }
 
-    LOG_INF("Executing 'main' in WASM module with ID=%s", task_id);
+    uint32_t result_count = wasm_func_get_result_count(func, module_inst);
+    if (result_count == 0) {
+        LOG_ERR("Function has no return value.");
+        wasm_runtime_deinstantiate(module_inst);
+        wasm_runtime_unload(module);
+        return;
+    }
 
-    uint32_t arg_buf[MAX_INPUTS];
-    memset(arg_buf, 0, sizeof(arg_buf));
+    wasm_valkind_t result_types[result_count];
+    wasm_func_get_result_types(func, module_inst, result_types);
+
+    wasm_val_t results[result_count];
+    for (uint32_t i = 0; i < result_count; i++) {
+        results[i].kind = result_types[i];
+    }
+
+    wasm_val_t args[MAX_INPUTS];
     size_t n_args = (inputs_count > MAX_INPUTS) ? MAX_INPUTS : inputs_count;
     for (size_t i = 0; i < n_args; i++) {
-        arg_buf[i] = (uint32_t)(inputs[i] & 0xFFFFFFFFu);
+        args[i].kind = WASM_I32;
+        args[i].of.i32 = (uint32_t)(inputs[i] & 0xFFFFFFFFu);
     }
 
     wasm_exec_env_t exec_env = wasm_runtime_create_exec_env(module_inst, 16 * 1024);
     if (!exec_env) {
         LOG_ERR("Failed to create execution environment for WASM module.");
-        stop_wasm_app(task_id);
+        wasm_runtime_deinstantiate(module_inst);
+        wasm_runtime_unload(module);
         return;
     }
 
-    if (!wasm_runtime_call_wasm(exec_env, func, n_args, arg_buf)) {
-        LOG_ERR("Error invoking WASM function 'main'");
+    if (!wasm_runtime_call_wasm_a(exec_env, func, result_count, results, n_args, args)) {
+        const char *exception = wasm_runtime_get_exception(module_inst);
+        LOG_ERR("Error invoking WASM function: %s", exception ? exception : "Unknown error");
     } else {
-        LOG_INF("WASM 'main' executed successfully.");
+        for (uint32_t i = 0; i < result_count; i++) {
+            if (results[i].kind == WASM_I32) {
+                LOG_INF("Result[%u]: %d", i, results[i].of.i32);
+            }
+        }
     }
 
     wasm_runtime_destroy_exec_env(exec_env);
+    wasm_runtime_deinstantiate(module_inst);
+    wasm_runtime_unload(module);
 }
 
 void stop_wasm_app(const char *task_id)
@@ -124,7 +147,6 @@ void stop_wasm_app(const char *task_id)
 
     LOG_INF("WASM app [%s] has been stopped and unloaded.", task_id);
 }
-
 
 static void maybe_init_wamr_runtime(void)
 {
