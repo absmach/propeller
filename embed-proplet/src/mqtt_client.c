@@ -425,26 +425,52 @@ void handle_start_command(const char *payload)
         return;
     }
 
-    LOG_INF("Starting task: ID=%s, Name=%s, State=%s", t.id, t.name, t.state);
-    LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
-    LOG_INF("inputs_count=%zu", t.inputs_count);
+    char encoded_json[1024]; // Adjust size based on expected payload length
+    ret = json_obj_encode_buf(task_descr, ARRAY_SIZE(task_descr), &t, encoded_json, sizeof(encoded_json));
+    if (ret < 0) {
+        LOG_ERR("Failed to encode struct to JSON, error: %d", ret);
+    } else {
+        LOG_INF("Encoded JSON: %s", encoded_json);
+    }
 
-    memcpy(&g_current_task, &t, sizeof(struct task));
+    if (strlen(t.id) == 0 || strlen(t.name) == 0 || strlen(t.state) == 0) {
+        LOG_ERR("Parsed task contains invalid or missing mandatory fields.");
+        return;
+    }
+
+    t.id[MAX_ID_LEN - 1] = '\0';
+    t.name[MAX_NAME_LEN - 1] = '\0';
+    t.state[MAX_STATE_LEN - 1] = '\0';
+
+    LOG_INF("Starting task: ID=%.63s, Name=%.63s, State=%.15s", t.id, t.name, t.state);
 
     if (strlen(t.file) > 0) {
+        size_t required_size = 0;
+
+        // Calculate required buffer size
+        ret = base64_decode(NULL, 0, &required_size, (const uint8_t *)t.file, strlen(t.file));
+        if (ret < 0) {
+            LOG_ERR("Failed to calculate buffer size for base64 decode, err=%d", ret);
+            return;
+        }
+
+        if (required_size > MAX_BASE64_LEN) {
+            LOG_ERR("Decoded size exceeds buffer capacity");
+            return;
+        }
+
         static uint8_t wasm_binary[MAX_BASE64_LEN];
         size_t wasm_decoded_len = 0;
 
-        ret = base64_decode(wasm_binary, sizeof(wasm_binary),
-                            &wasm_decoded_len,
-                            (const uint8_t *)t.file,
-                            strlen(t.file));
+        // Perform actual decoding
+        ret = base64_decode(wasm_binary, sizeof(wasm_binary), &wasm_decoded_len,
+                            (const uint8_t *)t.file, strlen(t.file));
         if (ret < 0) {
             LOG_ERR("Failed to decode base64 WASM (task.file). Err=%d", ret);
             return;
         }
+
         g_current_task.file_len = wasm_decoded_len;
-        LOG_INF("Decoded WASM size: %zu", g_current_task.file_len);
 
         execute_wasm_module(g_current_task.id,
                             wasm_binary,
@@ -452,7 +478,6 @@ void handle_start_command(const char *payload)
                             g_current_task.inputs,
                             g_current_task.inputs_count);
     }
-
     else if (strlen(t.image_url) > 0) {
         LOG_INF("Requesting WASM from registry: %s", t.image_url);
         extern const char *channel_id;
@@ -461,6 +486,8 @@ void handle_start_command(const char *payload)
     else {
         LOG_WRN("No file or image_url specified; cannot start WASM task!");
     }
+
+    memcpy(&g_current_task, &t, sizeof(t));
 }
 
 void handle_stop_command(const char *payload)
