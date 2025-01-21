@@ -6,11 +6,10 @@
 
 LOG_MODULE_REGISTER(wasm_handler);
 
-#define MAX_WASM_APPS  10     /* How many different Wasm tasks we can track simultaneously */
+#define MAX_WASM_APPS  10
 #define MAX_ID_LEN     64
-#define MAX_INPUTS     16     /* Max 32-bit arguments we’ll pass to WASM main */
+#define MAX_INPUTS     16
 
-/* A record of a "running" (loaded & instantiated) Wasm module. */
 typedef struct {
     bool              in_use;
     char              id[MAX_ID_LEN];
@@ -18,48 +17,39 @@ typedef struct {
     wasm_module_inst_t module_inst;
 } wasm_app_t;
 
-/* We'll maintain a small global array of possible Wasm apps. */
 static wasm_app_t g_wasm_apps[MAX_WASM_APPS];
 
-/* Keep track of whether we've called wasm_runtime_full_init() yet. */
 static bool g_wamr_initialized = false;
 
-/* Forward declarations for some helper functions. */
 static void maybe_init_wamr_runtime(void);
 static int  find_free_slot(void);
 static int  find_app_by_id(const char *task_id);
 
-/*-------------------------------------------------------------------------*/
-/*       Public API: execute_wasm_module(...)                              */
-/*-------------------------------------------------------------------------*/
+
 void execute_wasm_module(const char *task_id,
                          const uint8_t *wasm_data,
                          size_t wasm_size,
                          const uint64_t *inputs,
                          size_t inputs_count)
 {
-    /* Make sure the WAMR runtime is initialized once. */
     maybe_init_wamr_runtime();
     if (!g_wamr_initialized) {
         LOG_ERR("WAMR runtime not available, cannot execute WASM");
         return;
     }
 
-    /* If a Wasm app with this ID is already running, stop it first. */
     int existing_idx = find_app_by_id(task_id);
     if (existing_idx >= 0) {
         LOG_WRN("WASM app with ID %s is already running. Stopping it first...", task_id);
         stop_wasm_app(task_id);
     }
 
-    /* Find a free slot in the global array. */
     int slot = find_free_slot();
     if (slot < 0) {
         LOG_ERR("No free slot to store new WASM app instance (increase MAX_WASM_APPS).");
         return;
     }
 
-    /* Load the module from memory. */
     char error_buf[128];
     wasm_module_t module = wasm_runtime_load(wasm_data, wasm_size,
                                              error_buf, sizeof(error_buf));
@@ -68,7 +58,6 @@ void execute_wasm_module(const char *task_id,
         return;
     }
 
-    /* Instantiate the module. Increase stack/heap if needed. */
     wasm_module_inst_t module_inst = wasm_runtime_instantiate(module,
                                                               4 * 1024,  /* stack size */
                                                               4 * 1024,  /* heap size */
@@ -80,7 +69,6 @@ void execute_wasm_module(const char *task_id,
         return;
     }
 
-    /* Store references in the global array, so we can stop it later. */
     g_wasm_apps[slot].in_use       = true;
     strncpy(g_wasm_apps[slot].id, task_id, MAX_ID_LEN - 1);
     g_wasm_apps[slot].id[MAX_ID_LEN - 1] = '\0';
@@ -100,7 +88,6 @@ void execute_wasm_module(const char *task_id,
 
     LOG_INF("Executing 'main' in WASM module with ID=%s", task_id);
 
-    /* Convert 64-bit inputs to 32-bit if your "main" expects 32-bit args. */
     uint32_t arg_buf[MAX_INPUTS];
     memset(arg_buf, 0, sizeof(arg_buf));
     size_t n_args = (inputs_count > MAX_INPUTS) ? MAX_INPUTS : inputs_count;
@@ -113,17 +100,8 @@ void execute_wasm_module(const char *task_id,
     } else {
         LOG_INF("WASM 'main' executed successfully.");
     }
-
-    /*
-     * NOTE: We do NOT call wasm_runtime_deinstantiate() or wasm_runtime_unload()
-     * here, so the module remains loaded. That’s what allows stop_wasm_app()
-     * to do meaningful cleanup later.
-     */
 }
 
-/*-------------------------------------------------------------------------*/
-/*       Public API: stop_wasm_app(...)                                    */
-/*-------------------------------------------------------------------------*/
 void stop_wasm_app(const char *task_id)
 {
     int idx = find_app_by_id(task_id);
@@ -135,26 +113,20 @@ void stop_wasm_app(const char *task_id)
     wasm_app_t *app = &g_wasm_apps[idx];
     LOG_INF("Stopping WASM app with ID=%s", app->id);
 
-    /* Properly deinstantiate and unload the module. */
     wasm_runtime_deinstantiate(app->module_inst);
     wasm_runtime_unload(app->module);
 
-    /* Clear our record for re-use. */
     app->in_use = false;
     memset(app->id, 0, sizeof(app->id));
 
     LOG_INF("WASM app [%s] has been stopped and unloaded.", task_id);
 }
 
-/*-------------------------------------------------------------------------*/
-/*       Internal Helpers                                                  */
-/*-------------------------------------------------------------------------*/
 
-/** One-time WAMR runtime initialization. */
 static void maybe_init_wamr_runtime(void)
 {
     if (g_wamr_initialized) {
-        return; /* Already inited */
+        return;
     }
 
     RuntimeInitArgs init_args;
@@ -170,7 +142,6 @@ static void maybe_init_wamr_runtime(void)
     LOG_INF("WAMR runtime initialized successfully.");
 }
 
-/** Finds the first free slot in the global g_wasm_apps array, or -1 if full. */
 static int find_free_slot(void)
 {
     for (int i = 0; i < MAX_WASM_APPS; i++) {
@@ -181,7 +152,6 @@ static int find_free_slot(void)
     return -1;
 }
 
-/** Looks up a loaded module by task ID. Returns array index or -1 if not found. */
 static int find_app_by_id(const char *task_id)
 {
     for (int i = 0; i < MAX_WASM_APPS; i++) {
