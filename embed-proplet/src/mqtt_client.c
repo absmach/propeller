@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME "192.168.88.179" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "172.20.10.4" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT     1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE  "channels/%s/messages/control/manager/registry"
@@ -74,13 +74,6 @@ struct task {
 
     uint64_t inputs[MAX_INPUTS];
     size_t   inputs_count;
-    uint64_t results[MAX_RESULTS];
-    size_t   results_count;
-
-    char     start_time[MAX_TIMESTAMP_LEN];
-    char     finish_time[MAX_TIMESTAMP_LEN];
-    char     created_at[MAX_TIMESTAMP_LEN];
-    char     updated_at[MAX_TIMESTAMP_LEN];
 };
 
 struct registry_response {
@@ -97,12 +90,6 @@ static const struct json_obj_descr task_descr[] = {
     JSON_OBJ_DESCR_PRIM_NAMED(struct task, "file",       file,      JSON_TOK_STRING),
 
     JSON_OBJ_DESCR_ARRAY_NAMED(struct task, "inputs",    inputs,  MAX_INPUTS,  inputs_count,  JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_ARRAY_NAMED(struct task, "results",   results, MAX_RESULTS, results_count, JSON_TOK_NUMBER),
-
-    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "start_time",  start_time,  JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "finish_time", finish_time, JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "created_at",  created_at,  JSON_TOK_STRING),
-    JSON_OBJ_DESCR_PRIM_NAMED(struct task, "updated_at",  updated_at,  JSON_TOK_STRING),
 };
 
 static const struct json_obj_descr registry_response_descr[] = {
