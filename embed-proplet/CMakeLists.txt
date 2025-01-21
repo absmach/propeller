@@ -49,6 +49,6 @@ zephyr_library_sources(${WAMR_RUNTIME_LIB_SOURCE})
 
 zephyr_library_app_memory(wamr_partition)
 
-target_sources(app PRIVATE src/main.c src/mqtt_client.c src/wifi_manager.c src/wasm_handler.c)
+target_sources(app PRIVATE src/main.c src/mqtt_client.c src/wasm_handler.c src/wifi_manager.c)
 
 target_link_libraries(app PRIVATE wamr_lib)

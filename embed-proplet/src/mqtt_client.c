@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME "172.20.10.4" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "192.168.88.179" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT     1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE  "channels/%s/messages/control/manager/registry"
@@ -38,7 +38,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_STATE_LEN      16
 #define MAX_URL_LEN        256
 #define MAX_TIMESTAMP_LEN  32
-#define MAX_BASE64_LEN     256
+#define MAX_BASE64_LEN     512
 #define MAX_INPUTS         16
 #define MAX_RESULTS        16
 
@@ -74,6 +74,13 @@ struct task {
 
     uint64_t inputs[MAX_INPUTS];
     size_t   inputs_count;
+    uint64_t results[MAX_RESULTS];
+    size_t   results_count;
+
+    char     start_time[MAX_TIMESTAMP_LEN];
+    char     finish_time[MAX_TIMESTAMP_LEN];
+    char     created_at[MAX_TIMESTAMP_LEN];
+    char     updated_at[MAX_TIMESTAMP_LEN];
 };
 
 struct registry_response {
