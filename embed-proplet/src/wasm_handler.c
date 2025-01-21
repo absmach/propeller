@@ -25,7 +25,6 @@ static void maybe_init_wamr_runtime(void);
 static int  find_free_slot(void);
 static int  find_app_by_id(const char *task_id);
 
-
 void execute_wasm_module(const char *task_id,
                          const uint8_t *wasm_data,
                          size_t wasm_size,
@@ -59,8 +58,8 @@ void execute_wasm_module(const char *task_id,
     }
 
     wasm_module_inst_t module_inst = wasm_runtime_instantiate(module,
-                                                              4 * 1024,  /* stack size */
-                                                              4 * 1024,  /* heap size */
+                                                              16 * 1024,  /* stack size */
+                                                              16 * 1024,  /* heap size */
                                                               error_buf,
                                                               sizeof(error_buf));
     if (!module_inst) {
@@ -75,11 +74,6 @@ void execute_wasm_module(const char *task_id,
     g_wasm_apps[slot].module       = module;
     g_wasm_apps[slot].module_inst  = module_inst;
 
-    /*
-     * Optionally call "main" right away. If your Wasm module is meant to run
-     * a single function and then exit, this is enough. If it's a long-running
-     * module (e.g., with timers or state), you'd skip the immediate call.
-     */
     wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, "main");
     if (!func) {
         LOG_WRN("Function 'main' not found in WASM module. No entry point to call.");
@@ -95,11 +89,20 @@ void execute_wasm_module(const char *task_id,
         arg_buf[i] = (uint32_t)(inputs[i] & 0xFFFFFFFFu);
     }
 
-    if (!wasm_runtime_call_wasm(module_inst, func, n_args, arg_buf)) {
+    wasm_exec_env_t exec_env = wasm_runtime_create_exec_env(module_inst, 16 * 1024);
+    if (!exec_env) {
+        LOG_ERR("Failed to create execution environment for WASM module.");
+        stop_wasm_app(task_id);
+        return;
+    }
+
+    if (!wasm_runtime_call_wasm(exec_env, func, n_args, arg_buf)) {
         LOG_ERR("Error invoking WASM function 'main'");
     } else {
         LOG_INF("WASM 'main' executed successfully.");
     }
+
+    wasm_runtime_destroy_exec_env(exec_env);
 }
 
 void stop_wasm_app(const char *task_id)
