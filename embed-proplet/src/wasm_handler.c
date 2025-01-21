@@ -1,4 +1,5 @@
 #include "wasm_handler.h"
+#include "mqtt_client.h"
 #include <wasm_export.h>
 #include <logging/log.h>
 #include <string.h>
@@ -9,6 +10,7 @@ LOG_MODULE_REGISTER(wasm_handler);
 #define MAX_WASM_APPS  10
 #define MAX_ID_LEN     64
 #define MAX_INPUTS     16
+#define MAX_RESULTS    16
 
 typedef struct {
     bool              in_use;
@@ -116,11 +118,25 @@ void execute_wasm_module(const char *task_id,
         const char *exception = wasm_runtime_get_exception(module_inst);
         LOG_ERR("Error invoking WASM function: %s", exception ? exception : "Unknown error");
     } else {
+        char result_payload[256] = {0};
+        char results_string[MAX_RESULTS * 16] = {0};
+
         for (uint32_t i = 0; i < result_count; i++) {
             if (results[i].kind == WASM_I32) {
-                LOG_INF("Result[%u]: %d", i, results[i].of.i32);
+                char temp[16];
+                snprintf(temp, sizeof(temp), "%d", results[i].of.i32);
+                strncat(results_string, temp, sizeof(results_string) - strlen(results_string) - 1);
+                if (i < result_count - 1) {
+                    strncat(results_string, ",", sizeof(results_string) - strlen(results_string) - 1);
+                }
             }
         }
+
+        extern const char *channel_id;
+        snprintf(result_payload, sizeof(result_payload),
+                 "{\"task_id\":\"%s\",\"results\":[%s]}", task_id, results_string);
+        publish_results(channel_id, task_id, result_payload);
+        LOG_INF("WASM execution results published to MQTT topic");
     }
 
     wasm_runtime_destroy_exec_env(exec_env);
