@@ -31,8 +31,8 @@ var (
 
 type PropletService struct {
 	channelID          string
-	thingID            string
-	thingKey           string
+	clientID           string
+	clientKey          string
 	livelinessInterval time.Duration
 	pubsub             pkgmqtt.PubSub
 	chunks             map[string][][]byte
@@ -49,10 +49,10 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(ctx context.Context, channelID, thingID, thingKey string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+func NewService(ctx context.Context, channelID, clientID, clientKey string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
 	topic := fmt.Sprintf(discoveryTopicTemplate, channelID)
 	payload := map[string]interface{}{
-		"proplet_id":    thingID,
+		"proplet_id":    clientID,
 		"mg_channel_id": channelID,
 	}
 	if err := pubsub.Publish(ctx, topic, payload); err != nil {
@@ -61,8 +61,8 @@ func NewService(ctx context.Context, channelID, thingID, thingKey string, liveli
 
 	p := &PropletService{
 		channelID:          channelID,
-		thingID:            thingID,
-		thingKey:           thingKey,
+		clientID:           clientID,
+		clientKey:          clientKey,
 		livelinessInterval: livelinessInterval,
 		pubsub:             pubsub,
 		chunks:             make(map[string][][]byte),
@@ -90,7 +90,7 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 			topic := fmt.Sprintf(aliveTopicTemplate, p.channelID)
 			payload := map[string]interface{}{
 				"status":        "alive",
-				"proplet_id":    p.thingID,
+				"proplet_id":    p.clientID,
 				"mg_channel_id": p.channelID,
 			}
 

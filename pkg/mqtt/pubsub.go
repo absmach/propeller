@@ -172,7 +172,7 @@ func (ps *pubsub) mqttHandler(h Handler) mqtt.MessageHandler {
 		}
 
 		if err := h(m.Topic(), msg); err != nil {
-			ps.logger.Warn(fmt.Sprintf("Failed to handle Magistrala message: %s", err))
+			ps.logger.Warn(fmt.Sprintf("Failed to handle MQTT message: %s", err))
 		}
 
 		m.Ack()

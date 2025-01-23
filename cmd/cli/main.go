@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	smqsdk "github.com/absmach/magistrala/pkg/sdk/go"
 	"github.com/absmach/propeller/cli"
 	"github.com/absmach/propeller/pkg/sdk"
+	smqsdk "github.com/absmach/supermq/pkg/sdk"
 	"github.com/spf13/cobra"
 )
 
@@ -13,8 +13,9 @@ var (
 	tlsVerification = false
 	managerURL      = "http://localhost:7070"
 	usersURL        = "http://localhost:9002"
-	thingsURL       = "http://localhost:9000"
-	domainsURL      = "http://localhost:8189"
+	domainsURL      = "http://localhost:9003"
+	clientsURL      = "http://localhost:9006"
+	channelsURL     = "http://localhost:9005"
 	msgContentType  = string(smqsdk.CTJSONSenML)
 )
 
@@ -33,8 +34,9 @@ func main() {
 
 			smqSDKConf := smqsdk.Config{
 				UsersURL:       usersURL,
-				ThingsURL:      thingsURL,
 				DomainsURL:     domainsURL,
+				ClientsURL:     clientsURL,
+				ChannelsURL:    channelsURL,
 				MsgContentType: smqsdk.ContentType(msgContentType),
 			}
 
@@ -76,14 +78,6 @@ func main() {
 	)
 
 	rootCmd.PersistentFlags().StringVarP(
-		&thingsURL,
-		"things-url",
-		"t",
-		thingsURL,
-		"Things service URL",
-	)
-
-	rootCmd.PersistentFlags().StringVarP(
 		&domainsURL,
 		"domains-url",
 		"d",
@@ -92,9 +86,25 @@ func main() {
 	)
 
 	rootCmd.PersistentFlags().StringVarP(
+		&clientsURL,
+		"clients-url",
+		"c",
+		clientsURL,
+		"Clients service URL",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&channelsURL,
+		"channels-url",
+		"z",
+		channelsURL,
+		"Channels service URL",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
 		&msgContentType,
 		"content-type",
-		"c",
+		"t",
 		msgContentType,
 		"Message content type",
 	)

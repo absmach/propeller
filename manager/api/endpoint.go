@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/absmach/magistrala/pkg/apiutil"
+	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/go-kit/kit/endpoint"

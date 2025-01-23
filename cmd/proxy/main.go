@@ -24,8 +24,8 @@ type config struct {
 	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
 	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT" envDefault:"30s"`
 	ChannelID   string        `env:"PROPLET_CHANNEL_ID"`
-	ThingID     string        `env:"PROPLET_THING_ID"`
-	ThingKey    string        `env:"PROPLET_THING_KEY"`
+	ClientID    string        `env:"PROPLET_CLIENT_ID"`
+	ClientKey   string        `env:"PROPLET_CLIENT_KEY"`
 
 	// HTTP Registry configuration
 	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
@@ -44,7 +44,7 @@ func main() {
 		log.Fatalf("failed to load configuration : %s", err.Error())
 	}
 
-	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
 		_, err := os.Stat(configPath)
 		switch err {
 		case nil:
@@ -52,8 +52,8 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to load TOML configuration: %s", err.Error())
 			}
-			cfg.ThingID = conf.Proxy.ThingID
-			cfg.ThingKey = conf.Proxy.ThingKey
+			cfg.ClientID = conf.Proxy.ClientID
+			cfg.ClientKey = conf.Proxy.ClientKey
 			cfg.ChannelID = conf.Proxy.ChannelID
 		default:
 			log.Fatalf("failed to load TOML configuration: %s", err.Error())
@@ -72,8 +72,8 @@ func main() {
 
 	mqttCfg := proxy.MQTTProxyConfig{
 		BrokerURL: cfg.MQTTAddress,
-		Password:  cfg.ThingKey,
-		PropletID: cfg.ThingID,
+		Password:  cfg.ClientKey,
+		PropletID: cfg.ClientID,
 		ChannelID: cfg.ChannelID,
 	}
 
