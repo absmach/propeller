@@ -20,7 +20,7 @@ type ManagerConfig struct {
 }
 
 type PropletConfig struct {
-	ClientID string `toml:"client_id"`
+	ClientID  string `toml:"client_id"`
 	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }

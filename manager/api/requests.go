@@ -1,8 +1,8 @@
 package api
 
 import (
-	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/absmach/propeller/task"
+	apiutil "github.com/absmach/supermq/api/http/util"
 )
 
 type taskReq struct {

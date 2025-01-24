@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/absmach/supermq"
-	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/api"
+	"github.com/absmach/supermq"
+	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/go-chi/chi/v5"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
