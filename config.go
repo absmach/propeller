@@ -14,20 +14,20 @@ type Config struct {
 }
 
 type ManagerConfig struct {
-	ThingID   string `toml:"thing_id"`
-	ThingKey  string `toml:"thing_key"`
+	ClientID  string `toml:"client_id"`
+	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }
 
 type PropletConfig struct {
-	ThingID   string `toml:"thing_id"`
-	ThingKey  string `toml:"thing_key"`
+	ClientID  string `toml:"client_id"`
+	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }
 
 type ProxyConfig struct {
-	ThingID   string `toml:"thing_id"`
-	ThingKey  string `toml:"thing_key"`
+	ClientID  string `toml:"client_id"`
+	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }
 

@@ -3,17 +3,17 @@ package api
 import (
 	"net/http"
 
-	"github.com/absmach/magistrala"
 	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
+	"github.com/absmach/supermq"
 )
 
 var (
-	_ magistrala.Response = (*propletResponse)(nil)
-	_ magistrala.Response = (*listpropletResponse)(nil)
-	_ magistrala.Response = (*taskResponse)(nil)
-	_ magistrala.Response = (*listTaskResponse)(nil)
-	_ magistrala.Response = (*messageResponse)(nil)
+	_ supermq.Response = (*propletResponse)(nil)
+	_ supermq.Response = (*listpropletResponse)(nil)
+	_ supermq.Response = (*taskResponse)(nil)
+	_ supermq.Response = (*listTaskResponse)(nil)
+	_ supermq.Response = (*messageResponse)(nil)
 )
 
 type propletResponse struct {

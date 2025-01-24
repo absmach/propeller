@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/absmach/magistrala"
-	"github.com/absmach/magistrala/pkg/apiutil"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/api"
+	"github.com/absmach/supermq"
+	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/go-chi/chi/v5"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -101,7 +101,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		})
 	})
 
-	mux.Get("/health", magistrala.Health("manager", instanceID))
+	mux.Get("/health", supermq.Health("manager", instanceID))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux
