@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/go-kit/kit/endpoint"
 )
 

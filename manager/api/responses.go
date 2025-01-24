@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/absmach/supermq"
 	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
+	"github.com/absmach/supermq"
 )
 
 var (

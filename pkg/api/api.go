@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/absmach/supermq"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	"github.com/absmach/supermq"
 )
 
 const (
