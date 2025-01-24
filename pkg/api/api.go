@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/absmach/magistrala"
+	"github.com/absmach/supermq"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 )
 
@@ -22,7 +22,7 @@ const (
 )
 
 func EncodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
-	if ar, ok := response.(magistrala.Response); ok {
+	if ar, ok := response.(supermq.Response); ok {
 		for k, v := range ar.Headers() {
 			w.Header().Set(k, v)
 		}

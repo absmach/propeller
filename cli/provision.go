@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/0x6flab/namegenerator"
-	smqSDK "github.com/absmach/magistrala/pkg/sdk/go"
 	"github.com/absmach/supermq/pkg/errors"
+	smqSDK "github.com/absmach/supermq/pkg/sdk"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
@@ -36,44 +36,44 @@ var provisionCmd = &cobra.Command{
 	Long:  `Provision necessary resources for Propeller operation.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
-			identity           string
-			secret             string
+			username           string
+			password           string
 			err                error
 			token              smqSDK.Token
 			domainName         string
 			domainAlias        string
 			domainPermission   string
 			domain             smqSDK.Domain
-			managerThingName   string
-			managerThing       smqSDK.Thing
-			propletThingName   string
-			propletThing       smqSDK.Thing
+			managerClientName  string
+			managerClient      smqSDK.Client
+			propletClientName  string
+			propletClient      smqSDK.Client
 			managerChannelName string
 			managerChannel     smqSDK.Channel
 		)
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Enter your identity (e-mail)?").
-					Value(&identity).
+					Title("Enter your username?").
+					Value(&username).
 					Validate(func(str string) error {
 						if str == "" {
-							return errors.New("identity is required")
+							return errors.New("username is required")
 						}
 
 						return nil
 					}),
 				huh.NewInput().
-					Title("Enter your secret").
+					Title("Enter your password").
 					EchoMode(huh.EchoModePassword).
-					Value(&secret).
+					Value(&password).
 					Validate(func(str string) error {
 						if str == "" {
-							return errors.New("secret is required")
+							return errors.New("password is required")
 						}
 						u := smqSDK.Login{
-							Identity: identity,
-							Secret:   secret,
+							Username: username,
+							Password: password,
 						}
 
 						token, err = smqsdk.CreateToken(u)
@@ -121,18 +121,18 @@ var provisionCmd = &cobra.Command{
 			),
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Enter your manager thing name(leave empty to auto generate)").
-					Value(&managerThingName).
+					Title("Enter your manager client name(leave empty to auto generate)").
+					Value(&managerClientName).
 					Validate(func(str string) error {
 						if str == "" {
-							managerThingName = namegen.Generate()
+							managerClientName = namegen.Generate()
 						}
-						managerThing = smqSDK.Thing{
-							Name:   managerThingName,
+						managerClient = smqSDK.Client{
+							Name:   managerClientName,
 							Tags:   []string{"manager", "propeller"},
 							Status: "enabled",
 						}
-						managerThing, err = smqsdk.CreateThing(managerThing, domain.ID, token.AccessToken)
+						managerClient, err = smqsdk.CreateClient(managerClient, domain.ID, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedClientCreation, err)
 						}
@@ -142,18 +142,18 @@ var provisionCmd = &cobra.Command{
 			),
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Enter your proplet thing name(leave empty to auto generate)").
-					Value(&propletThingName).
+					Title("Enter your proplet client name(leave empty to auto generate)").
+					Value(&propletClientName).
 					Validate(func(str string) error {
 						if str == "" {
-							propletThingName = namegen.Generate()
+							propletClientName = namegen.Generate()
 						}
-						propletThing = smqSDK.Thing{
-							Name:   propletThingName,
+						propletClient = smqSDK.Client{
+							Name:   propletClientName,
 							Tags:   []string{"proplet", "propeller"},
 							Status: "enabled",
 						}
-						propletThing, err = smqsdk.CreateThing(propletThing, domain.ID, token.AccessToken)
+						propletClient, err = smqsdk.CreateClient(propletClient, domain.ID, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedClientCreation, err)
 						}
@@ -178,18 +178,11 @@ var provisionCmd = &cobra.Command{
 						}
 
 						managerConns := smqSDK.Connection{
-							ThingID:   managerThing.ID,
-							ChannelID: managerChannel.ID,
+							ClientIDs:  []string{managerClient.ID, propletClient.ID},
+							ChannelIDs: []string{managerChannel.ID},
+							Types:      []string{"publish", "subscribe"},
 						}
 						if err = smqsdk.Connect(managerConns, domain.ID, token.AccessToken); err != nil {
-							return errors.Wrap(errFailedConnectionCreation, err)
-						}
-
-						propletConns := smqSDK.Connection{
-							ThingID:   propletThing.ID,
-							ChannelID: managerChannel.ID,
-						}
-						if err = smqsdk.Connect(propletConns, domain.ID, token.AccessToken); err != nil {
 							return errors.Wrap(errFailedConnectionCreation, err)
 						}
 
@@ -207,27 +200,27 @@ var provisionCmd = &cobra.Command{
 		configContent := fmt.Sprintf(`# SuperMQ Configuration
 
 [manager]
-thing_id = "%s"
-thing_key = "%s"
+client_id = "%s"
+client_key = "%s"
 channel_id = "%s"
 
 [proplet]
-thing_id = "%s"
-thing_key = "%s"
+client_id = "%s"
+client_key = "%s"
 channel_id = "%s"
 
 [proxy]
-thing_id = "%s"
-thing_key = "%s"
+client_id = "%s"
+client_key = "%s"
 channel_id = "%s"`,
-			managerThing.ID,
-			managerThing.Credentials.Secret,
+			managerClient.ID,
+			managerClient.Credentials.Secret,
 			managerChannel.ID,
-			propletThing.ID,
-			propletThing.Credentials.Secret,
+			propletClient.ID,
+			propletClient.Credentials.Secret,
 			managerChannel.ID,
-			propletThing.ID,
-			propletThing.Credentials.Secret,
+			propletClient.ID,
+			propletClient.Credentials.Secret,
 			managerChannel.ID,
 		)
 

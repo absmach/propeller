@@ -172,7 +172,7 @@ services:
       - supermq-base-net
     volumes:
       - supermq-domains-db-volume:/var/lib/postgresql/data
-  
+
   domains-redis:
     image: redis:7.2.4-alpine
     container_name: supermq-domains-redis
@@ -747,7 +747,6 @@ services:
         bind:
           create_host_path: true
 
-
   groups-db:
     image: postgres:16.2-alpine
     container_name: supermq-groups-db
@@ -849,7 +848,6 @@ services:
         target: /auth-grpc-server-ca${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+.crt}
         bind:
           create_host_path: true
-
 
   jaeger:
     image: jaegertracing/all-in-one:1.60

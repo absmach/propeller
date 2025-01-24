@@ -9,10 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/absmach/magistrala/pkg/jaeger"
-	"github.com/absmach/magistrala/pkg/prometheus"
-	"github.com/absmach/magistrala/pkg/server"
-	httpserver "github.com/absmach/magistrala/pkg/server/http"
 	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/manager/api"
@@ -20,6 +16,10 @@ import (
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
+	"github.com/absmach/supermq/pkg/jaeger"
+	"github.com/absmach/supermq/pkg/prometheus"
+	"github.com/absmach/supermq/pkg/server"
+	httpserver "github.com/absmach/supermq/pkg/server/http"
 	"github.com/caarlos0/env/v11"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
@@ -41,8 +41,8 @@ type config struct {
 	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
 	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
 	ChannelID   string        `env:"MANAGER_CHANNEL_ID"`
-	ThingID     string        `env:"MANAGER_THING_ID"`
-	ThingKey    string        `env:"MANAGER_THING_KEY"`
+	ClientID    string        `env:"MANAGER_CLIENT_ID"`
+	ClientKey   string        `env:"MANAGER_CLIENT_KEY"`
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
@@ -61,7 +61,7 @@ func main() {
 		cfg.InstanceID = uuid.NewString()
 	}
 
-	if cfg.ThingID == "" || cfg.ThingKey == "" || cfg.ChannelID == "" {
+	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
 		_, err := os.Stat(configPath)
 		switch err {
 		case nil:
@@ -69,8 +69,8 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to load TOML configuration: %s", err.Error())
 			}
-			cfg.ThingID = conf.Manager.ThingID
-			cfg.ThingKey = conf.Manager.ThingKey
+			cfg.ClientID = conf.Manager.ClientID
+			cfg.ClientKey = conf.Manager.ClientKey
 			cfg.ChannelID = conf.Manager.ChannelID
 		default:
 			log.Fatalf("failed to load TOML configuration: %s", err.Error())
@@ -107,7 +107,7 @@ func main() {
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ThingID, cfg.ThingKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ClientID, cfg.ClientKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
 
