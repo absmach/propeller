@@ -1,8 +1,8 @@
 #ifndef MQTT_CLIENT_H
 #define MQTT_CLIENT_H
 
-#include <zephyr/net/mqtt.h>
 #include <stdbool.h>
+#include <zephyr/net/mqtt.h>
 
 #define PAYLOAD_BUFFER_SIZE 256
 
@@ -40,10 +40,12 @@ int subscribe(const char *channel_id);
  * @param payload The payload to be published.
  * @return 0 on success, or a negative error code on failure.
  */
-int publish(const char *channel_id, const char *topic_template, const char *payload);
+int publish(const char *channel_id, const char *topic_template,
+            const char *payload);
 
 /**
- * @brief Publish a periodic "alive" message to notify the manager of liveliness.
+ * @brief Publish a periodic "alive" message to notify the manager of
+ * liveliness.
  *
  * @param channel_id The ID of the channel for dynamic topic generation.
  */
@@ -58,7 +60,8 @@ void publish_alive_message(const char *channel_id);
 void publish_registry_request(const char *channel_id, const char *app_name);
 
 /**
- * @brief Publish a discovery message when the Proplet comes online for the first time.
+ * @brief Publish a discovery message when the Proplet comes online for the
+ * first time.
  *
  * @param proplet_id The unique ID of the proplet.
  * @param channel_id The ID of the channel for the announcement.
@@ -73,7 +76,8 @@ int publish_discovery(const char *proplet_id, const char *channel_id);
  * @param task_id The ID of the task whose results are being published.
  * @param results The results of the task.
  */
-void publish_results(const char *channel_id, const char *task_id, const char *results);
+void publish_results(const char *channel_id, const char *task_id,
+                     const char *results);
 
 /**
  * @brief Process incoming MQTT messages and maintain the connection.
@@ -97,9 +101,9 @@ void handle_stop_command(const char *payload);
 /**
  * @brief Handle registry responses for WASM binary chunks.
  *
- * This function processes incoming chunks of WASM binaries sent by the registry proxy.
- * It logs details of each chunk, tracks progress, and assembles the chunks into a complete
- * binary file when all chunks are received.
+ * This function processes incoming chunks of WASM binaries sent by the registry
+ * proxy. It logs details of each chunk, tracks progress, and assembles the
+ * chunks into a complete binary file when all chunks are received.
  *
  * @param payload The JSON payload containing the chunk details.
  */
