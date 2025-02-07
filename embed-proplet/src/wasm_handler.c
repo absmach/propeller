@@ -121,7 +121,6 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     LOG_ERR("Error invoking WASM function: %s",
             exception ? exception : "Unknown error");
   } else {
-    char result_payload[256] = {0};
     char results_string[MAX_RESULTS * 16] = {0};
 
     for (uint32_t i = 0; i < result_count; i++) {
@@ -138,9 +137,7 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     }
 
     extern const char *channel_id;
-    snprintf(result_payload, sizeof(result_payload),
-             "{\"task_id\":\"%s\",\"results\":[%s]}", task_id, results_string);
-    publish_results(channel_id, task_id, result_payload);
+    publish_results(channel_id, task_id, results_string);
     LOG_INF("WASM execution results published to MQTT topic");
   }
 
