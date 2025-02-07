@@ -180,9 +180,17 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
+	payload := map[string]interface{}{
+		"id":        t.ID,
+		"name":      t.Name,
+		"state":     t.State,
+		"image_url": t.ImageURL,
+		"file":      t.File,
+		"inputs":    t.Inputs,
+	}
 
 	topic := svc.baseTopic + "/control/manager/start"
-	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
+	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
 		return err
 	}
 
