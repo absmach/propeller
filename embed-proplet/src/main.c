@@ -5,14 +5,16 @@
 
 LOG_MODULE_REGISTER(main);
 
-#define WIFI_SSID "Octavifi"
-#define WIFI_PSK "Unic0rn_2030"
-#define PROPLET_ID "proplet1"
-#define CHANNEL_ID "channel1"
+#define WIFI_SSID "<YOUR_WIFI_SSID>"
+#define WIFI_PSK "<YOUR_WIFI_PSK>"
+#define PROPLET_ID "<YOUR_PROPLET_ID>"
+#define PROPLET_PASSWORD "<YOUR_PROPLET_PASSWORD>"
+#define CHANNEL_ID "<YOUR_CHANNEL_ID>"
+
 
 const char *channel_id = CHANNEL_ID;
 
-void main(void) {
+int main(void) {
   LOG_INF("Starting Proplet...");
 
   wifi_manager_init();
@@ -34,6 +36,6 @@ void main(void) {
       LOG_WRN("MQTT client is not connected");
     }
 
-    k_sleep(K_SECONDS(1));
+    k_sleep(K_SECONDS(5));
   }
 }

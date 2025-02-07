@@ -1,3 +1,11 @@
 # Propellerd Build
 build
 config.toml
+
+# Zephyr
+embed-proplet/.cache
+embed-proplet/.west
+embed-proplet/bootloader
+embed-proplet/modules
+embed-proplet/tools
+embed-proplet/zephyr

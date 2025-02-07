@@ -1,6 +1,7 @@
 // #include <zephyr/data/json.h>
 #include "mqtt_client.h"
 #include "cJSON.h"
+#include "net/mqtt.h"
 #include "wasm_handler.h"
 #include <stdlib.h>
 #include <string.h>
@@ -16,8 +17,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME                                                   \
-  "192.168.88.179" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE                                            \
@@ -36,13 +36,15 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define WILL_RETAIN 1
 
 #define CLIENT_ID "proplet-esp32s3"
+#define PROPLET_ID "<YOUR_PROPLET_ID>"
+#define PROPLET_PASSWORD "<YOUR_PROPLET_PASSWORD>"
 
 #define MAX_ID_LEN 64
 #define MAX_NAME_LEN 64
 #define MAX_STATE_LEN 16
 #define MAX_URL_LEN 256
 #define MAX_TIMESTAMP_LEN 32
-#define MAX_BASE64_LEN 512
+#define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
 
@@ -290,19 +292,21 @@ int mqtt_client_connect(const char *proplet_id, const char *channel_id) {
 
   client_ctx.broker = &broker_addr;
   client_ctx.evt_cb = mqtt_event_handler;
-  client_ctx.client_id.utf8 = CLIENT_ID;
-  client_ctx.client_id.size = strlen(CLIENT_ID);
+  client_ctx.client_id = MQTT_UTF8_LITERAL(CLIENT_ID);
+
+  client_ctx.password = &MQTT_UTF8_LITERAL(PROPLET_PASSWORD);
+  client_ctx.user_name = &MQTT_UTF8_LITERAL(PROPLET_ID);
+
   client_ctx.protocol_version = MQTT_VERSION_3_1_1;
-  client_ctx.transport.type = MQTT_TRANSPORT_NON_SECURE;
 
   client_ctx.rx_buf = rx_buffer;
   client_ctx.rx_buf_size = RX_BUFFER_SIZE;
   client_ctx.tx_buf = tx_buffer;
   client_ctx.tx_buf_size = TX_BUFFER_SIZE;
 
-  client_ctx.will_topic = &will_topic;
-  client_ctx.will_message = &will_message;
-  client_ctx.will_retain = WILL_RETAIN;
+  // client->will_topic = &will_topic;
+  // client->will_message = &will_message;
+  // client->will_retain = WILL_RETAIN;
 
   while (!mqtt_connected) {
     LOG_INF("Attempting to connect to the MQTT broker...");
@@ -410,12 +414,11 @@ void handle_start_command(const char *payload) {
 
   cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
   cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
-  cJSON *state = cJSON_GetObjectItemCaseSensitive(json, "state");
   cJSON *image_url = cJSON_GetObjectItemCaseSensitive(json, "image_url");
   cJSON *file = cJSON_GetObjectItemCaseSensitive(json, "file");
   cJSON *inputs = cJSON_GetObjectItemCaseSensitive(json, "inputs");
 
-  if (!cJSON_IsString(id) || !cJSON_IsString(name) || !cJSON_IsString(state)) {
+  if (!cJSON_IsString(id) || !cJSON_IsString(name)) {
     LOG_ERR("Invalid or missing mandatory fields in JSON payload");
     cJSON_Delete(json);
     return;
@@ -423,7 +426,6 @@ void handle_start_command(const char *payload) {
 
   strncpy(t.id, id->valuestring, MAX_ID_LEN - 1);
   strncpy(t.name, name->valuestring, MAX_NAME_LEN - 1);
-  strncpy(t.state, state->valuestring, MAX_STATE_LEN - 1);
 
   if (cJSON_IsString(image_url)) {
     strncpy(t.image_url, image_url->valuestring, MAX_URL_LEN - 1);
@@ -444,7 +446,7 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  LOG_INF("Starting task: ID=%s, Name=%s, State=%s", t.id, t.name, t.state);
+  LOG_INF("Starting task: ID=%s, Name=%s", t.id, t.name);
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
