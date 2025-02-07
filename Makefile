@@ -35,13 +35,17 @@ lint:
 	golangci-lint run  --config .golangci.yaml
 
 start-supermq:
-	docker compose -f docker/compose.yaml up -d
+	docker compose -f docker/compose.yaml --env-file docker/.env up -d
 
 stop-supermq:
-	docker compose -f docker/compose.yaml down
+	docker compose -f docker/compose.yaml --env-file docker/.env down
 
 $(EXAMPLES):
-	GOOS=js GOARCH=wasm tinygo build -o build/$@.wasm -target wasi examples/$@/$@.go
+	GOOS=js GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -gc=leaking -o build/$@.wasm -target wasi examples/$@/$@.go
+
+addition-wat:
+	@wat2wasm examples/addition-wat/addition.wat -o build/addition-wat.wasm
+	@base64 build/addition-wat.wasm > build/addition-wat.b64
 
 help:
 	@echo "Usage: make <target>"
