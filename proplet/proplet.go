@@ -42,3 +42,25 @@ type PropletPage struct {
 	Total    uint64    `json:"total"`
 	Proplets []Proplet `json:"proplets"`
 }
+
+func FilterActiveProplets(proplets []Proplet) []Proplet {
+	var activeProplets []Proplet
+	for _, p := range proplets{
+		p.setAlive()
+		if p.Alive{
+			activeProplets = append(activeProplets, p)
+		}
+	}
+	return activeProplets
+}
+
+func FilterInactiveProplets(proplets []Proplet) []Proplet {
+	var inactiveProplets []Proplet
+	for _,p :=range proplets{
+		p.setAlive()
+		if !p.Alive{
+			inactiveProplets = append(inactiveProplets, p)
+		}
+	}
+	return inactiveProplets
+}
