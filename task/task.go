@@ -54,7 +54,7 @@ type TaskPage struct {
 
 func FilterRunningTasks(tasks []Task) []Task{
 	var runningTasks []Task
-	for_,t :=range tasks{
+	for _, t := range tasks {
 		if t.State == Running{
 			runningTasks = append(runningTasks, t)
 		}
@@ -64,7 +64,7 @@ func FilterRunningTasks(tasks []Task) []Task{
 
 func FilterCompletedTasks(tasks []Task) []Task{
 	var completedTasks []Task
-	for_,t :=range tasks{
+	for _, t := range tasks {
 		if t.State == Completed{
 			completedTasks = append(completedTasks, t)
 		}
@@ -74,7 +74,7 @@ func FilterCompletedTasks(tasks []Task) []Task{
 
 func FilterFailedTasks(tasks []Task) []Task{
 	var failedTasks []Task
-	for_,t :=range tasks{
+	for _, t := range tasks {
 		if t.State == Failed{
 			failedTasks = append(failedTasks, t)
 		}
@@ -84,7 +84,7 @@ func FilterFailedTasks(tasks []Task) []Task{
 
 func FilterScheduledTasks(tasks []Task) []Task{
 	var scheduledTasks []Task
-	for_,t :=range tasks{
+	for _, t := range tasks {
 		if t.State == Scheduled{
 			scheduledTasks = append(scheduledTasks, t)
 		}
