@@ -51,6 +51,7 @@ func FilterActiveProplets(proplets []Proplet) []Proplet {
 			activeProplets = append(activeProplets, p)
 		}
 	}
+
 	return activeProplets
 }
 
@@ -62,5 +63,6 @@ func FilterInactiveProplets(proplets []Proplet) []Proplet {
 			inactiveProplets = append(inactiveProplets, p)
 		}
 	}
+	
 	return inactiveProplets
 }

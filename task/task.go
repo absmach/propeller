@@ -59,6 +59,7 @@ func FilterRunningTasks(tasks []Task) []Task{
 			runningTasks = append(runningTasks, t)
 		}
 	}
+	
 	return runningTasks
 }
 
@@ -69,6 +70,7 @@ func FilterCompletedTasks(tasks []Task) []Task{
 			completedTasks = append(completedTasks, t)
 		}
 	}
+
 	return completedTasks
 }
 
@@ -79,6 +81,7 @@ func FilterFailedTasks(tasks []Task) []Task{
 			failedTasks = append(failedTasks, t)
 		}
 	}
+
 	return failedTasks
 }
 
@@ -89,5 +92,6 @@ func FilterScheduledTasks(tasks []Task) []Task{
 			scheduledTasks = append(scheduledTasks, t)
 		}
 	}
+
 	return scheduledTasks
 }
