@@ -64,7 +64,6 @@ func FilterRunningTasks(tasks []Task) []Task {
 	return runningTasks
 }
 
-
 func FilterCompletedTasks(tasks []Task) []Task {
 	var completedTasks []Task
 	for i := range tasks {
@@ -76,7 +75,6 @@ func FilterCompletedTasks(tasks []Task) []Task {
 
 	return completedTasks
 }
-
 
 func FilterFailedTasks(tasks []Task) []Task {
 	var failedTasks []Task
@@ -90,7 +88,6 @@ func FilterFailedTasks(tasks []Task) []Task {
 	return failedTasks
 }
 
-
 func FilterScheduledTasks(tasks []Task) []Task {
 	var scheduledTasks []Task
 	for i := range tasks {
@@ -102,4 +99,3 @@ func FilterScheduledTasks(tasks []Task) []Task {
 
 	return scheduledTasks
 }
-
