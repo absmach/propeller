@@ -52,46 +52,54 @@ type TaskPage struct {
 	Tasks  []Task `json:"tasks"`
 }
 
-func FilterRunningTasks(tasks []Task) []Task{
+func FilterRunningTasks(tasks []Task) []Task {
 	var runningTasks []Task
-	for _, t := range tasks {
-		if t.State == Running{
-			runningTasks = append(runningTasks, t)
+	for i := range tasks {
+		t := &tasks[i]
+		if t.State == Running {
+			runningTasks = append(runningTasks, *t)
 		}
 	}
-	
+
 	return runningTasks
 }
 
-func FilterCompletedTasks(tasks []Task) []Task{
+
+func FilterCompletedTasks(tasks []Task) []Task {
 	var completedTasks []Task
-	for _, t := range tasks {
-		if t.State == Completed{
-			completedTasks = append(completedTasks, t)
+	for i := range tasks {
+		t := &tasks[i]
+		if t.State == Completed {
+			completedTasks = append(completedTasks, *t)
 		}
 	}
 
 	return completedTasks
 }
 
-func FilterFailedTasks(tasks []Task) []Task{
+
+func FilterFailedTasks(tasks []Task) []Task {
 	var failedTasks []Task
-	for _, t := range tasks {
-		if t.State == Failed{
-			failedTasks = append(failedTasks, t)
+	for i := range tasks {
+		t := &tasks[i]
+		if t.State == Failed {
+			failedTasks = append(failedTasks, *t)
 		}
 	}
 
 	return failedTasks
 }
 
-func FilterScheduledTasks(tasks []Task) []Task{
+
+func FilterScheduledTasks(tasks []Task) []Task {
 	var scheduledTasks []Task
-	for _, t := range tasks {
-		if t.State == Scheduled{
-			scheduledTasks = append(scheduledTasks, t)
+	for i := range tasks {
+		t := &tasks[i]
+		if t.State == Scheduled {
+			scheduledTasks = append(scheduledTasks, *t)
 		}
 	}
 
 	return scheduledTasks
 }
+
