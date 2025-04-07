@@ -46,7 +46,7 @@ type PropletPage struct {
 func FilterActiveProplets(proplets []Proplet) []Proplet {
 	var activeProplets []Proplet
 	for _, p := range proplets{
-		p.setAlive()
+		p.SetAlive()
 		if p.Alive{
 			activeProplets = append(activeProplets, p)
 		}
@@ -57,7 +57,7 @@ func FilterActiveProplets(proplets []Proplet) []Proplet {
 func FilterInactiveProplets(proplets []Proplet) []Proplet {
 	var inactiveProplets []Proplet
 	for _,p :=range proplets{
-		p.setAlive()
+		p.SetAlive()
 		if !p.Alive{
 			inactiveProplets = append(inactiveProplets, p)
 		}
