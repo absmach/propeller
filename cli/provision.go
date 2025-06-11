@@ -41,7 +41,7 @@ var provisionCmd = &cobra.Command{
 			err                error
 			token              smqSDK.Token
 			domainName         string
-			domainAlias        string
+			domainRoute        string
 			domainPermission   string
 			domain             smqSDK.Domain
 			managerClientName  string
@@ -76,7 +76,7 @@ var provisionCmd = &cobra.Command{
 							Password: password,
 						}
 
-						token, err = smqsdk.CreateToken(u)
+						token, err = smqsdk.CreateToken(cmd.Context(), u)
 						if err != nil {
 							return errors.Wrap(errFailedToCreateToken, err)
 						}
@@ -89,8 +89,8 @@ var provisionCmd = &cobra.Command{
 					Title("Enter your domain name(leave empty to auto generate)").
 					Value(&domainName),
 				huh.NewInput().
-					Title("Enter your domain alias(leave empty to auto generate)").
-					Value(&domainAlias),
+					Title("Enter your domain route(leave empty to auto generate)").
+					Value(&domainRoute),
 				huh.NewSelect[string]().
 					Title("Select your domain permission").
 					Options(
@@ -103,15 +103,15 @@ var provisionCmd = &cobra.Command{
 						if domainName == "" {
 							domainName = namegen.Generate()
 						}
-						if domainAlias == "" {
-							domainAlias = strings.ToLower(domainName)
+						if domainRoute == "" {
+							domainRoute = strings.ToLower(domainName)
 						}
 						domain = smqSDK.Domain{
 							Name:       domainName,
-							Alias:      domainAlias,
+							Route:      domainRoute,
 							Permission: domainPermission,
 						}
-						domain, err = smqsdk.CreateDomain(domain, token.AccessToken)
+						domain, err = smqsdk.CreateDomain(cmd.Context(), domain, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedToCreateDomain, err)
 						}
@@ -132,7 +132,7 @@ var provisionCmd = &cobra.Command{
 							Tags:   []string{"manager", "propeller"},
 							Status: "enabled",
 						}
-						managerClient, err = smqsdk.CreateClient(managerClient, domain.ID, token.AccessToken)
+						managerClient, err = smqsdk.CreateClient(cmd.Context(), managerClient, domain.ID, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedClientCreation, err)
 						}
@@ -153,7 +153,7 @@ var provisionCmd = &cobra.Command{
 							Tags:   []string{"proplet", "propeller"},
 							Status: "enabled",
 						}
-						propletClient, err = smqsdk.CreateClient(propletClient, domain.ID, token.AccessToken)
+						propletClient, err = smqsdk.CreateClient(cmd.Context(), propletClient, domain.ID, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedClientCreation, err)
 						}
@@ -172,7 +172,7 @@ var provisionCmd = &cobra.Command{
 							Name:   managerChannelName,
 							Status: "enabled",
 						}
-						managerChannel, err = smqsdk.CreateChannel(managerChannel, domain.ID, token.AccessToken)
+						managerChannel, err = smqsdk.CreateChannel(cmd.Context(), managerChannel, domain.ID, token.AccessToken)
 						if err != nil {
 							return errors.Wrap(errFailedChannelCreation, err)
 						}
@@ -182,7 +182,7 @@ var provisionCmd = &cobra.Command{
 							ChannelIDs: []string{managerChannel.ID},
 							Types:      []string{"publish", "subscribe"},
 						}
-						if err = smqsdk.Connect(managerConns, domain.ID, token.AccessToken); err != nil {
+						if err = smqsdk.Connect(cmd.Context(), managerConns, domain.ID, token.AccessToken); err != nil {
 							return errors.Wrap(errFailedConnectionCreation, err)
 						}
 
@@ -200,25 +200,31 @@ var provisionCmd = &cobra.Command{
 		configContent := fmt.Sprintf(`# SuperMQ Configuration
 
 [manager]
+domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"
 
 [proplet]
+domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"
 
 [proxy]
+domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"`,
+			domain.ID,
 			managerClient.ID,
 			managerClient.Credentials.Secret,
 			managerChannel.ID,
+			domain.ID,
 			propletClient.ID,
 			propletClient.Credentials.Secret,
 			managerChannel.ID,
+			domain.ID,
 			propletClient.ID,
 			propletClient.Credentials.Secret,
 			managerChannel.ID,

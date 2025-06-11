@@ -40,6 +40,7 @@ type config struct {
 	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
 	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
 	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
+	DomainID    string        `env:"MANAGER_DOMAIN_ID"`
 	ChannelID   string        `env:"MANAGER_CHANNEL_ID"`
 	ClientID    string        `env:"MANAGER_CLIENT_ID"`
 	ClientKey   string        `env:"MANAGER_CLIENT_KEY"`
@@ -69,6 +70,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to load TOML configuration: %s", err.Error())
 			}
+			cfg.DomainID = conf.Manager.DomainID
 			cfg.ClientID = conf.Manager.ClientID
 			cfg.ClientKey = conf.Manager.ClientKey
 			cfg.ChannelID = conf.Manager.ChannelID
@@ -88,8 +90,8 @@ func main() {
 	slog.SetDefault(logger)
 
 	var tp trace.TracerProvider
-	switch {
-	case cfg.OTELURL == (url.URL{}):
+	switch cfg.OTELURL {
+	case url.URL{}:
 		tp = noop.NewTracerProvider()
 	default:
 		sdktp, err := jaeger.NewProvider(ctx, svcName, cfg.OTELURL, "", cfg.TraceRatio)
@@ -107,7 +109,7 @@ func main() {
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ClientID, cfg.ClientKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
 
@@ -120,6 +122,7 @@ func main() {
 		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
+		cfg.DomainID,
 		cfg.ChannelID,
 		logger,
 	)

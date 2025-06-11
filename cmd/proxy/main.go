@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -9,8 +10,10 @@ import (
 	"time"
 
 	"github.com/absmach/propeller"
+	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proxy"
 	"github.com/caarlos0/env/v11"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,12 +24,14 @@ const (
 
 type config struct {
 	LogLevel    string        `env:"PROXY_LOG_LEVEL"    envDefault:"info"`
+	InstanceID  string        `env:"PROXY_INSTANCE_ID"`
 	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
 	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT" envDefault:"30s"`
-	ChannelID   string        `env:"PROPLET_CHANNEL_ID"`
-	ClientID    string        `env:"PROPLET_CLIENT_ID"`
-	ClientKey   string        `env:"PROPLET_CLIENT_KEY"`
-
+	MQTTQoS     byte          `env:"PROXY_MQTT_QOS"     envDefault:"2"`
+	DomainID    string        `env:"PROXY_DOMAIN_ID"`
+	ChannelID   string        `env:"PROXY_CHANNEL_ID"`
+	ClientID    string        `env:"PROXY_CLIENT_ID"`
+	ClientKey   string        `env:"PROXY_CLIENT_KEY"`
 	// HTTP Registry configuration
 	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
 	Authenticate bool   `env:"PROXY_AUTHENTICATE"          envDefault:"false"`
@@ -44,6 +49,10 @@ func main() {
 		log.Fatalf("failed to load configuration : %s", err.Error())
 	}
 
+	if cfg.InstanceID == "" {
+		cfg.InstanceID = uuid.NewString()
+	}
+
 	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
 		_, err := os.Stat(configPath)
 		switch err {
@@ -52,6 +61,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to load TOML configuration: %s", err.Error())
 			}
+			cfg.DomainID = conf.Proxy.DomainID
 			cfg.ClientID = conf.Proxy.ClientID
 			cfg.ClientKey = conf.Proxy.ClientKey
 			cfg.ChannelID = conf.Proxy.ChannelID
@@ -70,12 +80,17 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	mqttCfg := proxy.MQTTProxyConfig{
-		BrokerURL: cfg.MQTTAddress,
-		Password:  cfg.ClientKey,
-		PropletID: cfg.ClientID,
-		ChannelID: cfg.ChannelID,
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	if err != nil {
+		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
+
+		return
 	}
+	defer func() {
+		if err := mqttPubSub.Disconnect(ctx); err != nil {
+			slog.Error("failed to disconnect MQTT client", "error", err)
+		}
+	}()
 
 	httpCfg := proxy.HTTPProxyConfig{
 		ChunkSize:    cfg.ChunkSize,
@@ -88,7 +103,7 @@ func main() {
 
 	logger.Info("successfully initialized MQTT and HTTP config")
 
-	service, err := proxy.NewService(ctx, &mqttCfg, &httpCfg, logger)
+	service, err := proxy.NewService(ctx, mqttPubSub, cfg.DomainID, cfg.ChannelID, httpCfg, logger)
 	if err != nil {
 		logger.Error("failed to create proxy service", slog.Any("error", err))
 
@@ -97,37 +112,41 @@ func main() {
 
 	logger.Info("starting proxy service")
 
-	if err := start(ctx, g, service); err != nil {
-		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
-	}
-}
+	if err := mqttPubSub.Subscribe(ctx, fmt.Sprintf(proxy.SubTopic, cfg.DomainID, cfg.ChannelID), handle(logger, service.ContainerChan())); err != nil {
+		logger.Error("failed to subscribe to container requests", slog.Any("error", err))
 
-func start(ctx context.Context, g *errgroup.Group, s *proxy.ProxyService) error {
-	if err := s.MQTTClient().Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect to MQTT broker: %w", err)
-	}
-
-	slog.Info("successfully connected to broker")
-
-	defer func() {
-		if err := s.MQTTClient().Disconnect(ctx); err != nil {
-			slog.Error("failed to disconnect MQTT client", "error", err)
-		}
-	}()
-
-	if err := s.MQTTClient().Subscribe(ctx, s.ContainerChan()); err != nil {
-		return fmt.Errorf("failed to subscribe to container requests: %w", err)
+		return
 	}
 
 	slog.Info("successfully subscribed to topic")
 
 	g.Go(func() error {
-		return s.StreamHTTP(ctx)
+		return service.StreamHTTP(ctx)
 	})
 
 	g.Go(func() error {
-		return s.StreamMQTT(ctx)
+		return service.StreamMQTT(ctx)
 	})
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
+	}
+}
+
+func handle(logger *slog.Logger, containerChan chan<- string) func(topic string, msg map[string]interface{}) error {
+	return func(topic string, msg map[string]interface{}) error {
+		appName, ok := msg["app_name"].(string)
+		if !ok {
+			return errors.New("failed to unmarshal app_name")
+		}
+
+		select {
+		case containerChan <- appName:
+			logger.Info("Received container request", slog.String("app_name", appName))
+		default:
+			logger.Error("Channel full, dropping container request")
+		}
+
+		return nil
+	}
 }

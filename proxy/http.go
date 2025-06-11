@@ -29,6 +29,40 @@ type HTTPProxyConfig struct {
 	RegistryURL  string
 }
 
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
+	repo, err := remote.NewRepository(containerPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
+	}
+
+	c.setupAuthentication(repo)
+
+	manifest, err := c.fetchManifest(ctx, repo, containerPath)
+	if err != nil {
+		return nil, err
+	}
+
+	largestLayer, err := findLargestLayer(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find layer for %s: %w", containerPath, err)
+	}
+
+	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
+
+	layerReader, err := repo.Fetch(ctx, largestLayer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerPath, err)
+	}
+	defer layerReader.Close()
+
+	data, err := io.ReadAll(layerReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
+	}
+
+	return createChunks(data, containerPath, chunkSize), nil
+}
+
 func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
 	if !c.Authenticate {
 		return
@@ -120,38 +154,4 @@ func createChunks(data []byte, containerPath string, chunkSize int) []proplet.Ch
 	}
 
 	return chunks
-}
-
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
-	repo, err := remote.NewRepository(containerPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
-	}
-
-	c.setupAuthentication(repo)
-
-	manifest, err := c.fetchManifest(ctx, repo, containerPath)
-	if err != nil {
-		return nil, err
-	}
-
-	largestLayer, err := findLargestLayer(manifest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find layer for %s: %w", containerPath, err)
-	}
-
-	log.Printf("Container size: %d bytes (%.2f MB)", largestLayer.Size, float64(largestLayer.Size)/size)
-
-	layerReader, err := repo.Fetch(ctx, largestLayer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch layer for %s: %w", containerPath, err)
-	}
-	defer layerReader.Close()
-
-	data, err := io.ReadAll(layerReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
-	}
-
-	return createChunks(data, containerPath, chunkSize), nil
 }

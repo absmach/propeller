@@ -17,14 +17,16 @@ type wazeroRuntime struct {
 	mutex     sync.Mutex
 	runtimes  map[string]wazero.Runtime
 	pubsub    mqtt.PubSub
+	domainID  string
 	channelID string
 	logger    *slog.Logger
 }
 
-func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID string) proplet.Runtime {
+func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID string) proplet.Runtime {
 	return &wazeroRuntime{
 		runtimes:  make(map[string]wazero.Runtime),
 		pubsub:    pubsub,
+		domainID:  domainID,
 		channelID: channelID,
 		logger:    logger,
 	}
@@ -68,7 +70,7 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs
 			"results": results,
 		}
 
-		topic := fmt.Sprintf(proplet.ResultsTopic, w.channelID)
+		topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
 		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
 			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
 

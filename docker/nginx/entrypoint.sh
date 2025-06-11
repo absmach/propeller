@@ -1,4 +1,6 @@
 #!/bin/ash
+# Copyright (c) Abstract Machines
+# SPDX-License-Identifier: Apache-2.0
 
 if [ -z "$SMQ_MQTT_CLUSTER" ]
 then
@@ -11,6 +13,7 @@ fi
 
 envsubst '
     ${SMQ_NGINX_SERVER_NAME}
+    ${SMQ_AUTH_HTTP_PORT}
     ${SMQ_DOMAINS_HTTP_PORT}
     ${SMQ_GROUPS_HTTP_PORT}
     ${SMQ_USERS_HTTP_PORT}
@@ -20,7 +23,6 @@ envsubst '
     ${SMQ_HTTP_ADAPTER_PORT}
     ${SMQ_NGINX_MQTT_PORT}
     ${SMQ_NGINX_MQTTS_PORT}
-    ${SMQ_INVITATIONS_HTTP_PORT}
     ${SMQ_WS_ADAPTER_HTTP_PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
 exec nginx -g "daemon off;"

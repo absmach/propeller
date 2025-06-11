@@ -16,14 +16,16 @@ import (
 
 type hostRuntime struct {
 	pubsub      mqtt.PubSub
+	domainID    string
 	channelID   string
 	logger      *slog.Logger
 	wasmRuntime string
 }
 
-func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, channelID, wasmRuntime string) proplet.Runtime {
+func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID, wasmRuntime string) proplet.Runtime {
 	return &hostRuntime{
 		pubsub:      pubsub,
+		domainID:    domainID,
 		channelID:   channelID,
 		logger:      logger,
 		wasmRuntime: wasmRuntime,
@@ -76,7 +78,7 @@ func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs [
 			}
 		}
 
-		topic := fmt.Sprintf(proplet.ResultsTopic, w.channelID)
+		topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
 		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
 			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
 

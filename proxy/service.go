@@ -5,36 +5,40 @@ import (
 	"fmt"
 	"log/slog"
 
+	pkgmqtt "github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
 )
 
-const chunkBuffer = 10
+const (
+	chunkBuffer = 10
+
+	connTimeout    = 10
+	reconnTimeout  = 1
+	disconnTimeout = 250
+	PubTopic       = "m/%s/c/%s/messages/registry/server"
+	SubTopic       = "m/%s/c/%s/messages/registry/proplet"
+)
 
 type ProxyService struct {
-	orasconfig    *HTTPProxyConfig
-	mqttClient    *RegistryClient
+	orasconfig    HTTPProxyConfig
+	pubsub        pkgmqtt.PubSub
+	domainID      string
+	channelID     string
 	logger        *slog.Logger
 	containerChan chan string
 	dataChan      chan proplet.ChunkPayload
 }
 
-func NewService(ctx context.Context, mqttCfg *MQTTProxyConfig, httpCfg *HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
-	mqttClient, err := NewMQTTClient(mqttCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize MQTT client: %w", err)
-	}
-
+func NewService(ctx context.Context, pubsub pkgmqtt.PubSub, domainID, channelID string, httpCfg HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
 	return &ProxyService{
 		orasconfig:    httpCfg,
-		mqttClient:    mqttClient,
+		pubsub:        pubsub,
+		domainID:      domainID,
+		channelID:     channelID,
 		logger:        logger,
 		containerChan: make(chan string, 1),
 		dataChan:      make(chan proplet.ChunkPayload, chunkBuffer),
 	}, nil
-}
-
-func (s *ProxyService) MQTTClient() *RegistryClient {
-	return s.mqttClient
 }
 
 func (s *ProxyService) ContainerChan() chan string {
@@ -80,7 +84,7 @@ func (s *ProxyService) StreamMQTT(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case chunk := <-s.dataChan:
-			if err := s.mqttClient.PublishContainer(ctx, chunk); err != nil {
+			if err := s.pubsub.Publish(ctx, fmt.Sprintf(PubTopic, s.domainID, s.channelID), chunk); err != nil {
 				s.logger.Error("failed to publish container chunk",
 					slog.Any("error", err),
 					slog.Int("chunk", chunk.ChunkIdx),

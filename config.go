@@ -14,18 +14,21 @@ type Config struct {
 }
 
 type ManagerConfig struct {
+	DomainID  string `toml:"domain_id"`
 	ClientID  string `toml:"client_id"`
 	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }
 
 type PropletConfig struct {
+	DomainID  string `toml:"domain_id"`
 	ClientID  string `toml:"client_id"`
 	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`
 }
 
 type ProxyConfig struct {
+	DomainID  string `toml:"domain_id"`
 	ClientID  string `toml:"client_id"`
 	ClientKey string `toml:"client_key"`
 	ChannelID string `toml:"channel_id"`

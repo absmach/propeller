@@ -23,19 +23,19 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.x
+          go-version: 1.24.x
           cache-dependency-path: "go.sum"
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - name: Run linters
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.61.0
+          version: v2.1.6
           args: --config ./.golangci.yaml
 
       - name: Install TinyGo
         run: |
-          wget https://github.com/tinygo-org/tinygo/releases/download/v0.35.0/tinygo_0.35.0_amd64.deb
-          sudo dpkg -i tinygo_0.35.0_amd64.deb
+          wget https://github.com/tinygo-org/tinygo/releases/download/v0.37.0/tinygo_0.37.0_amd64.deb
+          sudo dpkg -i tinygo_0.37.0_amd64.deb
 
       - name: Build proxy
         run: |
