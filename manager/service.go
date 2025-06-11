@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	baseTopic = "channels/%s/messages"
+	baseTopic = "m/%s/c/%s/messages"
 	namegen   = namegenerator.NewGenerator()
 )
 
@@ -41,14 +41,14 @@ type service struct {
 func NewService(
 	tasksDB, propletsDB, taskPropletDB storage.Storage,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
-	channelID string, logger *slog.Logger,
+	domainID, channelID string, logger *slog.Logger,
 ) Service {
 	return &service{
 		tasksDB:       tasksDB,
 		propletsDB:    propletsDB,
 		taskPropletDB: taskPropletDB,
 		scheduler:     s,
-		baseTopic:     fmt.Sprintf(baseTopic, channelID),
+		baseTopic:     fmt.Sprintf(baseTopic, domainID, channelID),
 		pubsub:        pubsub,
 		logger:        logger,
 	}

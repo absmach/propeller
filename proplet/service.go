@@ -20,16 +20,16 @@ const (
 )
 
 var (
-	RegistryAckTopicTemplate  = "channels/%s/messages/control/manager/registry"
-	aliveTopicTemplate        = "channels/%s/messages/control/proplet/alive"
-	discoveryTopicTemplate    = "channels/%s/messages/control/proplet/create"
-	startTopicTemplate        = "channels/%s/messages/control/manager/start"
-	stopTopicTemplate         = "channels/%s/messages/control/manager/stop"
-	registryResponseTopic     = "channels/%s/messages/registry/server"
-	fetchRequestTopicTemplate = "channels/%s/messages/registry/proplet"
+	aliveTopicTemplate        = "m/%s/c/%s/messages/control/proplet/alive"
+	discoveryTopicTemplate    = "m/%s/c/%s/messages/control/proplet/create"
+	startTopicTemplate        = "m/%s/c/%s/messages/control/manager/start"
+	stopTopicTemplate         = "m/%s/c/%s/messages/control/manager/stop"
+	registryResponseTopic     = "m/%s/c/%s/messages/registry/server"
+	fetchRequestTopicTemplate = "m/%s/c/%s/messages/registry/proplet"
 )
 
 type PropletService struct {
+	domainID           string
 	channelID          string
 	clientID           string
 	clientKey          string
@@ -49,17 +49,18 @@ type ChunkPayload struct {
 	Data        []byte `json:"data"`
 }
 
-func NewService(ctx context.Context, channelID, clientID, clientKey string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
-	topic := fmt.Sprintf(discoveryTopicTemplate, channelID)
+func NewService(ctx context.Context, domainID, channelID, clientID, clientKey string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+	topic := fmt.Sprintf(discoveryTopicTemplate, domainID, channelID)
 	payload := map[string]interface{}{
-		"proplet_id":    clientID,
-		"mg_channel_id": channelID,
+		"proplet_id":     clientID,
+		"smq_channel_id": channelID,
 	}
 	if err := pubsub.Publish(ctx, topic, payload); err != nil {
 		return nil, errors.Join(errors.New("failed to publish discovery"), err)
 	}
 
 	p := &PropletService{
+		domainID:           domainID,
 		channelID:          channelID,
 		clientID:           clientID,
 		clientKey:          clientKey,
@@ -76,6 +77,28 @@ func NewService(ctx context.Context, channelID, clientID, clientKey string, live
 	return p, nil
 }
 
+func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
+	topic := fmt.Sprintf(startTopicTemplate, p.domainID, p.channelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleStartCommand(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to start topic: %w", err)
+	}
+
+	topic = fmt.Sprintf(stopTopicTemplate, p.domainID, p.channelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleStopCommand(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to stop topic: %w", err)
+	}
+
+	topic = fmt.Sprintf(registryResponseTopic, p.domainID, p.channelID)
+	if err := p.pubsub.Subscribe(ctx, topic, p.handleChunk(ctx)); err != nil {
+		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
+	}
+
+	logger.Info("Proplet service is running.")
+	<-ctx.Done()
+
+	return nil
+}
+
 func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 	ticker := time.NewTicker(p.livelinessInterval)
 	defer ticker.Stop()
@@ -87,11 +110,11 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 
 			return
 		case <-ticker.C:
-			topic := fmt.Sprintf(aliveTopicTemplate, p.channelID)
+			topic := fmt.Sprintf(aliveTopicTemplate, p.domainID, p.channelID)
 			payload := map[string]interface{}{
-				"status":        "alive",
-				"proplet_id":    p.clientID,
-				"mg_channel_id": p.channelID,
+				"status":         "alive",
+				"proplet_id":     p.clientID,
+				"smq_channel_id": p.channelID,
 			}
 
 			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
@@ -101,28 +124,6 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 			p.logger.Debug("Published liveliness message", slog.String("topic", topic))
 		}
 	}
-}
-
-func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
-	topic := fmt.Sprintf(startTopicTemplate, p.channelID)
-	if err := p.pubsub.Subscribe(ctx, topic, p.handleStartCommand(ctx)); err != nil {
-		return fmt.Errorf("failed to subscribe to start topic: %w", err)
-	}
-
-	topic = fmt.Sprintf(stopTopicTemplate, p.channelID)
-	if err := p.pubsub.Subscribe(ctx, topic, p.handleStopCommand(ctx)); err != nil {
-		return fmt.Errorf("failed to subscribe to stop topic: %w", err)
-	}
-
-	topic = fmt.Sprintf(registryResponseTopic, p.channelID)
-	if err := p.pubsub.Subscribe(ctx, topic, p.handleChunk(ctx)); err != nil {
-		return fmt.Errorf("failed to subscribe to registry topics: %w", err)
-	}
-
-	logger.Info("Proplet service is running.")
-	<-ctx.Done()
-
-	return nil
 }
 
 func (p *PropletService) handleStartCommand(ctx context.Context) func(topic string, msg map[string]interface{}) error {
@@ -162,7 +163,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		pl := map[string]interface{}{
 			"app_name": req.imageURL,
 		}
-		tp := fmt.Sprintf(fetchRequestTopicTemplate, p.channelID)
+		tp := fmt.Sprintf(fetchRequestTopicTemplate, p.domainID, p.channelID)
 		if err := p.pubsub.Publish(ctx, tp, pl); err != nil {
 			return err
 		}

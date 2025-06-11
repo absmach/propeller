@@ -147,7 +147,7 @@ func decodeUploadTaskFileReq(_ context.Context, r *http.Request) (interface{}, e
 		return nil, err
 	}
 	req.File = data
-	req.Task.ID = chi.URLParam(r, "taskID")
+	req.ID = chi.URLParam(r, "taskID")
 
 	return req, nil
 }
@@ -160,7 +160,7 @@ func decodeUpdateTaskReq(_ context.Context, r *http.Request) (interface{}, error
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)
 	}
-	req.Task.ID = chi.URLParam(r, "taskID")
+	req.ID = chi.URLParam(r, "taskID")
 
 	return req, nil
 }

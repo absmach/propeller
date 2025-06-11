@@ -30,6 +30,7 @@ type config struct {
 	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT"          envDefault:"30s"`
 	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"              envDefault:"2"`
 	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"   envDefault:"10s"`
+	DomainID            string        `env:"PROPLET_DOMAIN_ID"`
 	ChannelID           string        `env:"PROPLET_CHANNEL_ID"`
 	ClientID            string        `env:"PROPLET_CLIIENT_ID"`
 	ClientKey           string        `env:"PROPLET_CLIIENT_KEY"`
@@ -57,6 +58,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to load TOML configuration: %s", err.Error())
 			}
+			cfg.DomainID = conf.Proplet.DomainID
 			cfg.ClientID = conf.Proplet.ClientID
 			cfg.ClientKey = conf.Proplet.ClientKey
 			cfg.ChannelID = conf.Proplet.ChannelID
@@ -75,7 +77,7 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
 		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
 
@@ -85,12 +87,12 @@ func main() {
 	var runtime proplet.Runtime
 	switch cfg.ExternalWasmRuntime != "" {
 	case true:
-		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.ChannelID, cfg.ExternalWasmRuntime)
+		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.DomainID, cfg.ChannelID, cfg.ExternalWasmRuntime)
 	default:
-		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.ChannelID)
+		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.DomainID, cfg.ChannelID)
 	}
 
-	service, err := proplet.NewService(ctx, cfg.ChannelID, cfg.ClientID, cfg.ClientKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
+	service, err := proplet.NewService(ctx, cfg.DomainID, cfg.ChannelID, cfg.ClientID, cfg.ClientKey, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 

@@ -14,8 +14,10 @@ static struct k_sem wifi_connected_sem;
 #define MAC2STR(mac) mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
 
 static void wifi_event_handler(struct net_mgmt_event_callback *cb,
-                               uint32_t mgmt_event, struct net_if *iface) {
-  switch (mgmt_event) {
+                               uint32_t mgmt_event, struct net_if *iface)
+{
+  switch (mgmt_event)
+  {
   case NET_EVENT_WIFI_CONNECT_RESULT:
     LOG_INF("Connected to Wi-Fi");
     k_sem_give(&wifi_connected_sem);
@@ -29,12 +31,14 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb,
   case NET_EVENT_WIFI_AP_DISABLE_RESULT:
     LOG_INF("AP Mode disabled");
     break;
-  case NET_EVENT_WIFI_AP_STA_CONNECTED: {
+  case NET_EVENT_WIFI_AP_STA_CONNECTED:
+  {
     struct wifi_ap_sta_info *sta_info = (struct wifi_ap_sta_info *)cb->info;
     LOG_INF("Station " MACSTR " connected", MAC2STR(sta_info->mac));
     break;
   }
-  case NET_EVENT_WIFI_AP_STA_DISCONNECTED: {
+  case NET_EVENT_WIFI_AP_STA_DISCONNECTED:
+  {
     struct wifi_ap_sta_info *sta_info = (struct wifi_ap_sta_info *)cb->info;
     LOG_INF("Station " MACSTR " disconnected", MAC2STR(sta_info->mac));
     break;
@@ -45,15 +49,18 @@ static void wifi_event_handler(struct net_mgmt_event_callback *cb,
   }
 }
 
-static void enable_dhcpv4_server(const char *ip_address, const char *netmask) {
+static void enable_dhcpv4_server(const char *ip_address, const char *netmask)
+{
   struct in_addr addr, netmask_addr;
 
-  if (net_addr_pton(AF_INET, ip_address, &addr) != 0) {
+  if (net_addr_pton(AF_INET, ip_address, &addr) != 0)
+  {
     LOG_ERR("Invalid IP address: %s", ip_address);
     return;
   }
 
-  if (net_addr_pton(AF_INET, netmask, &netmask_addr) != 0) {
+  if (net_addr_pton(AF_INET, netmask, &netmask_addr) != 0)
+  {
     LOG_ERR("Invalid netmask: %s", netmask);
     return;
   }
@@ -63,14 +70,16 @@ static void enable_dhcpv4_server(const char *ip_address, const char *netmask) {
   net_if_ipv4_set_netmask(ap_iface, &netmask_addr);
 
   addr.s4_addr[3] += 10; /* Adjust DHCP pool starting address */
-  if (net_dhcpv4_server_start(ap_iface, &addr) != 0) {
+  if (net_dhcpv4_server_start(ap_iface, &addr) != 0)
+  {
     LOG_ERR("Failed to start DHCPv4 server");
   }
 
   LOG_INF("DHCPv4 server started");
 }
 
-void wifi_manager_init(void) {
+void wifi_manager_init(void)
+{
   k_sem_init(&wifi_connected_sem, 0, 1);
 
   net_mgmt_init_event_callback(
@@ -84,8 +93,10 @@ void wifi_manager_init(void) {
   sta_iface = net_if_get_wifi_sta();
 }
 
-int wifi_manager_connect(const char *ssid, const char *psk) {
-  if (!sta_iface) {
+int wifi_manager_connect(const char *ssid, const char *psk)
+{
+  if (!sta_iface)
+  {
     LOG_ERR("STA interface not initialized");
     return -EIO;
   }
@@ -100,12 +111,14 @@ int wifi_manager_connect(const char *ssid, const char *psk) {
       .band = WIFI_FREQ_BAND_2_4_GHZ,
   };
 
-  while (1) {
+  while (1)
+  {
     LOG_INF("Attempting to connect to Wi-Fi...");
 
     int ret =
         net_mgmt(NET_REQUEST_WIFI_CONNECT, sta_iface, &params, sizeof(params));
-    if (ret == 0) {
+    if (ret == 0)
+    {
       LOG_DBG("Connection request sent, waiting for confirmation...");
       k_sem_take(&wifi_connected_sem, K_FOREVER);
       LOG_INF("Successfully connected to Wi-Fi");
@@ -119,8 +132,10 @@ int wifi_manager_connect(const char *ssid, const char *psk) {
 }
 
 int wifi_manager_enable_ap(const char *ssid, const char *psk,
-                           const char *ip_address, const char *netmask) {
-  if (!ap_iface) {
+                           const char *ip_address, const char *netmask)
+{
+  if (!ap_iface)
+  {
     LOG_ERR("AP interface not initialized");
     return -EIO;
   }

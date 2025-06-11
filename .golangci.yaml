@@ -1,42 +1,58 @@
-run:
-  timeout: 10m
-
-issues:
-  exclude-dirs:
-    - examples/
-  max-issues-per-linter: 100
-  max-same-issues: 100
-
+version: "2"
 linters:
-  enable-all: true
-  fast: false
+  default: all
   disable:
-    - lll
-    - wsl
+    - cyclop
     - depguard
-    - tagliatelle
-    - gomnd # This linter is deprecated
-    - execinquery # This linter is deprecated
-    - exportloopref # This linter is deprecated
-    - gochecknoglobals
-    - ireturn
-    - exhaustruct
-    - wrapcheck
-    - musttag
-    - revive
-    - varnamelen
-    - nonamedreturns
-    - gosec
-    - funlen
-    - interfacebloat
     - dupl
     - err113
+    - exhaustruct
+    - funlen
+    - gochecknoglobals
+    - gosec
+    - interfacebloat
+    - ireturn
+    - lll
+    - mnd
+    - musttag
     - noctx
-    - cyclop
+    - nonamedreturns
+    - revive
     - tagalign
-
-linters-settings:
-  gocritic:
-    enable-all: true
-    disabled-checks:
-      - hugeParam
+    - tagliatelle
+    - varnamelen
+    - wrapcheck
+    - wsl
+  settings:
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - hugeParam
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - examples/
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 100
+  max-same-issues: 100
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - examples/
+      - third_party$
+      - builtin$
+      - examples$

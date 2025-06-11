@@ -11,6 +11,12 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+const (
+	connTimeout    = 10
+	reconnTimeout  = 1
+	disconnTimeout = 250
+)
+
 var (
 	errPublishTimeout     = errors.New("failed to publish due to timeout reached")
 	errSubscribeTimeout   = errors.New("failed to subscribe due to timeout reached")
@@ -18,8 +24,8 @@ var (
 	errEmptyTopic         = errors.New("empty topic")
 	errEmptyID            = errors.New("empty ID")
 
-	aliveTopicTemplate = "channels/%s/messages/control/proplet/alive"
-	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","mg_channel_id":"%s"}`
+	aliveTopicTemplate = "m/%s/c/%s/messages/control/proplet/alive"
+	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
 )
 
 type pubsub struct {
@@ -35,14 +41,15 @@ type PubSub interface {
 	Publish(ctx context.Context, topic string, msg any) error
 	Subscribe(ctx context.Context, topic string, handler Handler) error
 	Unsubscribe(ctx context.Context, topic string) error
+	Disconnect(ctx context.Context) error
 }
 
-func NewPubSub(url string, qos byte, id, username, password, channelID string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password, domainID, channelID string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyID
 	}
 
-	client, err := newClient(url, id, username, password, channelID, timeout, logger)
+	client, err := newClient(url, id, username, password, domainID, channelID, timeout, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -110,24 +117,39 @@ func (ps *pubsub) Unsubscribe(ctx context.Context, topic string) error {
 	return nil
 }
 
-func (ps *pubsub) Close() error {
-	return nil
+func (ps *pubsub) Disconnect(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		ps.client.Disconnect(disconnTimeout)
+
+		return nil
+	}
 }
 
-func newClient(address, id, username, password, channelID string, timeout time.Duration, logger *slog.Logger) (mqtt.Client, error) {
+func newClient(address, id, username, password, domainID, channelID string, timeout time.Duration, logger *slog.Logger) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
 		SetUsername(username).
 		SetPassword(password).
-		SetCleanSession(true)
+		SetCleanSession(true).
+		SetAutoReconnect(true).
+		SetConnectTimeout(connTimeout * time.Second).
+		SetMaxReconnectInterval(reconnTimeout * time.Minute)
+
 	if channelID != "" {
-		topic := fmt.Sprintf(aliveTopicTemplate, channelID)
+		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
 		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
 
-	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+	opts.SetOnConnectHandler(func(_ mqtt.Client) {
+		logger.Info("MQTT connection lost")
+	})
+
+	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
 		args := []any{}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
@@ -136,7 +158,7 @@ func newClient(address, id, username, password, channelID string, timeout time.D
 		logger.Info("MQTT connection lost", args...)
 	})
 
-	opts.SetReconnectingHandler(func(client mqtt.Client, options *mqtt.ClientOptions) {
+	opts.SetReconnectingHandler(func(_ mqtt.Client, options *mqtt.ClientOptions) {
 		args := []any{}
 		if options != nil {
 			args = append(args,
