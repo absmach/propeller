@@ -1,10 +1,10 @@
 module github.com/absmach/propeller
 
-go 1.24.4
+go 1.24.5
 
 require (
 	github.com/0x6flab/namegenerator v1.4.0
-	github.com/absmach/supermq v0.17.0-rc.1
+	github.com/absmach/supermq v0.17.0-rc.2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/charmbracelet/huh v0.7.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
@@ -26,7 +26,7 @@ require (
 )
 
 require (
-	github.com/absmach/senml v1.0.7 // indirect
+	github.com/absmach/senml v1.0.8 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -41,6 +41,7 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20250711012602-b1f986320f7e // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
