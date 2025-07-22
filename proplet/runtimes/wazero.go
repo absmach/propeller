@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
@@ -43,7 +44,7 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs
 	// implement `panic`.
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
-	module, err := r.Instantiate(ctx, wasmBinary)
+	module, err := r.InstantiateWithConfig(ctx, wasmBinary, wazero.NewModuleConfig().WithStartFunctions("_initialize"))
 	if err != nil {
 		return errors.Join(errors.New("failed to instantiate Wasm module"), err)
 	}
@@ -79,6 +80,8 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs
 
 		w.logger.Info("Finished running app", slog.String("id", id))
 	}()
+
+	time.Sleep(5 * time.Second)
 
 	return nil
 }

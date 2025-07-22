@@ -2,7 +2,7 @@ package main
 
 import "math"
 
-//export compute
+//go:wasmexport compute
 func compute(n uint32) uint32 {
 	var result uint32
 

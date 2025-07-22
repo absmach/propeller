@@ -41,7 +41,7 @@ stop-supermq:
 	docker compose -f docker/compose.yaml --env-file docker/.env down
 
 $(EXAMPLES):
-	GOOS=js GOARCH=wasm tinygo build -no-debug -panic=trap -scheduler=none -gc=leaking -o build/$@.wasm -target wasi examples/$@/$@.go
+	GOOS=js GOARCH=wasm tinygo build -buildmode=c-shared -o build/$@.wasm -target wasip1 examples/$@/$@.go
 
 addition-wat:
 	@wat2wasm examples/addition-wat/addition.wat -o build/addition-wat.wasm

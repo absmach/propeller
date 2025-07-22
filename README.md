@@ -29,7 +29,7 @@
 
 ## 📖 Documentation
 
-For setup instructions, API references, and usage examples, see the documentation:  
+For setup instructions, API references, and usage examples, see the documentation:
 🔗 [Documentation Link](http://docs.propeller.abstractmachines.fr/)
 
 ---

@@ -1,10 +1,10 @@
 module github.com/absmach/propeller
 
-go 1.24.4
+go 1.24.5
 
 require (
 	github.com/0x6flab/namegenerator v1.4.0
-	github.com/absmach/supermq v0.17.0-rc.1
+	github.com/absmach/supermq v0.17.0-rc.2
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/charmbracelet/huh v0.7.0
 	github.com/eclipse/paho.mqtt.golang v1.5.0
@@ -26,7 +26,7 @@ require (
 )
 
 require (
-	github.com/absmach/senml v1.0.7 // indirect
+	github.com/absmach/senml v1.0.8 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -39,8 +39,9 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.9.3 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
-	github.com/charmbracelet/x/exp/strings v0.0.0-20250711012602-b1f986320f7e // indirect
+	github.com/charmbracelet/x/exp/strings v0.0.0-20250720010745-3615766e35a0 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -69,7 +70,7 @@ require (
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -81,8 +82,8 @@ require (
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250715232539-7130f93afb79 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250715232539-7130f93afb79 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	moul.io/http2curl v1.0.0 // indirect
