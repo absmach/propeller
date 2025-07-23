@@ -8,8 +8,9 @@ import (
 )
 
 type inMemoryStorage struct {
-	data map[string]interface{}
 	sync.Mutex
+
+	data map[string]interface{}
 }
 
 func NewInMemoryStorage() Storage {

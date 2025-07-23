@@ -37,6 +37,7 @@ type Task struct {
 	File       []byte    `json:"file,omitempty"`
 	CLIArgs    []string  `json:"cli_args"`
 	Inputs     []uint64  `json:"inputs,omitempty"`
+	PropletID  string    `json:"proplet_id,omitempty"`
 	Results    any       `json:"results,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	StartTime  time.Time `json:"start_time"`

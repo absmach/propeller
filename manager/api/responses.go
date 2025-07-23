@@ -18,6 +18,7 @@ var (
 
 type propletResponse struct {
 	proplet.Proplet
+
 	created bool
 	deleted bool
 }
@@ -65,6 +66,7 @@ func (l listpropletResponse) Empty() bool {
 
 type taskResponse struct {
 	task.Task
+
 	created bool
 	deleted bool
 }

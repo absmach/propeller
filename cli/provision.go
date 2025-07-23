@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/0x6flab/namegenerator"
@@ -46,8 +47,9 @@ var provisionCmd = &cobra.Command{
 			domain             smqSDK.Domain
 			managerClientName  string
 			managerClient      smqSDK.Client
-			propletClientName  string
-			propletClient      smqSDK.Client
+			numPropletsStr     string
+			numProplets        int
+			propletClients     []smqSDK.Client
 			managerChannelName string
 			managerChannel     smqSDK.Channel
 		)
@@ -142,20 +144,32 @@ var provisionCmd = &cobra.Command{
 			),
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Enter your proplet client name(leave empty to auto generate)").
-					Value(&propletClientName).
+					Title("Enter number of proplets to create (default: 1)").
+					Value(&numPropletsStr).
 					Validate(func(str string) error {
-						if str == "" {
-							propletClientName = namegen.Generate()
+						switch str {
+						case "":
+							numProplets = 1
+						default:
+							numProplets, err = strconv.Atoi(str)
+							if err != nil || numProplets < 1 {
+								return errors.New("number of proplets must be a positive integer")
+							}
 						}
-						propletClient = smqSDK.Client{
-							Name:   propletClientName,
-							Tags:   []string{"proplet", "propeller"},
-							Status: "enabled",
-						}
-						propletClient, err = smqsdk.CreateClient(cmd.Context(), propletClient, domain.ID, token.AccessToken)
-						if err != nil {
-							return errors.Wrap(errFailedClientCreation, err)
+
+						propletClients = make([]smqSDK.Client, numProplets)
+						for i := range numProplets {
+							propletClientName := namegen.Generate()
+							propletClient := smqSDK.Client{
+								Name:   propletClientName,
+								Tags:   []string{"proplet", "propeller"},
+								Status: "enabled",
+							}
+							propletClient, err := smqsdk.CreateClient(cmd.Context(), propletClient, domain.ID, token.AccessToken)
+							if err != nil {
+								return errors.Wrap(errFailedClientCreation, err)
+							}
+							propletClients[i] = propletClient
 						}
 
 						return nil
@@ -177,8 +191,13 @@ var provisionCmd = &cobra.Command{
 							return errors.Wrap(errFailedChannelCreation, err)
 						}
 
+						clientIDs := []string{managerClient.ID}
+						for _, propletClient := range propletClients {
+							clientIDs = append(clientIDs, propletClient.ID)
+						}
+
 						managerConns := smqSDK.Connection{
-							ClientIDs:  []string{managerClient.ID, propletClient.ID},
+							ClientIDs:  clientIDs,
 							ChannelIDs: []string{managerChannel.ID},
 							Types:      []string{"publish", "subscribe"},
 						}
@@ -204,31 +223,52 @@ domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"
+`,
+			domain.ID,
+			managerClient.ID,
+			managerClient.Credentials.Secret,
+			managerChannel.ID,
+		)
 
-[proplet]
+		for i, propletClient := range propletClients {
+			var sectionName string
+			switch len(propletClients) {
+			case 1:
+				sectionName = "[proplet]"
+			default:
+				sectionName = fmt.Sprintf("[proplet%d]", i+1)
+			}
+
+			propletConfig := fmt.Sprintf(`
+%s
 domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"
+`,
+				sectionName,
+				domain.ID,
+				propletClient.ID,
+				propletClient.Credentials.Secret,
+				managerChannel.ID,
+			)
+			configContent += propletConfig
+		}
 
+		if len(propletClients) > 0 {
+			proxyConfig := fmt.Sprintf(`
 [proxy]
 domain_id = "%s"
 client_id = "%s"
 client_key = "%s"
 channel_id = "%s"`,
-			domain.ID,
-			managerClient.ID,
-			managerClient.Credentials.Secret,
-			managerChannel.ID,
-			domain.ID,
-			propletClient.ID,
-			propletClient.Credentials.Secret,
-			managerChannel.ID,
-			domain.ID,
-			propletClient.ID,
-			propletClient.Credentials.Secret,
-			managerChannel.ID,
-		)
+				domain.ID,
+				propletClients[0].ID,
+				propletClients[0].Credentials.Secret,
+				managerChannel.ID,
+			)
+			configContent += proxyConfig
+		}
 
 		if err := os.WriteFile(fileName, []byte(configContent), filePermission); err != nil {
 			logErrorCmd(*cmd, errors.New(fmt.Sprintf("failed to create %s file", fileName)))

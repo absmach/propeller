@@ -194,9 +194,21 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	p, err := svc.SelectProplet(ctx, t)
-	if err != nil {
-		return err
+	var p proplet.Proplet
+	switch t.PropletID {
+	case "":
+		p, err = svc.SelectProplet(ctx, t)
+		if err != nil {
+			return err
+		}
+	default:
+		p, err = svc.GetProplet(ctx, t.PropletID)
+		if err != nil {
+			return err
+		}
+		if !p.Alive {
+			return fmt.Errorf("specified proplet %s is not alive", t.PropletID)
+		}
 	}
 
 	if err := svc.taskPropletDB.Create(ctx, taskID, p.ID); err != nil {

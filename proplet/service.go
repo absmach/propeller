@@ -14,10 +14,7 @@ import (
 	"github.com/absmach/propeller/task"
 )
 
-const (
-	filePermissions = 0o644
-	pollingInterval = 5 * time.Second
-)
+const pollingInterval = 5 * time.Second
 
 var (
 	aliveTopicTemplate        = "m/%s/c/%s/messages/control/proplet/alive"
