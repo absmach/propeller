@@ -23,6 +23,8 @@ linters:
     - varnamelen
     - wrapcheck
     - wsl
+    - wsl_v5
+    - noinlineerr
   settings:
     gocritic:
       enable-all: true
