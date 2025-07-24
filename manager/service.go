@@ -187,6 +187,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		"image_url": t.ImageURL,
 		"file":      t.File,
 		"inputs":    t.Inputs,
+		"cli_args":  t.CLIArgs,
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
