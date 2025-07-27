@@ -2,8 +2,6 @@
 
 **Propeller** is a cutting-edge orchestrator for **WebAssembly (Wasm)** workloads across the **Cloud-Edge continuum**. It enables seamless deployment of Wasm applications from powerful cloud servers to constrained microcontrollers, combining flexibility, security, and performance.
 
----
-
 ## 🌟 Features
 
 - 🌐 **Cloud-Edge Orchestration**: Deploy Wasm workloads effortlessly across diverse environments, from robust cloud servers to lightweight microcontrollers.
@@ -14,8 +12,6 @@
 - 🛠️ **Powerful Service Mesh**: Integrates with **[SuperMQ](https://github.com/absmach)** for secure, efficient IoT device communication.
 - 🔒 **Security at the Core**: Propeller ensures secure workload execution and communication for IoT environments.
 
----
-
 ## 🛠️ How It Works
 
 1. **Develop in WebAssembly**: Write portable, lightweight Wasm workloads for your application.
@@ -25,14 +21,10 @@
 
 ![Propeller Orchestration Diagram](docs/architecture.svg)
 
----
-
 ## 📖 Documentation
 
 For setup instructions, API references, and usage examples, see the documentation:
 🔗 [Documentation Link](http://docs.propeller.abstractmachines.fr/)
-
----
 
 ## 💡 Use Cases
 
@@ -41,14 +33,12 @@ For setup instructions, API references, and usage examples, see the documentatio
 - 🌎 **Smart Cities**: Power scalable IoT networks with efficient communication and dynamic workloads.
 - ☁️ **Serverless Applications**: Deploy FaaS applications leveraging Propeller's Wasm orchestration capabilities.
 
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please check the [CONTRIBUTING.md](#) for details on how to get started.
 
----
-
 ## 📜 License
 
 Propeller is licensed under the **Apache-2.0 License**. See the [LICENSE](LICENSE) file for more details.
+
+>🇪🇺 This work has been partially supported by the [ELASTIC project](https://elasticproject.eu/), which received funding from the [Smart Networks and Services Joint Undertaking](https://smart-networks.europa.eu/) (SNS JU) under the European Union’s [Horizon Europe](https://research-and-innovation.ec.europa.eu/funding/funding-opportunities/funding-programmes-and-open-calls/horizon-europe_en) research and innovation programme under [Grant Agreement No. 101139067](https://cordis.europa.eu/project/id/101139067). Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union. Neither the European Union nor the granting authority can be held responsible for them.
