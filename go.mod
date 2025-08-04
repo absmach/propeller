@@ -15,7 +15,7 @@ require (
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml v1.9.5
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.23.0
 	github.com/spf13/cobra v1.9.1
 	github.com/tetratelabs/wazero v1.9.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0
