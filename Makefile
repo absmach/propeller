@@ -7,6 +7,9 @@ VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
 EXAMPLES = addition compute hello-world
 SERVICES = manager proplet cli proxy
+DOCKERS = $(addprefix docker_,$(SERVICES))
+DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
+DOCKER_IMAGE_NAME_PREFIX ?= docker.io/absmach/propeller
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -17,9 +20,51 @@ define compile_service
 	-o ${BUILD_DIR}/$(1) cmd/$(1)/main.go
 endef
 
+define make_docker
+	$(eval svc=$(subst docker_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg SVC=$(svc) \
+		--build-arg GOARCH=$(GOARCH) \
+		--build-arg GOARM=$(GOARM) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg TIME=$(TIME) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		-f docker/Dockerfile .
+endef
+
+define make_docker_dev
+	$(eval svc=$(subst docker_dev_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg SVC=$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		-f docker/Dockerfile.dev ./build
+endef
+
+define docker_push
+		for svc in $(SERVICES); do \
+			docker push $(DOCKER_IMAGE_NAME_PREFIX)/$$svc:$(1); \
+		done
+endef
+
 $(SERVICES):
 	$(call compile_service,$(@))
 
+$(DOCKERS):
+	$(call make_docker,$(@),$(GOARCH))
+
+$(DOCKERS_DEV):
+	$(call make_docker_dev,$(@))
+
+dockers: $(DOCKERS)
+dockers_dev: $(DOCKERS_DEV)
+
+latest: dockers
+		$(call docker_push,latest)
 
 # Install all non-WASM executables from the build directory to GOBIN with 'propeller-' prefix
 install:

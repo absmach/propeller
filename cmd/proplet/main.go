@@ -32,8 +32,8 @@ type config struct {
 	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"   envDefault:"10s"`
 	DomainID            string        `env:"PROPLET_DOMAIN_ID"`
 	ChannelID           string        `env:"PROPLET_CHANNEL_ID"`
-	ClientID            string        `env:"PROPLET_CLIIENT_ID"`
-	ClientKey           string        `env:"PROPLET_CLIIENT_KEY"`
+	ClientID            string        `env:"PROPLET_CLIENT_ID"`
+	ClientKey           string        `env:"PROPLET_CLIENT_KEY"`
 	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME" envDefault:""`
 }
 
