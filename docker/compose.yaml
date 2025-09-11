@@ -1573,3 +1573,90 @@ services:
       - ./nats:/etc/nats
     networks:
       - supermq-base-net
+
+  manager:
+    image: docker.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
+    container_name: propeller-manager
+    expose:
+      - ${MANAGER_HTTP_PORT}
+    restart: on-failure
+    depends_on:
+      - mqtt-adapter
+    environment:
+      MANAGER_LOG_LEVEL: ${MANAGER_LOG_LEVEL}
+      MANAGER_INSTANCE_ID: ${MANAGER_INSTANCE_ID}
+      MANAGER_MQTT_ADDRESS: ${MANAGER_MQTT_ADDRESS}
+      MANAGER_MQTT_QOS: ${MANAGER_MQTT_QOS}
+      MANAGER_MQTT_TIMEOUT: ${MANAGER_MQTT_TIMEOUT}
+      MANAGER_DOMAIN_ID: ${MANAGER_DOMAIN_ID}
+      MANAGER_CHANNEL_ID: ${MANAGER_CHANNEL_ID}
+      MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID}
+      MANAGER_CLIENT_KEY: ${MANAGER_CLIENT_KEY}
+      MANAGER_HTTP_HOST: ${MANAGER_HTTP_HOST}
+      MANAGER_HTTP_PORT: ${MANAGER_HTTP_PORT}
+      MANAGER_HTTP_SERVER_CERT: ${MANAGER_HTTP_SERVER_CERT}
+      MANAGER_HTTP_SERVER_KEY: ${MANAGER_HTTP_SERVER_KEY}
+      MANAGER_OTEL_URL: ${MANAGER_OTEL_URL}
+      MANAGER_TRACE_RATIO: ${MANAGER_TRACE_RATIO}
+    ports:
+      - ${MANAGER_HTTP_PORT}:${MANAGER_HTTP_PORT}
+    networks:
+      - supermq-base-net
+    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+    # If you are using environment variables for configuration, leave this commented out.
+    # volumes:
+    #   - ./config.toml:/config.toml
+
+  proplet:
+    image: docker.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
+    container_name: propeller-proplet
+    restart: on-failure
+    depends_on:
+      - mqtt-adapter
+    environment:
+      PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL}
+      PROPLET_INSTANCE_ID: ${PROPLET_INSTANCE_ID}
+      PROPLET_MQTT_ADDRESS: ${PROPLET_MQTT_ADDRESS}
+      PROPLET_MQTT_QOS: ${PROPLET_MQTT_QOS}
+      PROPLET_MQTT_TIMEOUT: ${PROPLET_MQTT_TIMEOUT}
+      PROPLET_LIVELINESS_INTERVAL: ${PROPLET_LIVELINESS_INTERVAL}
+      PROPLET_DOMAIN_ID: ${PROPLET_DOMAIN_ID}
+      PROPLET_CHANNEL_ID: ${PROPLET_CHANNEL_ID}
+      PROPLET_CLIENT_ID: ${PROPLET_CLIENT_ID}
+      PROPLET_CLIENT_KEY: ${PROPLET_CLIENT_KEY}
+      PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME}
+    networks:
+      - supermq-base-net
+    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+    # If you are using environment variables for configuration, leave this commented out.
+    # volumes:
+    #   - ./config.toml:/config.toml
+
+  proxy:
+    image: docker.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
+    container_name: propeller-proxy
+    restart: on-failure
+    depends_on:
+      - mqtt-adapter
+    environment:
+      PROXY_LOG_LEVEL: ${PROXY_LOG_LEVEL}
+      PROXY_INSTANCE_ID: ${PROXY_INSTANCE_ID}
+      PROXY_MQTT_ADDRESS: ${PROXY_MQTT_ADDRESS}
+      PROXY_MQTT_QOS: ${PROXY_MQTT_QOS}
+      PROXY_MQTT_TIMEOUT: ${PROXY_MQTT_TIMEOUT}
+      PROXY_DOMAIN_ID: ${PROXY_DOMAIN_ID}
+      PROXY_CHANNEL_ID: ${PROXY_CHANNEL_ID}
+      PROXY_CLIENT_ID: ${PROXY_CLIENT_ID}
+      PROXY_CLIENT_KEY: ${PROXY_CLIENT_KEY}
+      PROXY_CHUNK_SIZE: ${PROXY_CHUNK_SIZE}
+      PROXY_AUTHENTICATE: ${PROXY_AUTHENTICATE}
+      PROXY_REGISTRY_TOKEN: ${PROXY_REGISTRY_TOKEN}
+      PROXY_REGISTRY_USERNAME: ${PROXY_REGISTRY_USERNAME}
+      PROXY_REGISTRY_PASSWORD: ${PROXY_REGISTRY_PASSWORD}
+      PROXY_REGISTRY_URL: ${PROXY_REGISTRY_URL}
+    networks:
+      - supermq-base-net
+    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+    # If you are using environment variables for configuration, leave this commented out.
+    # volumes:
+    #   - ./config.toml:/config.toml
