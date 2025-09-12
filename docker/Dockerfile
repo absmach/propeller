@@ -1,4 +1,4 @@
-FROM golang:1.24.5-alpine AS builder
+FROM golang:1.25-alpine AS builder
 ARG SVC
 ARG GOARCH
 ARG GOARM
@@ -14,9 +14,12 @@ RUN apk update \
     && upx build/$SVC \
     && mv build/$SVC /exe
 
-FROM scratch
+FROM ubuntu:25.10
 LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
 LABEL org.opencontainers.image.licenses=Apache-2.0
+RUN apt-get update && apt-get install -y wget xz-utils
+RUN wget https://github.com/bytecodealliance/wasmtime/releases/download/v36.0.2/wasmtime-v36.0.2-x86_64-linux.tar.xz
+RUN tar -xvf wasmtime-v36.0.2-x86_64-linux.tar.xz
+RUN cp wasmtime-v36.0.2-x86_64-linux/wasmtime /usr/local/bin
 COPY --from=builder /exe /
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 ENTRYPOINT ["/exe"]

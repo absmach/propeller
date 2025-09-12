@@ -11,6 +11,7 @@ type startRequest struct {
 	WasmFile     []byte
 	imageURL     string
 	Params       []uint64
+	Daemon       bool
 }
 
 func (r startRequest) Validate() error {

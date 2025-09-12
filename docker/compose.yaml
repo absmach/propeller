@@ -1613,6 +1613,10 @@ services:
     restart: on-failure
     depends_on:
       - mqtt-adapter
+    expose:
+      - 8089
+    ports:
+      - 8089:8081
     environment:
       PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL}
       PROPLET_INSTANCE_ID: ${PROPLET_INSTANCE_ID}

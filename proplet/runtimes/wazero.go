@@ -33,7 +33,7 @@ func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channel
 	}
 }
 
-func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, args ...uint64) error {
+func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, args ...uint64) error {
 	r := wazero.NewRuntime(ctx)
 
 	w.mutex.Lock()

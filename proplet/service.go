@@ -144,6 +144,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			WasmFile:     payload.File,
 			imageURL:     payload.ImageURL,
 			Params:       payload.Inputs,
+			Daemon:       payload.Daemon,
 		}
 		if err := req.Validate(); err != nil {
 			return err
@@ -152,7 +153,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
 		if req.WasmFile != nil {
-			if err := p.runtime.StartApp(ctx, req.WasmFile, req.CLIArgs, req.ID, req.FunctionName, req.Params...); err != nil {
+			if err := p.runtime.StartApp(ctx, req.WasmFile, req.CLIArgs, req.ID, req.FunctionName, req.Daemon, req.Params...); err != nil {
 				return err
 			}
 
@@ -179,7 +180,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 				if exists && receivedChunks == metadata.TotalChunks {
 					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
 					wasmBinary := assembleChunks(p.chunks[req.imageURL])
-					if err := p.runtime.StartApp(ctx, wasmBinary, req.CLIArgs, req.ID, req.FunctionName, req.Params...); err != nil {
+					if err := p.runtime.StartApp(ctx, wasmBinary, req.CLIArgs, req.ID, req.FunctionName, req.Daemon, req.Params...); err != nil {
 						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
 					}
 

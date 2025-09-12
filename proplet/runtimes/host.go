@@ -32,7 +32,7 @@ func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID
 	}
 }
 
-func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, args ...uint64) error {
+func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, args ...uint64) error {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("error getting current directory: %w", err)
@@ -61,40 +61,45 @@ func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs [
 		return fmt.Errorf("error starting command: %w", err)
 	}
 
-	go func(fileName string) {
-		var payload map[string]interface{}
-
-		if err := cmd.Wait(); err != nil {
-			w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
-			payload = map[string]interface{}{
-				"task_id": id,
-				"error":   err.Error(),
-				"results": results.String(),
-			}
-		} else {
-			payload = map[string]interface{}{
-				"task_id": id,
-				"results": results.String(),
-			}
-		}
-
-		topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
-		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
-			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
-
-			return
-		}
-
-		if err := os.Remove(fileName); err != nil {
-			w.logger.Error("failed to remove file", slog.String("fileName", fileName), slog.String("error", err.Error()))
-		}
-
-		w.logger.Info("Finished running app", slog.String("id", id))
-	}(filepath.Join(currentDir, id+".wasm"))
+	if !daemon {
+		go w.wait(ctx, cmd, filepath.Join(currentDir, id+".wasm"), id, &results)
+	}
 
 	return nil
 }
 
 func (w *hostRuntime) StopApp(ctx context.Context, id string) error {
 	return nil
+}
+
+func (w *hostRuntime) wait(ctx context.Context, cmd *exec.Cmd, fileName, id string, results *bytes.Buffer) {
+	defer func() {
+		if err := os.Remove(fileName); err != nil {
+			w.logger.Error("failed to remove file", slog.String("fileName", fileName), slog.String("error", err.Error()))
+		}
+	}()
+
+	var payload map[string]any
+	if err := cmd.Wait(); err != nil {
+		w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
+		payload = map[string]any{
+			"task_id": id,
+			"error":   err.Error(),
+			"results": results.String(),
+		}
+	} else {
+		payload = map[string]any{
+			"task_id": id,
+			"results": results.String(),
+		}
+	}
+
+	topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
+	if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
+		w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
+
+		return
+	}
+
+	w.logger.Info("Finished running app", slog.String("id", id))
 }
