@@ -9,7 +9,7 @@ EXAMPLES = addition compute hello-world
 SERVICES = manager proplet cli proxy
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
-DOCKER_IMAGE_NAME_PREFIX ?= docker.io/absmach/propeller
+DOCKER_IMAGE_NAME_PREFIX ?= ghcr.io/absmach/propeller
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \

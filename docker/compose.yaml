@@ -1575,7 +1575,7 @@ services:
       - supermq-base-net
 
   manager:
-    image: docker.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
+    image: ghcr.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
     container_name: propeller-manager
     expose:
       - ${MANAGER_HTTP_PORT}
@@ -1608,7 +1608,7 @@ services:
     #   - ./config.toml:/config.toml
 
   proplet:
-    image: docker.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
+    image: ghcr.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
     container_name: propeller-proplet
     restart: on-failure
     depends_on:
@@ -1633,7 +1633,7 @@ services:
     #   - ./config.toml:/config.toml
 
   proxy:
-    image: docker.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
+    image: ghcr.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
     container_name: propeller-proxy
     restart: on-failure
     depends_on:
