@@ -15,5 +15,7 @@ RUN apk update \
     && mv build/$SVC /exe
 
 FROM scratch
+LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
+LABEL org.opencontainers.image.licenses=Apache-2.0
 COPY --from=builder /exe /
 ENTRYPOINT ["/exe"]
