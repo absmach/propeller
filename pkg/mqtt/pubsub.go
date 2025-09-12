@@ -25,7 +25,7 @@ var (
 	errEmptyID            = errors.New("empty ID")
 
 	aliveTopicTemplate = "m/%s/c/%s/messages/control/proplet/alive"
-	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s","smq_channel_id":"%s"}`
+	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s"}`
 )
 
 type pubsub struct {
@@ -141,7 +141,7 @@ func newClient(address, id, username, password, domainID, channelID string, time
 
 	if channelID != "" {
 		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
-		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username, channelID)
+		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
 

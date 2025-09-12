@@ -29,13 +29,14 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define FETCH_REQUEST_TOPIC_TEMPLATE "m/%s/c/%s/messages/registry/proplet"
 #define RESULTS_TOPIC_TEMPLATE "m/%s/c/%s/messages/control/proplet/results"
 
-#define WILL_MESSAGE_TEMPLATE "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"smq_channel_id\":\"%s\"}"
+#define WILL_MESSAGE_TEMPLATE "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}"
 #define WILL_QOS MQTT_QOS_1_AT_LEAST_ONCE
 #define WILL_RETAIN 1
 
 #define CLIENT_ID "proplet-esp32s3"
 #define PROPLET_ID "<YOUR_PROPLET_ID>"
 #define PROPLET_PASSWORD "<YOUR_PROPLET_PASSWORD>"
+#define K8S_NAMESPACE "default"
 
 #define MAX_ID_LEN 64
 #define MAX_NAME_LEN 64
@@ -301,7 +302,7 @@ int mqtt_client_connect(const char *domain_id, const char *proplet_id, const cha
 
   char will_message_str[256];
   snprintf(will_message_str, sizeof(will_message_str), WILL_MESSAGE_TEMPLATE,
-           proplet_id, channel_id);
+           proplet_id, K8S_NAMESPACE);
 
   struct mqtt_utf8 will_message = {
       .utf8 = (const uint8_t *)will_message_str,
@@ -665,8 +666,8 @@ void publish_alive_message(const char *domain_id, const char *channel_id)
   char payload[128];
   snprintf(
       payload, sizeof(payload),
-      "{\"status\":\"alive\",\"proplet_id\":\"%s\",\"smq_channel_id\":\"%s\"}",
-      CLIENT_ID, channel_id);
+      "{\"status\":\"alive\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}",
+      CLIENT_ID, K8S_NAMESPACE);
   publish(domain_id, channel_id, ALIVE_TOPIC_TEMPLATE, payload);
 }
 
@@ -677,8 +678,7 @@ int publish_discovery(const char *domain_id, const char *proplet_id, const char 
 
   snprintf(topic, sizeof(topic), DISCOVERY_TOPIC_TEMPLATE, domain_id, channel_id);
   snprintf(payload, sizeof(payload),
-           "{\"proplet_id\":\"%s\",\"smq_channel_id\":\"%s\"}", proplet_id,
-           channel_id);
+           "{\"proplet_id\":\"%s\"}", proplet_id);
 
   if (!mqtt_connected)
   {
