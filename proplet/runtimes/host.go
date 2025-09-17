@@ -32,7 +32,7 @@ func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID
 	}
 }
 
-func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, args ...uint64) error {
+func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, env map[string]string, args ...uint64) error {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("error getting current directory: %w", err)
@@ -56,6 +56,13 @@ func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs [
 	cmd := exec.Command(w.wasmRuntime, cliArgs...)
 	results := bytes.Buffer{}
 	cmd.Stdout = &results
+
+	if env != nil {
+		cmd.Env = os.Environ()
+		for key, value := range env {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("error starting command: %w", err)

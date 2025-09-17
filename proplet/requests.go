@@ -12,6 +12,7 @@ type startRequest struct {
 	imageURL     string
 	Params       []uint64
 	Daemon       bool
+	Env          map[string]string
 }
 
 func (r startRequest) Validate() error {

@@ -189,6 +189,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		"inputs":    t.Inputs,
 		"cli_args":  t.CLIArgs,
 		"daemon":    t.Daemon,
+		"env":       t.Env,
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
