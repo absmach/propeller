@@ -61,8 +61,6 @@ services:
     container_name: supermq-spicedb-db
     networks:
       - supermq-base-net
-    ports:
-      - "6010:5432"
     environment:
       POSTGRES_USER: ${SMQ_SPICEDB_DB_USER}
       POSTGRES_PASSWORD: ${SMQ_SPICEDB_DB_PASS}
@@ -75,8 +73,6 @@ services:
     image: postgres:16.2-alpine
     container_name: supermq-auth-db
     restart: on-failure
-    ports:
-      - 6001:5432
     environment:
       POSTGRES_USER: ${SMQ_AUTH_DB_USER}
       POSTGRES_PASSWORD: ${SMQ_AUTH_DB_PASS}
@@ -191,8 +187,6 @@ services:
     image: postgres:16.2-alpine
     container_name: supermq-domains-db
     restart: on-failure
-    ports:
-      - 6003:5432
     environment:
       POSTGRES_USER: ${SMQ_DOMAINS_DB_USER}
       POSTGRES_PASSWORD: ${SMQ_DOMAINS_DB_PASS}
@@ -428,8 +422,6 @@ services:
       SMQ_POSTGRES_MAX_CONNECTIONS: ${SMQ_POSTGRES_MAX_CONNECTIONS}
     networks:
       - supermq-base-net
-    ports:
-      - 6006:5432
     volumes:
       - supermq-clients-db-volume:/var/lib/postgresql/data
 
@@ -620,8 +612,6 @@ services:
       SMQ_POSTGRES_MAX_CONNECTIONS: ${SMQ_POSTGRES_MAX_CONNECTIONS}
     networks:
       - supermq-base-net
-    ports:
-      - 6005:5432
     volumes:
       - supermq-channels-db-volume:/var/lib/postgresql/data
 
@@ -808,8 +798,6 @@ services:
       POSTGRES_PASSWORD: ${SMQ_USERS_DB_PASS}
       POSTGRES_DB: ${SMQ_USERS_DB_NAME}
       SMQ_POSTGRES_MAX_CONNECTIONS: ${SMQ_POSTGRES_MAX_CONNECTIONS}
-    ports:
-      - 6002:5432
     networks:
       - supermq-base-net
     volumes:
@@ -930,8 +918,6 @@ services:
       POSTGRES_PASSWORD: ${SMQ_GROUPS_DB_PASS}
       POSTGRES_DB: ${SMQ_GROUPS_DB_NAME}
       SMQ_POSTGRES_MAX_CONNECTIONS: ${SMQ_POSTGRES_MAX_CONNECTIONS}
-    ports:
-      - 6004:5432
     networks:
       - supermq-base-net
     volumes:
@@ -1614,9 +1600,9 @@ services:
     depends_on:
       - mqtt-adapter
     expose:
-      - 8089
+      - 8081
     ports:
-      - 8089:8081
+      - 8081:8081
     environment:
       PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL}
       PROPLET_INSTANCE_ID: ${PROPLET_INSTANCE_ID}
