@@ -7,7 +7,7 @@ require (
 	github.com/absmach/supermq v0.18.1
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/charmbracelet/huh v0.7.0
-	github.com/eclipse/paho.mqtt.golang v1.5.0
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/fatih/color v1.18.0
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-kit/kit v0.13.0
