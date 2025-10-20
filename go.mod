@@ -6,8 +6,8 @@ require (
 	github.com/0x6flab/namegenerator v1.4.0
 	github.com/absmach/supermq v0.18.1
 	github.com/caarlos0/env/v11 v11.3.1
-	github.com/charmbracelet/huh v0.7.0
-	github.com/eclipse/paho.mqtt.golang v1.5.0
+	github.com/charmbracelet/huh v0.8.0
+	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/fatih/color v1.18.0
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-kit/kit v0.13.0
@@ -33,7 +33,7 @@ require (
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/bubbles v0.21.0 // indirect
+	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7 // indirect
 	github.com/charmbracelet/bubbletea v1.3.8 // indirect
 	github.com/charmbracelet/colorprofile v0.3.2 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
