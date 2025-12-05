@@ -286,3 +286,94 @@ func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
 
 	return lm.svc.Subscribe(ctx)
 }
+
+// FL Orchestration methods
+func (lm *loggingMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("experiment_id", config.ExperimentID),
+			slog.String("round_id", config.RoundID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Configure experiment failed", args...)
+			return
+		}
+		lm.logger.Info("Configure experiment completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.ConfigureExperiment(ctx, config)
+}
+
+// FL Coordination methods
+func (lm *loggingMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (resp manager.FLTask, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("round_id", roundID),
+			slog.String("proplet_id", propletID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get FL task failed", args...)
+			return
+		}
+		lm.logger.Info("Get FL task completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetFLTask(ctx, roundID, propletID)
+}
+
+func (lm *loggingMiddleware) PostFLUpdate(ctx context.Context, update manager.FLUpdate) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("round_id", update.RoundID),
+			slog.String("proplet_id", update.PropletID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Post FL update failed", args...)
+			return
+		}
+		lm.logger.Info("Post FL update completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.PostFLUpdate(ctx, update)
+}
+
+func (lm *loggingMiddleware) PostFLUpdateCBOR(ctx context.Context, updateData []byte) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Int("data_size", len(updateData)),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Post FL update CBOR failed", args...)
+			return
+		}
+		lm.logger.Info("Post FL update CBOR completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.PostFLUpdateCBOR(ctx, updateData)
+}
+
+func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string) (resp manager.RoundStatus, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("round_id", roundID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get round status failed", args...)
+			return
+		}
+		lm.logger.Info("Get round status completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetRoundStatus(ctx, roundID)
+}
+

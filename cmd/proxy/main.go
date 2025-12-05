@@ -144,7 +144,11 @@ func handle(logger *slog.Logger, containerChan chan<- string) func(topic string,
 		case containerChan <- appName:
 			logger.Info("Received container request", slog.String("app_name", appName))
 		default:
-			logger.Error("Channel full, dropping container request")
+			// Channel is full - this is expected when many proplets request the same binary simultaneously
+			// The deduplication logic in the service will handle this - if a fetch is already in progress,
+			// the duplicate requests will be skipped. If not, the request will be retried on the next attempt.
+			logger.Debug("Channel full, dropping duplicate request (deduplication will handle this)",
+				slog.String("app_name", appName))
 		}
 
 		return nil

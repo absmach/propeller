@@ -17,6 +17,7 @@ pub struct StartConfig {
     pub cli_args: Vec<String>,
     pub env: HashMap<String, String>,
     pub args: Vec<u64>,
+    pub mode: Option<String>,
 }
 
 #[async_trait]

@@ -28,6 +28,65 @@ static void maybe_init_wamr_runtime(void);
 static int find_free_slot(void);
 static int find_app_by_id(const char *task_id);
 
+static bool write_string_to_wasm_memory(wasm_exec_env_t exec_env, const char *str,
+                                         uint32_t *ret_offset, uint32_t *ret_len) {
+  wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+  if (!module_inst || !str) {
+    return false;
+  }
+  
+  size_t str_len = strlen(str);
+  uint32_t str_buf_offset = wasm_runtime_module_malloc(module_inst, str_len + 1, (void**)NULL);
+  if (str_buf_offset == 0) {
+    LOG_ERR("Failed to allocate WASM memory for string");
+    return false;
+  }
+  
+  char *str_buf = wasm_runtime_addr_app_to_native(module_inst, str_buf_offset);
+  if (!str_buf) {
+    wasm_runtime_module_free(module_inst, str_buf_offset);
+    return false;
+  }
+  
+  memcpy(str_buf, str, str_len + 1);
+  *ret_offset = str_buf_offset;
+  *ret_len = str_len;
+  return true;
+}
+
+static bool get_proplet_id_wrapper(wasm_exec_env_t exec_env,
+                                    uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *proplet_id = g_current_task.proplet_id[0] != '\0' 
+                            ? g_current_task.proplet_id 
+                            : "";
+  return write_string_to_wasm_memory(exec_env, proplet_id, ret_offset, ret_len);
+}
+
+static bool get_model_data_wrapper(wasm_exec_env_t exec_env,
+                                    uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *model_data = g_current_task.model_data_fetched && g_current_task.model_data[0] != '\0'
+                            ? g_current_task.model_data
+                            : "";
+  return write_string_to_wasm_memory(exec_env, model_data, ret_offset, ret_len);
+}
+
+static bool get_dataset_data_wrapper(wasm_exec_env_t exec_env,
+                                      uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *dataset_data = g_current_task.dataset_data_fetched && g_current_task.dataset_data[0] != '\0'
+                              ? g_current_task.dataset_data
+                              : "";
+  return write_string_to_wasm_memory(exec_env, dataset_data, ret_offset, ret_len);
+}
+
+static NativeSymbol native_symbols[] = {
+    {"get_proplet_id", (void*)get_proplet_id_wrapper, "(~i)", NULL},
+    {"get_model_data", (void*)get_model_data_wrapper, "(~i)", NULL},
+    {"get_dataset_data", (void*)get_dataset_data_wrapper, "(~i)", NULL},
+};
+
 void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
                          size_t wasm_size, const uint64_t *inputs,
                          size_t inputs_count)
@@ -60,18 +119,41 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
       wasm_runtime_load(wasm_data, wasm_size, error_buf, sizeof(error_buf));
   if (!module)
   {
-    LOG_ERR("Failed to load WASM module: %s", error_buf);
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "Failed to load WASM module: %s", error_buf);
+    LOG_ERR("%s", error_msg);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
   }
 
+  uint32_t n_native_symbols = sizeof(native_symbols) / sizeof(NativeSymbol);
+  if (!wasm_runtime_register_natives("env", native_symbols, n_native_symbols)) {
+    LOG_WRN("Failed to register native symbols, host functions may not be available");
+  }
+
   wasm_module_inst_t module_inst =
-      wasm_runtime_instantiate(module, 16 * 1024, /* stack size */
-                               16 * 1024,         /* heap size */
+      wasm_runtime_instantiate(module, 16 * 1024,
+                               16 * 1024,
                                error_buf, sizeof(error_buf));
   if (!module_inst)
   {
-    LOG_ERR("Failed to instantiate WASM module: %s", error_buf);
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "Failed to instantiate WASM module: %s", error_buf);
+    LOG_ERR("%s", error_msg);
     wasm_runtime_unload(module);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
   }
 
@@ -84,19 +166,34 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
   wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, "main");
   if (!func)
   {
-    LOG_WRN(
-        "Function 'main' not found in WASM module. No entry point to call.");
+    const char *error_msg = "Function 'main' not found in WASM module";
+    LOG_WRN("%s", error_msg);
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
   }
 
   uint32_t result_count = wasm_func_get_result_count(func, module_inst);
   if (result_count == 0)
   {
-    LOG_ERR("Function has no return value.");
+    const char *error_msg = "Function has no return value";
+    LOG_ERR("%s", error_msg);
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
   }
 
@@ -121,9 +218,17 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
       wasm_runtime_create_exec_env(module_inst, 16 * 1024);
   if (!exec_env)
   {
-    LOG_ERR("Failed to create execution environment for WASM module.");
+    const char *error_msg = "Failed to create execution environment for WASM module";
+    LOG_ERR("%s", error_msg);
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
   }
 
@@ -131,8 +236,17 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
                                 args))
   {
     const char *exception = wasm_runtime_get_exception(module_inst);
-    LOG_ERR("Error invoking WASM function: %s",
-            exception ? exception : "Unknown error");
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "WASM execution failed: %s",
+             exception ? exception : "Unknown error");
+    LOG_ERR("Error invoking WASM function: %s", error_msg);
+    
+    extern const char *channel_id;
+    extern const char *domain_id;
+    extern void publish_results_with_error(const char *, const char *, 
+                                           const char *, const char *, 
+                                           const char *);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
   }
   else
   {

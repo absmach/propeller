@@ -32,7 +32,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define PAYLOAD_BUFFER_SIZE 1024
 #endif
 
-#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "10.42.0.1"
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE "m/%s/c/%s/control/manager/registry"
@@ -62,12 +62,31 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
+#define MAX_UPDATE_B64_LEN 2048
+#define MAX_ERROR_MSG_LEN 256
+
+struct fl_spec {
+  char job_id[MAX_ID_LEN];
+  uint64_t round_id;
+  char global_version[MAX_ID_LEN];
+  uint64_t min_participants;
+  uint64_t round_timeout_sec;
+  uint64_t clients_per_round;
+  uint64_t total_rounds;
+  char algorithm[MAX_NAME_LEN];
+  char update_format[MAX_NAME_LEN];
+  char model_ref[MAX_URL_LEN];
+  uint64_t local_epochs;
+  uint64_t batch_size;
+  double learning_rate;
+};
 
 struct task {
   char id[MAX_ID_LEN];
   char name[MAX_NAME_LEN];
   char state[MAX_STATE_LEN];
   char image_url[MAX_URL_LEN];
+  char mode[MAX_NAME_LEN];
 
   char file[MAX_BASE64_LEN];
   size_t file_len;
@@ -81,6 +100,30 @@ struct task {
   char finish_time[MAX_TIMESTAMP_LEN];
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
+
+  struct fl_spec fl;
+  bool is_fl_task;
+  
+  char fl_job_id[MAX_ID_LEN];
+  char fl_round_id_str[32];
+  char fl_global_version[MAX_ID_LEN];
+  char fl_global_update_b64[MAX_BASE64_LEN];
+  char fl_format[MAX_NAME_LEN];
+  char fl_num_samples_str[32];
+  
+  char round_id[MAX_ID_LEN];
+  char model_uri[MAX_URL_LEN];
+  char hyperparams[512];
+  bool is_fml_task;
+  
+  char proplet_id[MAX_ID_LEN];
+  char model_data[4096];
+  char dataset_data[4096];
+  char coordinator_url[MAX_URL_LEN];
+  char model_registry_url[MAX_URL_LEN];
+  char data_store_url[MAX_URL_LEN];
+  bool model_data_fetched;
+  bool dataset_data_fetched;
 };
 
 static struct task g_current_task;
@@ -184,12 +227,24 @@ static void mqtt_event_handler(struct mqtt_client *client,
       LOG_ERR("Failed to read payload [%d]", ret);
       return;
     }
-    payload[ret] = '\0'; /* Null-terminate */
+    payload[ret] = '\0';
     LOG_INF("Payload: %s", payload);
 
     const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
+    char topic_str[256];
+    snprintf(topic_str, sizeof(topic_str), "%.*s", (int)rtopic->size, rtopic->utf8);
+    topic_str[sizeof(topic_str) - 1] = '\0';
 
-    if (rtopic->size == strlen(start_topic) &&
+    if (g_current_task.is_fml_task && strlen(g_current_task.model_uri) > 0 &&
+        strcmp(topic_str, g_current_task.model_uri) == 0) {
+      LOG_INF("Received model from topic: %s (payload: %d bytes)", topic_str, (int)pub->message.payload.len);
+      
+      size_t payload_size = MIN(pub->message.payload.len, sizeof(g_current_task.model_data) - 1);
+      memcpy(g_current_task.model_data, payload, payload_size);
+      g_current_task.model_data[payload_size] = '\0';
+      g_current_task.model_data_fetched = true;
+      LOG_INF("Model data stored (size: %zu bytes)", payload_size);
+    } else if (rtopic->size == strlen(start_topic) &&
         memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
       handle_start_command(payload);
     } else if (rtopic->size == strlen(stop_topic) &&
@@ -249,6 +304,25 @@ static void prepare_publish_param(struct mqtt_publish_param *param,
   param->message_id = sys_rand32_get() & 0xFFFF;
   param->dup_flag = 0;
   param->retain_flag = 0;
+}
+
+static int publish_direct(const char *topic, const char *payload) {
+  if (!mqtt_connected) {
+    LOG_ERR("MQTT client is not connected. Publish aborted.");
+    return -ENOTCONN;
+  }
+
+  struct mqtt_publish_param param;
+  prepare_publish_param(&param, topic, payload);
+
+  int ret = mqtt_publish(&client_ctx, &param);
+  if (ret != 0) {
+    LOG_ERR("Failed to publish to topic %s. Error: %d", topic, ret);
+    return ret;
+  }
+
+  LOG_INF("Published to topic: %s", topic);
+  return 0;
 }
 
 int publish(const char *domain_id, const char *channel_id,
@@ -420,28 +494,42 @@ void handle_start_command(const char *payload) {
   }
 
   struct task t = {0};
+  t.is_fl_task = false;
 
   cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
   cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
   cJSON *image_url = cJSON_GetObjectItemCaseSensitive(json, "image_url");
   cJSON *file = cJSON_GetObjectItemCaseSensitive(json, "file");
   cJSON *inputs = cJSON_GetObjectItemCaseSensitive(json, "inputs");
+  cJSON *mode = cJSON_GetObjectItemCaseSensitive(json, "mode");
+  cJSON *fl_obj = cJSON_GetObjectItemCaseSensitive(json, "fl");
+  cJSON *env = cJSON_GetObjectItemCaseSensitive(json, "env");
 
-  if (!cJSON_IsString(id) || !cJSON_IsString(name)) {
+  if (!cJSON_IsString(id) || !cJSON_IsString(name) || 
+      !id->valuestring || !name->valuestring) {
     LOG_ERR("Invalid or missing mandatory fields in JSON payload");
     cJSON_Delete(json);
     return;
   }
 
   strncpy(t.id, id->valuestring, MAX_ID_LEN - 1);
+  t.id[MAX_ID_LEN - 1] = '\0';
   strncpy(t.name, name->valuestring, MAX_NAME_LEN - 1);
+  t.name[MAX_NAME_LEN - 1] = '\0';
 
-  if (cJSON_IsString(image_url)) {
-    strncpy(t.image_url, image_url->valuestring, MAX_URL_LEN - 1);
+  if (cJSON_IsString(mode) && mode->valuestring) {
+    strncpy(t.mode, mode->valuestring, MAX_NAME_LEN - 1);
+    t.mode[MAX_NAME_LEN - 1] = '\0';
   }
 
-  if (cJSON_IsString(file)) {
+  if (cJSON_IsString(image_url) && image_url->valuestring) {
+    strncpy(t.image_url, image_url->valuestring, MAX_URL_LEN - 1);
+    t.image_url[MAX_URL_LEN - 1] = '\0';
+  }
+
+  if (cJSON_IsString(file) && file->valuestring) {
     strncpy(t.file, file->valuestring, MAX_BASE64_LEN - 1);
+    t.file[MAX_BASE64_LEN - 1] = '\0';
   }
 
   if (cJSON_IsArray(inputs)) {
@@ -456,11 +544,251 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  LOG_INF("Starting task: ID=%s, Name=%s", t.id, t.name);
+  if (fl_obj != NULL && cJSON_IsObject(fl_obj)) {
+    t.is_fl_task = true;
+    cJSON *job_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "job_id");
+    cJSON *round_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "round_id");
+    cJSON *global_version = cJSON_GetObjectItemCaseSensitive(fl_obj, "global_version");
+    cJSON *update_format = cJSON_GetObjectItemCaseSensitive(fl_obj, "update_format");
+    cJSON *min_participants = cJSON_GetObjectItemCaseSensitive(fl_obj, "min_participants");
+    cJSON *total_rounds = cJSON_GetObjectItemCaseSensitive(fl_obj, "total_rounds");
+    cJSON *local_epochs = cJSON_GetObjectItemCaseSensitive(fl_obj, "local_epochs");
+    cJSON *batch_size = cJSON_GetObjectItemCaseSensitive(fl_obj, "batch_size");
+    cJSON *learning_rate = cJSON_GetObjectItemCaseSensitive(fl_obj, "learning_rate");
+
+    if (cJSON_IsString(job_id) && job_id->valuestring) {
+      strncpy(t.fl.job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(round_id)) {
+      t.fl.round_id = (uint64_t)round_id->valuedouble;
+      snprintf(t.fl_round_id_str, sizeof(t.fl_round_id_str), "%llu", (unsigned long long)t.fl.round_id);
+    }
+    if (cJSON_IsString(global_version) && global_version->valuestring) {
+      strncpy(t.fl.global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsString(update_format) && update_format->valuestring) {
+      strncpy(t.fl.update_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      strncpy(t.fl_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(min_participants)) {
+      t.fl.min_participants = (uint64_t)min_participants->valuedouble;
+    }
+    if (cJSON_IsNumber(total_rounds)) {
+      t.fl.total_rounds = (uint64_t)total_rounds->valuedouble;
+    }
+    if (cJSON_IsNumber(local_epochs)) {
+      t.fl.local_epochs = (uint64_t)local_epochs->valuedouble;
+    }
+    if (cJSON_IsNumber(batch_size)) {
+      t.fl.batch_size = (uint64_t)batch_size->valuedouble;
+    }
+    if (cJSON_IsNumber(learning_rate)) {
+      t.fl.learning_rate = learning_rate->valuedouble;
+    }
+  }
+
+  t.model_data_fetched = false;
+  t.dataset_data_fetched = false;
+  t.coordinator_url[0] = '\0';
+  t.model_registry_url[0] = '\0';
+  t.data_store_url[0] = '\0';
+  t.model_data[0] = '\0';
+  t.dataset_data[0] = '\0';
+  
+  const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+  strncpy(t.proplet_id, pid, sizeof(t.proplet_id) - 1);
+  t.proplet_id[sizeof(t.proplet_id) - 1] = '\0';
+
+  if (env != NULL && cJSON_IsObject(env)) {
+    cJSON *round_id_env = cJSON_GetObjectItemCaseSensitive(env, "ROUND_ID");
+    cJSON *model_uri_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_URI");
+    cJSON *hyperparams_env = cJSON_GetObjectItemCaseSensitive(env, "HYPERPARAMS");
+    cJSON *coordinator_url_env = cJSON_GetObjectItemCaseSensitive(env, "COORDINATOR_URL");
+    cJSON *model_registry_url_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_REGISTRY_URL");
+    cJSON *data_store_url_env = cJSON_GetObjectItemCaseSensitive(env, "DATA_STORE_URL");
+    
+    if (cJSON_IsString(coordinator_url_env) && coordinator_url_env->valuestring) {
+      strncpy(t.coordinator_url, coordinator_url_env->valuestring, sizeof(t.coordinator_url) - 1);
+      t.coordinator_url[sizeof(t.coordinator_url) - 1] = '\0';
+    } else {
+      strncpy(t.coordinator_url, "http://coordinator-http:8080", sizeof(t.coordinator_url) - 1);
+      t.coordinator_url[sizeof(t.coordinator_url) - 1] = '\0';
+    }
+    
+    if (cJSON_IsString(model_registry_url_env) && model_registry_url_env->valuestring) {
+      strncpy(t.model_registry_url, model_registry_url_env->valuestring, sizeof(t.model_registry_url) - 1);
+      t.model_registry_url[sizeof(t.model_registry_url) - 1] = '\0';
+    } else {
+      strncpy(t.model_registry_url, "http://model-registry:8081", sizeof(t.model_registry_url) - 1);
+      t.model_registry_url[sizeof(t.model_registry_url) - 1] = '\0';
+    }
+    
+    if (cJSON_IsString(data_store_url_env) && data_store_url_env->valuestring) {
+      strncpy(t.data_store_url, data_store_url_env->valuestring, sizeof(t.data_store_url) - 1);
+      t.data_store_url[sizeof(t.data_store_url) - 1] = '\0';
+    } else {
+      strncpy(t.data_store_url, "http://local-data-store:8083", sizeof(t.data_store_url) - 1);
+      t.data_store_url[sizeof(t.data_store_url) - 1] = '\0';
+    }
+    
+    if (cJSON_IsString(round_id_env) && round_id_env->valuestring) {
+      strncpy(t.round_id, round_id_env->valuestring, sizeof(t.round_id) - 1);
+      t.round_id[sizeof(t.round_id) - 1] = '\0';
+      t.is_fml_task = true;
+      LOG_INF("FML task detected: ROUND_ID=%s", t.round_id);
+    }
+    
+    if (cJSON_IsString(model_uri_env) && model_uri_env->valuestring) {
+      strncpy(t.model_uri, model_uri_env->valuestring, sizeof(t.model_uri) - 1);
+      t.model_uri[sizeof(t.model_uri) - 1] = '\0';
+      LOG_INF("FML model URI: %s", t.model_uri);
+    }
+    
+    if (cJSON_IsString(hyperparams_env) && hyperparams_env->valuestring) {
+      strncpy(t.hyperparams, hyperparams_env->valuestring, sizeof(t.hyperparams) - 1);
+      t.hyperparams[sizeof(t.hyperparams) - 1] = '\0';
+    }
+    
+    cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
+    cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
+    cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
+    cJSON *fl_global_update_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_UPDATE_B64");
+    cJSON *fl_format_env = cJSON_GetObjectItemCaseSensitive(env, "FL_FORMAT");
+    cJSON *fl_num_samples_env = cJSON_GetObjectItemCaseSensitive(env, "FL_NUM_SAMPLES");
+
+    if (cJSON_IsString(fl_job_id_env) && fl_job_id_env->valuestring) {
+      strncpy(t.fl_job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task) {
+        strncpy(t.fl.job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+        t.is_fl_task = true;
+      }
+    }
+    if (cJSON_IsString(fl_round_id_env) && fl_round_id_env->valuestring) {
+      strncpy(t.fl_round_id_str, fl_round_id_env->valuestring, sizeof(t.fl_round_id_str) - 1);
+      t.fl_round_id_str[sizeof(t.fl_round_id_str) - 1] = '\0';
+      t.fl.round_id = (uint64_t)strtoull(t.fl_round_id_str, NULL, 10);
+    }
+    if (cJSON_IsString(fl_global_version_env) && fl_global_version_env->valuestring) {
+      strncpy(t.fl_global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.global_version) == 0) {
+        strncpy(t.fl.global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      }
+    }
+    if (cJSON_IsString(fl_global_update_env) && fl_global_update_env->valuestring) {
+      strncpy(t.fl_global_update_b64, fl_global_update_env->valuestring, MAX_BASE64_LEN - 1);
+      t.fl_global_update_b64[MAX_BASE64_LEN - 1] = '\0';
+    }
+    if (cJSON_IsString(fl_format_env) && fl_format_env->valuestring) {
+      strncpy(t.fl_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.update_format) == 0) {
+        strncpy(t.fl.update_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
+        t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      }
+    }
+    if (cJSON_IsString(fl_num_samples_env) && fl_num_samples_env->valuestring) {
+      strncpy(t.fl_num_samples_str, fl_num_samples_env->valuestring, sizeof(t.fl_num_samples_str) - 1);
+      t.fl_num_samples_str[sizeof(t.fl_num_samples_str) - 1] = '\0';
+    } else {
+      strncpy(t.fl_num_samples_str, "1", sizeof(t.fl_num_samples_str) - 1);
+      t.fl_num_samples_str[sizeof(t.fl_num_samples_str) - 1] = '\0';
+    }
+  }
+
+  LOG_INF("Starting task: ID=%s, Name=%s, Mode=%s", t.id, t.name, t.mode);
+  
+  /* Validate task type requirements */
+  if (t.is_fml_task) {
+    if (strlen(t.round_id) == 0) {
+      LOG_ERR("FML task missing required ROUND_ID field");
+      cJSON_Delete(json);
+      return;
+    }
+    LOG_INF("FML Task: round_id=%s, model_uri=%s", t.round_id, t.model_uri);
+    if (strlen(t.model_uri) > 0) {
+      struct mqtt_topic model_topic = {
+        .topic = {.utf8 = (char *)t.model_uri, .size = strlen(t.model_uri)},
+        .qos = MQTT_QOS_1_AT_LEAST_ONCE,
+      };
+      struct mqtt_subscription_list sub_list = {
+        .list = &model_topic,
+        .list_count = 1,
+        .message_id = sys_rand32_get() & 0xFFFF,
+      };
+      int ret = mqtt_subscribe(&client_ctx, &sub_list);
+      if (ret == 0) {
+        LOG_INF("Subscribed to model topic: %s", t.model_uri);
+      } else {
+        LOG_ERR("Failed to subscribe to model topic: %s (error: %d)", t.model_uri, ret);
+      }
+    }
+  } else if (t.is_fl_task) {
+    if (strlen(t.fl.job_id) == 0) {
+      LOG_ERR("FL task (legacy) missing required job_id field");
+      cJSON_Delete(json);
+      return;
+    }
+    LOG_INF("FL Task (legacy): job_id=%s, round_id=%llu, global_version=%s, format=%s",
+            t.fl.job_id, (unsigned long long)t.fl.round_id, 
+            t.fl.global_version, t.fl.update_format);
+  }
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
   memcpy(&g_current_task, &t, sizeof(t));
+
+  if (t.is_fml_task && strlen(t.model_uri) > 0) {
+    int model_version = extract_model_version_from_uri(t.model_uri);
+    char model_url[512];
+    snprintf(model_url, sizeof(model_url), "%s/models/%d", 
+             t.model_registry_url, model_version);
+    
+    LOG_INF("FL/FML task: Fetching model from registry: %s", model_url);
+    
+    char http_response[4096];
+    if (http_get_json(model_url, http_response, sizeof(http_response)) == 0) {
+      strncpy(g_current_task.model_data, http_response, 
+              sizeof(g_current_task.model_data) - 1);
+      g_current_task.model_data[sizeof(g_current_task.model_data) - 1] = '\0';
+      g_current_task.model_data_fetched = true;
+      LOG_INF("Successfully fetched model v%d via HTTP and stored in MODEL_DATA", model_version);
+    } else {
+      LOG_WRN("HTTP model fetch failed, will use MQTT subscription for model topic: %s", t.model_uri);
+    }
+  }
+
+  if (t.is_fml_task && strlen(t.proplet_id) > 0) {
+    char dataset_url[512];
+    snprintf(dataset_url, sizeof(dataset_url), "%s/datasets/%s", 
+             t.data_store_url, t.proplet_id);
+    
+    LOG_INF("FL/FML task: Fetching dataset for proplet_id=%s from: %s", 
+            t.proplet_id, dataset_url);
+    
+    char http_response[4096];
+    if (http_get_json(dataset_url, http_response, sizeof(http_response)) == 0) {
+      strncpy(g_current_task.dataset_data, http_response, 
+              sizeof(g_current_task.dataset_data) - 1);
+      g_current_task.dataset_data[sizeof(g_current_task.dataset_data) - 1] = '\0';
+      g_current_task.dataset_data_fetched = true;
+      LOG_INF("Successfully fetched dataset via HTTP and stored in DATASET_DATA");
+    } else {
+      LOG_WRN("HTTP dataset fetch failed for proplet_id=%s (WASM client may use synthetic data)", 
+              t.proplet_id);
+    }
+  }
 
   if (strlen(t.file) > 0) {
     size_t wasm_decoded_len = 0;
@@ -499,6 +827,8 @@ void handle_stop_command(const char *payload) {
 
   struct task t;
   memset(&t, 0, sizeof(t));
+  t.is_fml_task = false;
+  t.is_fl_task = false;
 
   cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
   cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
@@ -506,6 +836,7 @@ void handle_stop_command(const char *payload) {
 
   if (cJSON_IsString(id) && id->valuestring) {
     strncpy(t.id, id->valuestring, sizeof(t.id) - 1);
+    t.id[sizeof(t.id) - 1] = '\0';
   } else {
     LOG_ERR("Invalid or missing 'id' field in stop command");
     cJSON_Delete(json);
@@ -514,6 +845,7 @@ void handle_stop_command(const char *payload) {
 
   if (cJSON_IsString(name) && name->valuestring) {
     strncpy(t.name, name->valuestring, sizeof(t.name) - 1);
+    t.name[sizeof(t.name) - 1] = '\0';
   } else {
     LOG_ERR("Invalid or missing 'name' field in stop command");
     cJSON_Delete(json);
@@ -522,6 +854,7 @@ void handle_stop_command(const char *payload) {
 
   if (cJSON_IsString(state) && state->valuestring) {
     strncpy(t.state, state->valuestring, sizeof(t.state) - 1);
+    t.state[sizeof(t.state) - 1] = '\0';
   } else {
     LOG_ERR("Invalid or missing 'state' field in stop command");
     cJSON_Delete(json);
@@ -535,7 +868,184 @@ void handle_stop_command(const char *payload) {
   cJSON_Delete(json);
 }
 
-/* Handles a single chunk "data" field with the full base64 WASM. */
+static int http_get_json(const char *url, char *response_buffer, size_t buffer_size) {
+  int sock = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock < 0) {
+    LOG_ERR("Failed to create socket for HTTP GET: %d", sock);
+    return -1;
+  }
+
+  char host[256] = {0};
+  int port = 80;
+  char path[512] = {0};
+  
+  if (strncmp(url, "http://", 7) != 0) {
+    LOG_ERR("Only http:// URLs are supported, got: %s", url);
+    zsock_close(sock);
+    return -1;
+  }
+  
+  const char *host_start = url + 7;
+  const char *port_start = strchr(host_start, ':');
+  const char *path_start = strchr(host_start, '/');
+  
+  if (port_start && (!path_start || port_start < path_start)) {
+    size_t host_len = port_start - host_start;
+    strncpy(host, host_start, MIN(host_len, sizeof(host) - 1));
+    port = atoi(port_start + 1);
+    
+    if (path_start) {
+      strncpy(path, path_start, MIN(strlen(path_start), sizeof(path) - 1));
+    } else {
+      strcpy(path, "/");
+    }
+  } else if (path_start) {
+    size_t host_len = path_start - host_start;
+    strncpy(host, host_start, MIN(host_len, sizeof(host) - 1));
+    strncpy(path, path_start, MIN(strlen(path_start), sizeof(path) - 1));
+  } else {
+    strncpy(host, host_start, MIN(strlen(host_start), sizeof(host) - 1));
+    strcpy(path, "/");
+  }
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  
+  int ret = net_addr_pton(AF_INET, host, &addr.sin_addr);
+  if (ret != 0) {
+    LOG_ERR("Failed to resolve hostname %s: %d", host, ret);
+    zsock_close(sock);
+    return -1;
+  }
+
+  ret = zsock_connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+  if (ret < 0) {
+    LOG_ERR("Failed to connect to %s:%d: %d", host, port, ret);
+    zsock_close(sock);
+    return -1;
+  }
+
+  char request[1024];
+  snprintf(request, sizeof(request),
+           "GET %s HTTP/1.1\r\n"
+           "Host: %s\r\n"
+           "Connection: close\r\n"
+           "\r\n",
+           path, host);
+  
+  ret = zsock_send(sock, request, strlen(request), 0);
+  if (ret < 0) {
+    LOG_ERR("Failed to send HTTP request: %d", ret);
+    zsock_close(sock);
+    return -1;
+  }
+
+  size_t total_received = 0;
+  bool headers_complete = false;
+  size_t content_length = 0;
+  char header_buffer[1024] = {0};
+  size_t header_buffer_len = 0;
+  
+  while (total_received < buffer_size - 1) {
+    char chunk[512];
+    ret = zsock_recv(sock, chunk, sizeof(chunk) - 1, 0);
+    if (ret <= 0) {
+      break;
+    }
+    chunk[ret] = '\0';
+    
+    if (!headers_complete) {
+      /* Accumulate header data across chunks */
+      size_t header_space = sizeof(header_buffer) - header_buffer_len - 1;
+      size_t copy_len = MIN((size_t)ret, header_space);
+      memcpy(header_buffer + header_buffer_len, chunk, copy_len);
+      header_buffer_len += copy_len;
+      header_buffer[header_buffer_len] = '\0';
+      
+      /* Check for header end in accumulated buffer */
+      char *header_end = strstr(header_buffer, "\r\n\r\n");
+      if (header_end) {
+        headers_complete = true;
+        size_t header_len = (header_end - header_buffer) + 4;
+        size_t body_start_in_chunk = header_len - (header_buffer_len - copy_len);
+        
+        /* Extract Content-Length from accumulated headers */
+        char *cl_header = strstr(header_buffer, "Content-Length:");
+        if (cl_header) {
+          content_length = atoi(cl_header + strlen("Content-Length:"));
+        }
+        
+        /* Copy body data from current chunk */
+        if (body_start_in_chunk < (size_t)ret) {
+          size_t body_len = ret - body_start_in_chunk;
+          if (total_received + body_len < buffer_size - 1) {
+            memcpy(response_buffer + total_received, chunk + body_start_in_chunk, body_len);
+            total_received += body_len;
+          }
+        }
+      } else if (header_buffer_len >= sizeof(header_buffer) - 1) {
+        /* Header buffer full but no header end found - malformed response */
+        LOG_ERR("HTTP headers too long or malformed");
+        zsock_close(sock);
+        return -1;
+      }
+    } else {
+      /* Headers complete, copy body data */
+      size_t copy_len = MIN((size_t)ret, buffer_size - total_received - 1);
+      memcpy(response_buffer + total_received, chunk, copy_len);
+      total_received += copy_len;
+    }
+    
+    if (content_length > 0 && total_received >= content_length) {
+      break;
+    }
+  }
+  
+  response_buffer[total_received] = '\0';
+  zsock_close(sock);
+  
+  if (total_received == 0) {
+    LOG_WRN("No data received from HTTP GET %s", url);
+    return -1;
+  }
+  
+  LOG_INF("HTTP GET %s successful, received %zu bytes", url, total_received);
+  return 0;
+}
+
+static int extract_model_version_from_uri(const char *uri) {
+  if (!uri || strlen(uri) == 0) {
+    return 0;
+  }
+  
+  const char *last_part = strrchr(uri, '/');
+  if (!last_part) {
+    last_part = uri;
+  } else {
+    last_part++;
+  }
+  
+  const char *v_prefix = strstr(last_part, "global_model_v");
+  if (v_prefix) {
+    const char *version_str = v_prefix + strlen("global_model_v");
+    int version = atoi(version_str);
+    return version;
+  }
+  
+  size_t len = strlen(last_part);
+  int version = 0;
+  for (size_t i = len; i > 0; i--) {
+    if (last_part[i-1] >= '0' && last_part[i-1] <= '9') {
+      version = (version * 10) + (last_part[i-1] - '0');
+    } else if (version > 0) {
+      break;
+    }
+  }
+  
+  return version;
+}
+
 int handle_registry_response(const char *payload) {
   cJSON *json = cJSON_Parse(payload);
   if (!json) {
@@ -551,6 +1061,7 @@ int handle_registry_response(const char *payload) {
 
   if (cJSON_IsString(app_name) && app_name->valuestring) {
     strncpy(resp.app_name, app_name->valuestring, sizeof(resp.app_name) - 1);
+    resp.app_name[sizeof(resp.app_name) - 1] = '\0';
   } else {
     LOG_ERR("Invalid or missing 'app_name' field in registry response");
     cJSON_Delete(json);
@@ -559,6 +1070,7 @@ int handle_registry_response(const char *payload) {
 
   if (cJSON_IsString(data) && data->valuestring) {
     strncpy(resp.data, data->valuestring, sizeof(resp.data) - 1);
+    resp.data[sizeof(resp.data) - 1] = '\0';
   } else {
     LOG_ERR("Invalid or missing 'data' field in registry response");
     cJSON_Delete(json);
@@ -568,7 +1080,7 @@ int handle_registry_response(const char *payload) {
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
+  size_t decoded_len = (encoded_len * 3) / 4;
 
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
@@ -714,10 +1226,219 @@ void publish_registry_request(const char *domain_id, const char *channel_id,
 
 void publish_results(const char *domain_id, const char *channel_id,
                      const char *task_id, const char *results) {
-  char results_payload[256];
+  publish_results_with_error(domain_id, channel_id, task_id, results, NULL);
+}
 
-  snprintf(results_payload, sizeof(results_payload),
-           "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results);
+void publish_results_with_error(const char *domain_id, const char *channel_id,
+                                 const char *task_id, const char *results,
+                                 const char *error_msg) {
+  char results_payload[2048];
+  const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+
+  if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
+    cJSON *update_json = NULL;
+    if (results && strlen(results) > 0) {
+      update_json = cJSON_Parse(results);
+    }
+    
+    char update_topic[256];
+    snprintf(update_topic, sizeof(update_topic), "fl/rounds/%s/updates/%s",
+             g_current_task.round_id, pid);
+    
+    if (error_msg) {
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"round_id\":\"%s\","
+        "\"proplet_id\":\"%s\","
+        "\"base_model_uri\":\"%s\","
+        "\"num_samples\":0,"
+        "\"metrics\":{},"
+        "\"update\":{},"
+        "\"error\":\"%s\""
+        "}",
+        g_current_task.round_id,
+        pid,
+        g_current_task.model_uri,
+        error_msg
+      );
+    } else if (update_json) {
+      cJSON *round_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "round_id");
+      cJSON *proplet_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "proplet_id");
+      cJSON *base_model_uri_obj = cJSON_GetObjectItemCaseSensitive(update_json, "base_model_uri");
+      
+      if (!round_id_obj) {
+        cJSON_AddStringToObject(update_json, "round_id", g_current_task.round_id);
+      }
+      if (!proplet_id_obj) {
+        cJSON_AddStringToObject(update_json, "proplet_id", pid);
+      }
+      if (!base_model_uri_obj && strlen(g_current_task.model_uri) > 0) {
+        cJSON_AddStringToObject(update_json, "base_model_uri", g_current_task.model_uri);
+      }
+      
+      char *json_str = cJSON_PrintUnformatted(update_json);
+      if (json_str) {
+        strncpy(results_payload, json_str, sizeof(results_payload) - 1);
+        results_payload[sizeof(results_payload) - 1] = '\0';
+        cJSON_free(json_str);
+      } else {
+        snprintf(results_payload, sizeof(results_payload),
+          "{\"round_id\":\"%s\",\"proplet_id\":\"%s\",\"base_model_uri\":\"%s\",\"num_samples\":0,\"metrics\":{},\"update\":{}}",
+          g_current_task.round_id, pid, g_current_task.model_uri);
+      }
+      cJSON_Delete(update_json);
+    } else {
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"round_id\":\"%s\","
+        "\"proplet_id\":\"%s\","
+        "\"base_model_uri\":\"%s\","
+        "\"num_samples\":0,"
+        "\"metrics\":{},"
+        "\"update\":{}"
+        "}",
+        g_current_task.round_id,
+        pid,
+        g_current_task.model_uri
+      );
+    }
+    
+    if (publish_direct(update_topic, results_payload) != 0) {
+      LOG_ERR("Failed to publish FML update to %s", update_topic);
+    } else {
+      LOG_INF("Published FML update to %s", update_topic);
+    }
+    return;
+  }
+
+  if (g_current_task.is_fl_task && 
+      strcmp(g_current_task.mode, "train") == 0 &&
+      strlen(g_current_task.fl.job_id) > 0) {
+    if (strlen(g_current_task.fl.job_id) == 0) {
+      LOG_ERR("FL task missing job_id, cannot publish update");
+      return;
+    }
+    if (strlen(g_current_task.fl.global_version) == 0) {
+      LOG_ERR("FL task missing global_version, cannot publish update");
+      return;
+    }
+
+    char update_b64[MAX_UPDATE_B64_LEN];
+    size_t encoded_len = 0;
+    
+    size_t results_len = results ? strlen(results) : 0;
+    if (results_len == 0 && !error_msg) {
+      LOG_ERR("FL task has empty results and no error message");
+      return;
+    }
+
+    if (results_len > (MAX_UPDATE_B64_LEN * 3 / 4)) {
+      LOG_ERR("FL update payload too large: %zu bytes (max: %d)", 
+              results_len, (MAX_UPDATE_B64_LEN * 3 / 4));
+      error_msg = "Update payload exceeds size limit";
+      results_len = 0;
+    }
+
+    if (results_len > 0) {
+      int ret = base64_encode((uint8_t *)update_b64, sizeof(update_b64), &encoded_len,
+                             (const uint8_t *)results, results_len);
+      if (ret < 0) {
+        LOG_ERR("Failed to encode results as base64");
+        error_msg = "Failed to encode update as base64";
+        encoded_len = 0;
+        update_b64[0] = '\0';
+      } else if (encoded_len == 0) {
+        LOG_ERR("Base64 encoding produced empty result");
+        error_msg = "Base64 encoding produced empty result";
+        update_b64[0] = '\0';
+      } else {
+        update_b64[encoded_len] = '\0';
+      }
+    } else {
+      if (!error_msg) {
+        LOG_ERR("FL task has no results and no error message");
+        error_msg = "No results data available";
+      }
+      encoded_len = 0;
+      update_b64[0] = '\0';
+    }
+
+    const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+    const char *format = (strlen(g_current_task.fl_format) > 0) ? 
+                        g_current_task.fl_format : "f32-delta";
+    uint64_t num_samples = strtoull(g_current_task.fl_num_samples_str, NULL, 10);
+    if (num_samples == 0) {
+      num_samples = 1;
+    }
+
+    if (error_msg) {
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"task_id\":\"%s\","
+        "\"results\":{"
+          "\"task_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
+          "\"proplet_id\":\"%s\","
+          "\"num_samples\":%llu,"
+          "\"update_b64\":\"\","
+          "\"format\":\"%s\","
+          "\"metrics\":{}"
+        "},"
+        "\"error\":\"%s\""
+        "}",
+        task_id,
+        task_id,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
+        pid,
+        (unsigned long long)num_samples,
+        format,
+        error_msg
+      );
+    } else {
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"task_id\":\"%s\","
+        "\"results\":{"
+          "\"task_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
+          "\"proplet_id\":\"%s\","
+          "\"num_samples\":%llu,"
+          "\"update_b64\":\"%s\","
+          "\"format\":\"%s\","
+          "\"metrics\":{}"
+        "}"
+        "}",
+        task_id,
+        task_id,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
+        pid,
+        (unsigned long long)num_samples,
+        update_b64,
+        format
+      );
+    }
+
+    LOG_INF("Publishing FL update envelope for task: %s (job=%s, round=%llu, error=%s)",
+            task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
+            error_msg ? error_msg : "none");
+  } else {
+    if (error_msg) {
+      snprintf(results_payload, sizeof(results_payload),
+               "{\"task_id\":\"%s\",\"results\":\"%s\",\"error\":\"%s\"}", 
+               task_id, results ? results : "", error_msg);
+    } else {
+      snprintf(results_payload, sizeof(results_payload),
+               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results ? results : "");
+    }
+  }
 
   if (publish(domain_id, channel_id, RESULTS_TOPIC_TEMPLATE, results_payload) !=
       0) {

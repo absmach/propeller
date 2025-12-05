@@ -6,6 +6,7 @@ mod runtime;
 mod service;
 #[cfg(feature = "tee")]
 mod tee_detection;
+mod task_handler;
 mod types;
 
 use crate::config::PropletConfig;
