@@ -33,6 +33,23 @@ func (s State) String() string {
 	}
 }
 
+type Mode string
+
+const (
+	ModeInfer Mode = "infer"
+	ModeTrain Mode = "train"
+)
+
+type FLSpec struct {
+	JobID         string         `json:"job_id"`
+	RoundID       uint64         `json:"round_id"`
+	GlobalVersion string         `json:"global_version"`
+	Algorithm     string         `json:"algorithm,omitempty"`
+	UpdateFormat  string         `json:"update_format,omitempty"`
+	Hyperparams   map[string]any `json:"hyperparams,omitempty"`
+	ModelRef      string         `json:"model_ref,omitempty"`
+}
+
 type Task struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`

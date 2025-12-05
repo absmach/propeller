@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/0x6flab/namegenerator"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	flpkg "github.com/absmach/propeller/pkg/fl"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
@@ -439,7 +441,159 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		t.Error = errMsg
 	}
 
+		if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+			return err
+		}
+
+		const scanLimit = 10_000
+		data, _, lErr := svc.tasksDB.List(ctx, 0, scanLimit)
+		if lErr != nil {
+			return lErr
+		}
+
+		var (
+			pendingOrRunning bool
+			numUpdates       uint64
+			totalSamples     uint64
+		)
+
+		for i := range data {
+			tt, ok := data[i].(task.Task)
+			if !ok {
+				return pkgerrors.ErrInvalidData
+			}
+			if tt.Mode != task.ModeTrain || tt.FL == nil {
+				continue
+			}
+			if tt.FL.JobID != envlp.JobID || tt.FL.RoundID != envlp.RoundID {
+				continue
+			}
+
+			switch tt.State {
+			case task.Pending, task.Scheduled, task.Running:
+				pendingOrRunning = true
+			}
+
+			if tt.State == task.Completed && tt.Error == "" {
+				if u, ok := tt.Results.(flpkg.UpdateEnvelope); ok {
+					numUpdates++
+					totalSamples += u.NumSamples
+				} else {
+					// If storage rehydrates as map[string]any, ignore for aggregation stub.
+				}
+			}
+		}
+
+		if !pendingOrRunning {
+			svc.logger.InfoContext(ctx, "FL round complete (aggregation stub)",
+				slog.String("job_id", envlp.JobID),
+				slog.Uint64("round_id", envlp.RoundID),
+				slog.Uint64("num_updates", numUpdates),
+				slog.Uint64("total_samples", totalSamples),
+			)
+		}
+
+		return nil
+	}
+
+	t.Results = msg["results"]
+	t.State = task.Completed
+	t.UpdatedAt = time.Now()
+	t.FinishTime = time.Now()
+
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
+		t.Error = errMsg
+	}
+
 	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok {
+		return errors.New("invalid task_id")
+	}
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+
+	taskMetrics := TaskMetrics{
+		TaskID:    taskID,
+		PropletID: propletID,
+	}
+
+	if ts, ok := msg["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			taskMetrics.Timestamp = t
+		}
+	}
+	if taskMetrics.Timestamp.IsZero() {
+		taskMetrics.Timestamp = time.Now()
+	}
+
+	if metricsData, ok := msg["metrics"].(map[string]any); ok {
+		taskMetrics.Metrics = svc.parseProcessMetrics(metricsData)
+	}
+
+	if aggData, ok := msg["aggregated"].(map[string]any); ok {
+		taskMetrics.Aggregated = svc.parseAggregatedMetrics(aggData)
+	}
+
+	key := fmt.Sprintf("%s:%d", taskID, taskMetrics.Timestamp.UnixNano())
+	if err := svc.metricsDB.Create(ctx, key, taskMetrics); err != nil {
+		svc.logger.WarnContext(ctx, "failed to store task metrics", "error", err, "task_id", taskID)
+
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) handlePropletMetrics(ctx context.Context, msg map[string]any) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+	namespace, _ := msg["namespace"].(string)
+
+	propletMetrics := PropletMetrics{
+		PropletID: propletID,
+		Namespace: namespace,
+	}
+
+	if ts, ok := msg["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			propletMetrics.Timestamp = t
+		}
+	}
+	if propletMetrics.Timestamp.IsZero() {
+		propletMetrics.Timestamp = time.Now()
+	}
+
+	if cpuData, ok := msg["cpu_metrics"].(map[string]any); ok {
+		propletMetrics.CPU = svc.parseCPUMetrics(cpuData)
+	}
+
+	if memData, ok := msg["memory_metrics"].(map[string]any); ok {
+		propletMetrics.Memory = svc.parseMemoryMetrics(memData)
+	}
+
+	key := fmt.Sprintf("%s:%d", propletID, propletMetrics.Timestamp.UnixNano())
+	if err := svc.metricsDB.Create(ctx, key, propletMetrics); err != nil {
+		svc.logger.WarnContext(ctx, "failed to store proplet metrics", "error", err, "proplet_id", propletID)
+
 		return err
 	}
 
