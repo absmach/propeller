@@ -220,6 +220,11 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
+		mode := string(payload.Mode)
+		if mode == "" {
+			mode = "infer"
+		}
+
 		if req.WasmFile != nil {
 			config := StartConfig{
 				ID:           req.ID,
@@ -233,7 +238,6 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			if err := p.runtime.StartApp(ctx, config); err != nil {
 				return err
 			}
-
 			return nil
 		}
 

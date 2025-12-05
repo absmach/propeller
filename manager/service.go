@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/0x6flab/namegenerator"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	flpkg "github.com/absmach/propeller/pkg/fl"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
@@ -180,6 +182,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
+
 	payload := map[string]interface{}{
 		"id":        t.ID,
 		"name":      t.Name,
@@ -190,6 +193,8 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		"cli_args":  t.CLIArgs,
 		"daemon":    t.Daemon,
 		"env":       t.Env,
+		"mode":      t.Mode,
+		"fl":        t.FL,
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
@@ -359,6 +364,99 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]int
 	if err != nil {
 		return err
 	}
+
+	if t.Mode == task.ModeTrain {
+		raw := msg["results"]
+		b, mErr := json.Marshal(raw)
+		if mErr != nil {
+			return mErr
+		}
+
+		var envlp flpkg.UpdateEnvelope
+		if uErr := json.Unmarshal(b, &envlp); uErr != nil {
+			return uErr
+		}
+
+		if envlp.JobID == "" {
+			return errors.New("invalid results: job_id is empty")
+		}
+		if envlp.RoundID == 0 {
+			return errors.New("invalid results: round_id is empty")
+		}
+
+		if t.FL != nil {
+			if t.FL.JobID != "" && envlp.JobID != t.FL.JobID {
+				return fmt.Errorf("invalid results: job_id mismatch (got %s, expected %s)", envlp.JobID, t.FL.JobID)
+			}
+			if t.FL.RoundID != 0 && envlp.RoundID != t.FL.RoundID {
+				return fmt.Errorf("invalid results: round_id mismatch (got %d, expected %d)", envlp.RoundID, t.FL.RoundID)
+			}
+		}
+
+		t.Results = envlp
+		t.State = task.Completed
+		t.UpdatedAt = time.Now()
+		t.FinishTime = time.Now()
+
+		if errMsg, ok := msg["error"].(string); ok {
+			t.Error = errMsg
+		}
+
+		if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+			return err
+		}
+
+		const scanLimit = 10_000
+		data, _, lErr := svc.tasksDB.List(ctx, 0, scanLimit)
+		if lErr != nil {
+			return lErr
+		}
+
+		var (
+			pendingOrRunning bool
+			numUpdates       uint64
+			totalSamples     uint64
+		)
+
+		for i := range data {
+			tt, ok := data[i].(task.Task)
+			if !ok {
+				return pkgerrors.ErrInvalidData
+			}
+			if tt.Mode != task.ModeTrain || tt.FL == nil {
+				continue
+			}
+			if tt.FL.JobID != envlp.JobID || tt.FL.RoundID != envlp.RoundID {
+				continue
+			}
+
+			switch tt.State {
+			case task.Pending, task.Scheduled, task.Running:
+				pendingOrRunning = true
+			}
+
+			if tt.State == task.Completed && tt.Error == "" {
+				if u, ok := tt.Results.(flpkg.UpdateEnvelope); ok {
+					numUpdates++
+					totalSamples += u.NumSamples
+				} else {
+					// If storage rehydrates as map[string]any, ignore for aggregation stub.
+				}
+			}
+		}
+
+		if !pendingOrRunning {
+			svc.logger.InfoContext(ctx, "FL round complete (aggregation stub)",
+				slog.String("job_id", envlp.JobID),
+				slog.Uint64("round_id", envlp.RoundID),
+				slog.Uint64("num_updates", numUpdates),
+				slog.Uint64("total_samples", totalSamples),
+			)
+		}
+
+		return nil
+	}
+
 	t.Results = msg["results"]
 	t.State = task.Completed
 	t.UpdatedAt = time.Now()

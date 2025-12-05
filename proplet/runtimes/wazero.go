@@ -40,17 +40,17 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig
 	w.runtimes[config.ID] = r
 	w.mutex.Unlock()
 
-	// Instantiate WASI, which implements host functions needed for TinyGo to
-	// implement `panic`.
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
 	module, err := r.InstantiateWithConfig(ctx, config.WasmBinary, wazero.NewModuleConfig().WithStartFunctions("_initialize"))
 	if err != nil {
+		_ = w.StopApp(ctx, id)
 		return errors.Join(errors.New("failed to instantiate Wasm module"), err)
 	}
 
 	function := module.ExportedFunction(config.FunctionName)
 	if function == nil {
+		_ = w.StopApp(ctx, id)
 		return errors.New("failed to find exported function")
 	}
 
@@ -59,6 +59,7 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig
 		if err != nil {
 			w.logger.Error("failed to call function", slog.String("id", config.ID), slog.String("function", config.FunctionName), slog.String("error", err.Error()))
 
+			_ = w.StopApp(ctx, id)
 			return
 		}
 
@@ -81,6 +82,7 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig
 		w.logger.Info("Finished running app", slog.String("id", config.ID))
 	}()
 
+	// Kept as-is from your original implementation.
 	time.Sleep(5 * time.Second)
 
 	return nil
@@ -100,6 +102,5 @@ func (w *wazeroRuntime) StopApp(ctx context.Context, id string) error {
 	}
 
 	delete(w.runtimes, id)
-
 	return nil
 }

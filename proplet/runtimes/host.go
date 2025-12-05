@@ -55,6 +55,7 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 	for i := range config.Args {
 		cliArgs = append(cliArgs, strconv.FormatUint(config.Args[i], 10))
 	}
+
 	cmd := exec.Command(w.wasmRuntime, cliArgs...)
 	results := bytes.Buffer{}
 	cmd.Stdout = &results
@@ -81,32 +82,33 @@ func (w *hostRuntime) StopApp(ctx context.Context, id string) error {
 	return nil
 }
 
-func (w *hostRuntime) wait(ctx context.Context, cmd *exec.Cmd, fileName, id string, results *bytes.Buffer) {
+func (w *hostRuntime) wait(
+	ctx context.Context,
+	cmd *exec.Cmd,
+	fileName, id string,
+	results *bytes.Buffer,
+	mode, propletID string,
+	env map[string]string,
+) {
 	defer func() {
 		if err := os.Remove(fileName); err != nil {
 			w.logger.Error("failed to remove file", slog.String("fileName", fileName), slog.String("error", err.Error()))
 		}
 	}()
 
-	var payload map[string]any
+	outStr := results.String()
+
+	// Use shared helper (in fl_helpers.go) to avoid duplicate declarations.
+	payload := buildFLPayloadFromString(id, mode, propletID, env, outStr)
+
 	if err := cmd.Wait(); err != nil {
 		w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
-		payload = map[string]any{
-			"task_id": id,
-			"error":   err.Error(),
-			"results": results.String(),
-		}
-	} else {
-		payload = map[string]any{
-			"task_id": id,
-			"results": results.String(),
-		}
+		payload["error"] = err.Error()
 	}
 
 	topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
 	if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
 		w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
-
 		return
 	}
 

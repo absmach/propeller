@@ -29,23 +29,44 @@ func (s State) String() string {
 	}
 }
 
+type Mode string
+
+const (
+	ModeInfer Mode = "infer"
+	ModeTrain Mode = "train"
+)
+
+type FLSpec struct {
+	JobID         string         `json:"job_id"`
+	RoundID       uint64         `json:"round_id"`
+	GlobalVersion string         `json:"global_version"`
+	Algorithm     string         `json:"algorithm,omitempty"`
+	UpdateFormat  string         `json:"update_format,omitempty"`
+	Hyperparams   map[string]any `json:"hyperparams,omitempty"`
+	ModelRef      string         `json:"model_ref,omitempty"`
+}
+
 type Task struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	State      State             `json:"state"`
-	ImageURL   string            `json:"image_url,omitempty"`
-	File       []byte            `json:"file,omitempty"`
-	CLIArgs    []string          `json:"cli_args"`
-	Inputs     []uint64          `json:"inputs,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
-	Daemon     bool              `json:"daemon"`
-	PropletID  string            `json:"proplet_id,omitempty"`
-	Results    any               `json:"results,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	StartTime  time.Time         `json:"start_time"`
-	FinishTime time.Time         `json:"finish_time"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	State     State             `json:"state"`
+	ImageURL  string            `json:"image_url,omitempty"`
+	File      []byte            `json:"file,omitempty"`
+	CLIArgs   []string          `json:"cli_args"`
+	Inputs    []uint64          `json:"inputs,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	Daemon    bool              `json:"daemon"`
+	PropletID string            `json:"proplet_id,omitempty"`
+
+	Mode Mode    `json:"mode,omitempty"`
+	FL   *FLSpec `json:"fl,omitempty"`
+
+	Results    any       `json:"results,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	StartTime  time.Time `json:"start_time"`
+	FinishTime time.Time `json:"finish_time"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type TaskPage struct {
