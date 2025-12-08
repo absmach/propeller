@@ -2,6 +2,11 @@
 build
 config.toml
 
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
 # Zephyr
 embed-proplet/.cache
 embed-proplet/.west
