@@ -9,7 +9,8 @@ type startRequest struct {
 	CLIArgs      []string
 	FunctionName string
 	WasmFile     []byte
-	imageURL     string
+	ImageURL     string
+	Checksum     string
 	Params       []uint64
 	Daemon       bool
 	Env          map[string]string
@@ -22,7 +23,7 @@ func (r startRequest) Validate() error {
 	if r.FunctionName == "" {
 		return errors.New("function name is required")
 	}
-	if r.WasmFile == nil && r.imageURL == "" {
+	if r.WasmFile == nil && r.ImageURL == "" {
 		return errors.New("either wasm file or wasm file download path is required")
 	}
 

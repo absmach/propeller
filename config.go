@@ -14,24 +14,27 @@ type Config struct {
 }
 
 type ManagerConfig struct {
-	DomainID  string `toml:"domain_id"`
-	ClientID  string `toml:"client_id"`
-	ClientKey string `toml:"client_key"`
-	ChannelID string `toml:"channel_id"`
+	DomainID    string `toml:"domain_id"`
+	ClientID    string `toml:"client_id"`
+	ClientKey   string `toml:"client_key"`
+	ChannelID   string `toml:"channel_id"`
+	WorkloadKey string `toml:"workload_key"` // Key used to encrypt workloads before sending
 }
 
 type PropletConfig struct {
-	DomainID  string `toml:"domain_id"`
-	ClientID  string `toml:"client_id"`
-	ClientKey string `toml:"client_key"`
-	ChannelID string `toml:"channel_id"`
+	DomainID    string `toml:"domain_id"`
+	ClientID    string `toml:"client_id"`
+	ClientKey   string `toml:"client_key"`
+	ChannelID   string `toml:"channel_id"`
+	WorkloadKey string `toml:"workload_key"` // Key used to decrypt workloads upon receipt
 }
 
 type ProxyConfig struct {
-	DomainID  string `toml:"domain_id"`
-	ClientID  string `toml:"client_id"`
-	ClientKey string `toml:"client_key"`
-	ChannelID string `toml:"channel_id"`
+	DomainID    string `toml:"domain_id"`
+	ClientID    string `toml:"client_id"`
+	ClientKey   string `toml:"client_key"`
+	ChannelID   string `toml:"channel_id"`
+	WorkloadKey string `toml:"workload_key"` // Key used if proxy needs to handle encrypted streams
 }
 
 func LoadConfig(path string) (*Config, error) {

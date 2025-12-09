@@ -1651,37 +1651,42 @@ services:
       - supermq-base-net
 
   manager:
-    image: ghcr.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
-    container_name: propeller-manager
-    expose:
-      - ${MANAGER_HTTP_PORT}
-    restart: on-failure
-    depends_on:
-      - mqtt-adapter
-    environment:
-      MANAGER_LOG_LEVEL: ${MANAGER_LOG_LEVEL}
-      MANAGER_INSTANCE_ID: ${MANAGER_INSTANCE_ID}
-      MANAGER_MQTT_ADDRESS: ${MANAGER_MQTT_ADDRESS}
-      MANAGER_MQTT_QOS: ${MANAGER_MQTT_QOS}
-      MANAGER_MQTT_TIMEOUT: ${MANAGER_MQTT_TIMEOUT}
-      MANAGER_DOMAIN_ID: ${MANAGER_DOMAIN_ID}
-      MANAGER_CHANNEL_ID: ${MANAGER_CHANNEL_ID}
-      MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID}
-      MANAGER_CLIENT_KEY: ${MANAGER_CLIENT_KEY}
-      MANAGER_HTTP_HOST: ${MANAGER_HTTP_HOST}
-      MANAGER_HTTP_PORT: ${MANAGER_HTTP_PORT}
-      MANAGER_HTTP_SERVER_CERT: ${MANAGER_HTTP_SERVER_CERT}
-      MANAGER_HTTP_SERVER_KEY: ${MANAGER_HTTP_SERVER_KEY}
-      MANAGER_OTEL_URL: ${MANAGER_OTEL_URL}
-      MANAGER_TRACE_RATIO: ${MANAGER_TRACE_RATIO}
-    ports:
-      - ${MANAGER_HTTP_PORT}:${MANAGER_HTTP_PORT}
-    networks:
-      - supermq-base-net
-    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
-    # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml
+      image: ghcr.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
+      container_name: propeller-manager
+      expose:
+        - ${MANAGER_HTTP_PORT}
+      restart: on-failure
+      depends_on:
+        - mqtt-adapter
+      environment:
+        MANAGER_LOG_LEVEL: ${MANAGER_LOG_LEVEL}
+        MANAGER_INSTANCE_ID: ${MANAGER_INSTANCE_ID}
+        MANAGER_MQTT_ADDRESS: ${MANAGER_MQTT_ADDRESS}
+        MANAGER_MQTT_QOS: ${MANAGER_MQTT_QOS}
+        MANAGER_MQTT_TIMEOUT: ${MANAGER_MQTT_TIMEOUT}
+        MANAGER_DOMAIN_ID: ${MANAGER_DOMAIN_ID}
+        MANAGER_CHANNEL_ID: ${MANAGER_CHANNEL_ID}
+        MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID}
+        MANAGER_CLIENT_KEY: ${MANAGER_CLIENT_KEY}
+        MANAGER_HTTP_HOST: ${MANAGER_HTTP_HOST}
+        MANAGER_HTTP_PORT: ${MANAGER_HTTP_PORT}
+        MANAGER_HTTP_SERVER_CERT: ${MANAGER_HTTP_SERVER_CERT}
+        MANAGER_HTTP_SERVER_KEY: ${MANAGER_HTTP_SERVER_KEY}
+        MANAGER_OTEL_URL: ${MANAGER_OTEL_URL}
+        MANAGER_TRACE_RATIO: ${MANAGER_TRACE_RATIO}
+        MANAGER_WORKLOAD_KEY: ${MANAGER_WORKLOAD_KEY}
+        MANAGER_MQTT_CA_PATH: ${MANAGER_MQTT_CA_PATH}
+        MANAGER_MQTT_CERT_PATH: ${MANAGER_MQTT_CERT_PATH}
+        MANAGER_MQTT_KEY_PATH: ${MANAGER_MQTT_KEY_PATH}
+      ports:
+        - ${MANAGER_HTTP_PORT}:${MANAGER_HTTP_PORT}
+      networks:
+        - supermq-base-net
+      volumes:
+        - ./ssl/certs:/etc/ssl/certs:ro
+        # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+        # If you are using environment variables for configuration, leave this commented out.
+        # - ./config.toml:/config.toml
 
   proplet:
     image: ghcr.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
@@ -1706,12 +1711,17 @@ services:
       PROPLET_CLIENT_KEY: ${PROPLET_CLIENT_KEY}
       PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME}
       PROPLET_MANAGER_K8S_NAMESPACE: ${PROPLET_MANAGER_K8S_NAMESPACE}
+      PROPLET_WORKLOAD_KEY: ${PROPLET_WORKLOAD_KEY}
+      PROPLET_MQTT_CA_PATH: ${PROPLET_MQTT_CA_PATH}
+      PROPLET_MQTT_CERT_PATH: ${PROPLET_MQTT_CERT_PATH}
+      PROPLET_MQTT_KEY_PATH: ${PROPLET_MQTT_KEY_PATH}
     networks:
       - supermq-base-net
-    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
-    # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml
+    volumes:
+      - ./ssl/certs:/etc/ssl/certs:ro
+      # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+      # If you are using environment variables for configuration, leave this commented out.
+      # - ./config.toml:/config.toml
 
   proxy:
     image: ghcr.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
@@ -1735,9 +1745,14 @@ services:
       PROXY_REGISTRY_USERNAME: ${PROXY_REGISTRY_USERNAME}
       PROXY_REGISTRY_PASSWORD: ${PROXY_REGISTRY_PASSWORD}
       PROXY_REGISTRY_URL: ${PROXY_REGISTRY_URL}
+      PROXY_WORKLOAD_KEY: ${PROXY_WORKLOAD_KEY}
+      PROXY_MQTT_CA_PATH: ${PROXY_MQTT_CA_PATH}
+      PROXY_MQTT_CERT_PATH: ${PROXY_MQTT_CERT_PATH}
+      PROXY_MQTT_KEY_PATH: ${PROXY_MQTT_KEY_PATH}
     networks:
       - supermq-base-net
-    # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
-    # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml
+    volumes:
+      - ./ssl/certs:/etc/ssl/certs:ro
+      # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
+      # If you are using environment variables for configuration, leave this commented out.
+      # - ./config.toml:/config.toml

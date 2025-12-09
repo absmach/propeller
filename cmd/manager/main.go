@@ -35,18 +35,22 @@ const (
 )
 
 type config struct {
-	LogLevel    string        `env:"MANAGER_LOG_LEVEL"           envDefault:"info"`
-	InstanceID  string        `env:"MANAGER_INSTANCE_ID"`
-	MQTTAddress string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
-	MQTTQoS     uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
-	MQTTTimeout time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
-	DomainID    string        `env:"MANAGER_DOMAIN_ID"`
-	ChannelID   string        `env:"MANAGER_CHANNEL_ID"`
-	ClientID    string        `env:"MANAGER_CLIENT_ID"`
-	ClientKey   string        `env:"MANAGER_CLIENT_KEY"`
-	Server      server.Config
-	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
-	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
+	LogLevel     string        `env:"MANAGER_LOG_LEVEL"           envDefault:"info"`
+	InstanceID   string        `env:"MANAGER_INSTANCE_ID"`
+	MQTTAddress  string        `env:"MANAGER_MQTT_ADDRESS"        envDefault:"tcp://localhost:1883"`
+	MQTTQoS      uint8         `env:"MANAGER_MQTT_QOS"            envDefault:"2"`
+	MQTTTimeout  time.Duration `env:"MANAGER_MQTT_TIMEOUT"        envDefault:"30s"`
+	DomainID     string        `env:"MANAGER_DOMAIN_ID"`
+	ChannelID    string        `env:"MANAGER_CHANNEL_ID"`
+	ClientID     string        `env:"MANAGER_CLIENT_ID"`
+	ClientKey    string        `env:"MANAGER_CLIENT_KEY"`
+	WorkloadKey  string        `env:"MANAGER_WORKLOAD_KEY"`
+	MQTTCAPath   string        `env:"MANAGER_MQTT_CA_PATH"`
+	MQTTCertPath string        `env:"MANAGER_MQTT_CERT_PATH"`
+	MQTTKeyPath  string        `env:"MANAGER_MQTT_KEY_PATH"`
+	Server       server.Config
+	OTELURL      url.URL `env:"MANAGER_OTEL_URL"`
+	TraceRatio   float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
 }
 
 func main() {
@@ -62,7 +66,8 @@ func main() {
 		cfg.InstanceID = uuid.NewString()
 	}
 
-	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
+	// Updated config loading logic
+	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" || cfg.WorkloadKey == "" {
 		_, err := os.Stat(configPath)
 		switch err {
 		case nil:
@@ -74,6 +79,7 @@ func main() {
 			cfg.ClientID = conf.Manager.ClientID
 			cfg.ClientKey = conf.Manager.ClientKey
 			cfg.ChannelID = conf.Manager.ChannelID
+			cfg.WorkloadKey = conf.Manager.WorkloadKey // Load from TOML
 		default:
 			log.Fatalf("failed to load TOML configuration: %s", err.Error())
 		}
@@ -109,7 +115,20 @@ func main() {
 	}
 	tracer := tp.Tracer(svcName)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, svcName, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(
+		cfg.MQTTAddress,
+		cfg.MQTTQoS,
+		svcName,
+		cfg.ClientID,
+		cfg.ClientKey,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.MQTTTimeout,
+		cfg.MQTTCAPath,
+		cfg.MQTTCertPath,
+		cfg.MQTTKeyPath,
+		logger,
+	)
 	if err != nil {
 		logger.Error("failed to initialize mqtt pubsub", slog.String("error", err.Error()))
 
@@ -124,6 +143,7 @@ func main() {
 		mqttPubSub,
 		cfg.DomainID,
 		cfg.ChannelID,
+		cfg.WorkloadKey, // Pass key to service
 		logger,
 	)
 	svc = middleware.Logging(logger, svc)
