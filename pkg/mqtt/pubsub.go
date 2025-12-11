@@ -24,7 +24,7 @@ var (
 	errEmptyTopic         = errors.New("empty topic")
 	errEmptyID            = errors.New("empty ID")
 
-	aliveTopicTemplate = "m/%s/c/%s/messages/control/proplet/alive"
+	aliveTopicTemplate = "m/%s/c/%s/control/proplet/alive"
 	lwtPayloadTemplate = `{"status":"offline","proplet_id":"%s"}`
 )
 

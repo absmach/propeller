@@ -7,8 +7,8 @@ OU_CA = supermq_ca
 OU_CRT = supermq_crt
 EA = info@supermq.com
 CN_CA = SuperMQ_Self_Signed_CA
-CN_SRV = localhost
-CLIENT_SECRET = <CLIENTS_SECRET> # e.g. 8f65ed04-0770-4ce4-a291-6d1bf2000f4d
+CN_SRV ?= localhost
+CLIENT_SECRET ?= "" # e.g. 8f65ed04-0770-4ce4-a291-6d1bf2000f4d
 CRT_FILE_NAME = client
 AUTH_GRPC_SERVER_CONF_FILE_NAME=auth-grpc-server.conf
 AUTH_GRPC_CLIENT_CONF_FILE_NAME=auth-grpc-client.conf
@@ -40,6 +40,9 @@ CHANNELS_GRPC_SERVER_CN=channels
 CHANNELS_GRPC_CLIENT_CN=channels-client
 CHANNELS_GRPC_SERVER_CRT_FILE_NAME=channels-grpc-server
 CHANNELS_GRPC_CLIENT_CRT_FILE_NAME=channels-grpc-client
+COAP_DTLS_SERVER_CONF_FILE_NAME=coap-server.conf
+COAP_DTLS_SERVER_CN=coap
+COAP_DTLS_SERVER_CRT_FILE_NAME=coap-server
 
 define GRPC_CERT_CONFIG
 [req]
@@ -69,7 +72,7 @@ It can be downloaded from $(DOWNLOAD_URL).
 
 etc, etc.
 endef
-all: clean_certs ca server_cert auth_grpc_certs domains_grpc_certs groups_grpc_certs clients_grpc_certs channels_grpc_certs
+all: clean_certs ca server_cert auth_grpc_certs domains_grpc_certs groups_grpc_certs clients_grpc_certs channels_grpc_certs coap_dtls_certs
 
 # CA name and key is "ca".
 ca:
@@ -91,7 +94,7 @@ server_cert:
 client_cert:
 	# Create supermq server key and CSR.
 	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/$(CRT_FILE_NAME).key \
-				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(CLIENTS_SECRET)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
+				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(CLIENT_SECRET)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
 
 	# Sign client CSR.
 	openssl x509 -req -days 730 -in $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/$(CRT_FILE_NAME).crt
@@ -146,6 +149,9 @@ clients_grpc_certs:
 
 channels_grpc_certs:
 	$(call gen_grpc_cert_pair,$(CHANNELS_GRPC_SERVER_CRT_FILE_NAME),$(CHANNELS_GRPC_SERVER_CN),$(CHANNELS_GRPC_CLIENT_CRT_FILE_NAME),$(CHANNELS_GRPC_CLIENT_CN))
+
+coap_dtls_certs:
+	$(call gen_grpc_cert,$(COAP_DTLS_SERVER_CRT_FILE_NAME),$(COAP_DTLS_SERVER_CN))
 
 clean_certs:
 	rm -r $(CRT_LOCATION)/*.crt

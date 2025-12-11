@@ -17,12 +17,12 @@ import (
 const pollingInterval = 5 * time.Second
 
 var (
-	aliveTopicTemplate        = "m/%s/c/%s/messages/control/proplet/alive"
-	discoveryTopicTemplate    = "m/%s/c/%s/messages/control/proplet/create"
-	startTopicTemplate        = "m/%s/c/%s/messages/control/manager/start"
-	stopTopicTemplate         = "m/%s/c/%s/messages/control/manager/stop"
-	registryResponseTopic     = "m/%s/c/%s/messages/registry/server"
-	fetchRequestTopicTemplate = "m/%s/c/%s/messages/registry/proplet"
+	aliveTopicTemplate        = "m/%s/c/%s/control/proplet/alive"
+	discoveryTopicTemplate    = "m/%s/c/%s/control/proplet/create"
+	startTopicTemplate        = "m/%s/c/%s/control/manager/start"
+	stopTopicTemplate         = "m/%s/c/%s/control/manager/stop"
+	registryResponseTopic     = "m/%s/c/%s/registry/server"
+	fetchRequestTopicTemplate = "m/%s/c/%s/registry/proplet"
 )
 
 type PropletService struct {

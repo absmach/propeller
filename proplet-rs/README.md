@@ -82,25 +82,25 @@ export PROPLET_EXTERNAL_WASM_RUNTIME=/path/to/wasmtime
 Proplet-rs uses the following MQTT topic structure:
 
 ```
-m/{domainID}/c/{channelID}/messages/control/proplet/alive
+m/{domainID}/c/{channelID}/control/proplet/alive
     └─ Liveliness heartbeat (every 10 seconds)
 
-m/{domainID}/c/{channelID}/messages/control/proplet/create
+m/{domainID}/c/{channelID}/control/proplet/create
     └─ Discovery announcement on startup
 
-m/{domainID}/c/{channelID}/messages/control/manager/start
+m/{domainID}/c/{channelID}/control/manager/start
     └─ Task start commands from Manager
 
-m/{domainID}/c/{channelID}/messages/control/manager/stop
+m/{domainID}/c/{channelID}/control/manager/stop
     └─ Task stop commands from Manager
 
-m/{domainID}/c/{channelID}/messages/registry/server
+m/{domainID}/c/{channelID}/registry/server
     └─ Incoming Wasm binary chunks from Registry
 
-m/{domainID}/c/{channelID}/messages/registry/proplet
+m/{domainID}/c/{channelID}/registry/proplet
     └─ Requests for Wasm binary chunks to Registry
 
-m/{domainID}/c/{channelID}/messages/control/proplet/results
+m/{domainID}/c/{channelID}/control/proplet/results
     └─ Task execution results back to Manager
 ```
 

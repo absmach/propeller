@@ -26,7 +26,7 @@ volumes:
 
 services:
   spicedb:
-    image: "authzed/spicedb:v1.37.0"
+    image: docker.io/authzed/spicedb:v1.37.0
     container_name: supermq-spicedb
     command: "serve"
     restart: "always"
@@ -44,7 +44,7 @@ services:
       - spicedb-migrate
 
   spicedb-migrate:
-    image: "authzed/spicedb:v1.37.0"
+    image: docker.io/authzed/spicedb:v1.37.0
     container_name: supermq-spicedb-migrate
     command: "migrate head"
     restart: "on-failure"
@@ -57,7 +57,7 @@ services:
       - spicedb-db
 
   spicedb-db:
-    image: "postgres:16.2-alpine"
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-spicedb-db
     networks:
       - supermq-base-net
@@ -70,7 +70,7 @@ services:
     command: ["postgres", "-c", "track_commit_timestamp=on"]
 
   auth-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-auth-db
     restart: on-failure
     environment:
@@ -83,7 +83,7 @@ services:
       - supermq-auth-db-volume:/var/lib/postgresql/data
 
   auth-redis:
-    image: redis:7.2.4-alpine
+    image: docker.io/redis:8.2.2-alpine3.22
     container_name: supermq-auth-redis
     restart: on-failure
     networks:
@@ -92,7 +92,7 @@ services:
       - supermq-auth-redis-volume:/data
 
   auth:
-    image: supermq/auth:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/auth:${SMQ_RELEASE_TAG}
     container_name: supermq-auth
     depends_on:
       - auth-db
@@ -137,6 +137,7 @@ services:
       SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY}
       SMQ_AUTH_ADAPTER_INSTANCE_ID: ${SMQ_AUTH_ADAPTER_INSTANCE_ID}
       SMQ_ES_URL: ${SMQ_ES_URL}
+      SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL}
     ports:
       - ${SMQ_AUTH_HTTP_PORT}:${SMQ_AUTH_HTTP_PORT}
       - ${SMQ_AUTH_GRPC_PORT}:${SMQ_AUTH_GRPC_PORT}
@@ -184,7 +185,7 @@ services:
           create_host_path: true
 
   domains-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-domains-db
     restart: on-failure
     environment:
@@ -197,7 +198,7 @@ services:
       - supermq-domains-db-volume:/var/lib/postgresql/data
 
   domains-redis:
-    image: redis:7.2.4-alpine
+    image: docker.io/redis:8.2.2-alpine3.22
     container_name: supermq-domains-redis
     restart: on-failure
     networks:
@@ -206,7 +207,7 @@ services:
       - supermq-domains-redis-volume:/data
 
   domains:
-    image: supermq/domains:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/domains:${SMQ_RELEASE_TAG}
     container_name: supermq-domains
     depends_on:
       - domains-db
@@ -278,6 +279,7 @@ services:
       SMQ_DOMAINS_CALLOUT_CERT: ${SMQ_DOMAINS_CALLOUT_CERT}
       SMQ_DOMAINS_CALLOUT_KEY: ${SMQ_DOMAINS_CALLOUT_KEY}
       SMQ_DOMAINS_CALLOUT_OPERATIONS: ${SMQ_DOMAINS_CALLOUT_OPERATIONS}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER}
     ports:
       - ${SMQ_DOMAINS_HTTP_PORT}:${SMQ_DOMAINS_HTTP_PORT}
       - ${SMQ_DOMAINS_GRPC_PORT}:${SMQ_DOMAINS_GRPC_PORT}
@@ -372,7 +374,7 @@ services:
           create_host_path: true
 
   nginx:
-    image: nginx:1.25.4-alpine
+    image: docker.io/nginx:1.29.2-alpine3.22
     container_name: supermq-nginx
     restart: on-failure
     volumes:
@@ -409,9 +411,13 @@ services:
       - http-adapter
       - ws-adapter
       - coap-adapter
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   clients-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-clients-db
     restart: on-failure
     command: postgres -c "max_connections=${SMQ_POSTGRES_MAX_CONNECTIONS}"
@@ -426,7 +432,7 @@ services:
       - supermq-clients-db-volume:/var/lib/postgresql/data
 
   clients-redis:
-    image: redis:7.2.4-alpine
+    image: docker.io/redis:8.2.2-alpine3.22
     container_name: supermq-clients-redis
     restart: on-failure
     networks:
@@ -435,7 +441,7 @@ services:
       - supermq-clients-redis-volume:/data
 
   clients:
-    image: supermq/clients:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/clients:${SMQ_RELEASE_TAG}
     container_name: supermq-clients
     depends_on:
       - clients-db
@@ -507,6 +513,7 @@ services:
       SMQ_CLIENTS_CALLOUT_CERT: ${SMQ_CLIENTS_CALLOUT_CERT}
       SMQ_CLIENTS_CALLOUT_KEY: ${SMQ_CLIENTS_CALLOUT_KEY}
       SMQ_CLIENTS_CALLOUT_OPERATIONS: ${SMQ_CLIENTS_CALLOUT_OPERATIONS}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER}
     ports:
       - ${SMQ_CLIENTS_HTTP_PORT}:${SMQ_CLIENTS_HTTP_PORT}
       - ${SMQ_CLIENTS_GRPC_PORT}:${SMQ_CLIENTS_GRPC_PORT}
@@ -601,7 +608,7 @@ services:
           create_host_path: true
 
   channels-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-channels-db
     restart: on-failure
     command: postgres -c "max_connections=${SMQ_POSTGRES_MAX_CONNECTIONS}"
@@ -616,7 +623,7 @@ services:
       - supermq-channels-db-volume:/var/lib/postgresql/data
 
   channels-redis:
-    image: redis:7.2.4-alpine
+    image: docker.io/redis:8.2.2-alpine3.22
     container_name: supermq-channels-redis
     restart: on-failure
     networks:
@@ -625,7 +632,7 @@ services:
       - supermq-channels-redis-volume:/data
 
   channels:
-    image: supermq/channels:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/channels:${SMQ_RELEASE_TAG}
     container_name: supermq-channels
     depends_on:
       - channels-db
@@ -695,6 +702,7 @@ services:
       SMQ_CHANNELS_CALLOUT_CERT: ${SMQ_CHANNELS_CALLOUT_CERT}
       SMQ_CHANNELS_CALLOUT_KEY: ${SMQ_CHANNELS_CALLOUT_KEY}
       SMQ_CHANNELS_CALLOUT_OPERATIONS: ${SMQ_CHANNELS_CALLOUT_OPERATIONS}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER}
     ports:
       - ${SMQ_CHANNELS_HTTP_PORT}:${SMQ_CHANNELS_HTTP_PORT}
       - ${SMQ_CHANNELS_GRPC_PORT}:${SMQ_CHANNELS_GRPC_PORT}
@@ -789,7 +797,7 @@ services:
           create_host_path: true
 
   users-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-users-db
     restart: on-failure
     command: postgres -c "max_connections=${SMQ_POSTGRES_MAX_CONNECTIONS}"
@@ -804,7 +812,7 @@ services:
       - supermq-users-db-volume:/var/lib/postgresql/data
 
   users:
-    image: supermq/users:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/users:${SMQ_RELEASE_TAG}
     container_name: supermq-users
     depends_on:
       - users-db
@@ -822,11 +830,19 @@ services:
       SMQ_USERS_PASS_REGEX: ${SMQ_USERS_PASS_REGEX}
       SMQ_USERS_ACCESS_TOKEN_DURATION: ${SMQ_USERS_ACCESS_TOKEN_DURATION}
       SMQ_USERS_REFRESH_TOKEN_DURATION: ${SMQ_USERS_REFRESH_TOKEN_DURATION}
-      SMQ_TOKEN_RESET_ENDPOINT: ${SMQ_TOKEN_RESET_ENDPOINT}
       SMQ_USERS_HTTP_HOST: ${SMQ_USERS_HTTP_HOST}
       SMQ_USERS_HTTP_PORT: ${SMQ_USERS_HTTP_PORT}
       SMQ_USERS_HTTP_SERVER_CERT: ${SMQ_USERS_HTTP_SERVER_CERT}
       SMQ_USERS_HTTP_SERVER_KEY: ${SMQ_USERS_HTTP_SERVER_KEY}
+      SMQ_USERS_GRPC_HOST: ${SMQ_USERS_GRPC_HOST}
+      SMQ_USERS_GRPC_PORT: ${SMQ_USERS_GRPC_PORT}
+      ## Compose supports parameter expansion in environment,
+      ## Eg: ${VAR:+replacement} or ${VAR+replacement} -> replacement if VAR is set and non-empty, otherwise empty
+      ## Eg :${VAR:-default} or ${VAR-default}  -> value of VAR if set and non-empty, otherwise default
+      SMQ_USERS_GRPC_SERVER_CERT: ${SMQ_USERS_GRPC_SERVER_CERT:+/users-grpc-server.crt}
+      SMQ_USERS_GRPC_SERVER_KEY: ${SMQ_USERS_GRPC_SERVER_KEY:+/users-grpc-server.key}
+      SMQ_USERS_GRPC_SERVER_CA_CERTS: ${SMQ_USERS_GRPC_SERVER_CA_CERTS:+/users-grpc-server-ca.crt}
+      SMQ_USERS_GRPC_CLIENT_CA_CERTS: ${SMQ_USERS_GRPC_CLIENT_CA_CERTS:+/users-grpc-client-ca.crt}
       SMQ_USERS_DB_HOST: ${SMQ_USERS_DB_HOST}
       SMQ_USERS_DB_PORT: ${SMQ_USERS_DB_PORT}
       SMQ_USERS_DB_USER: ${SMQ_USERS_DB_USER}
@@ -843,7 +859,6 @@ services:
       SMQ_EMAIL_PASSWORD: ${SMQ_EMAIL_PASSWORD}
       SMQ_EMAIL_FROM_ADDRESS: ${SMQ_EMAIL_FROM_ADDRESS}
       SMQ_EMAIL_FROM_NAME: ${SMQ_EMAIL_FROM_NAME}
-      SMQ_EMAIL_TEMPLATE: ${SMQ_EMAIL_TEMPLATE}
       SMQ_ES_URL: ${SMQ_ES_URL}
       SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
       SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
@@ -869,12 +884,19 @@ services:
       SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY}
       SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST}
       SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT}
+      SMQ_PASSWORD_RESET_URL_PREFIX: ${SMQ_PASSWORD_RESET_URL_PREFIX}
+      SMQ_PASSWORD_RESET_EMAIL_TEMPLATE: ${SMQ_PASSWORD_RESET_EMAIL_TEMPLATE}
+      SMQ_VERIFICATION_URL_PREFIX: ${SMQ_VERIFICATION_URL_PREFIX}
+      SMQ_VERIFICATION_EMAIL_TEMPLATE: ${SMQ_VERIFICATION_EMAIL_TEMPLATE}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER}
     ports:
       - ${SMQ_USERS_HTTP_PORT}:${SMQ_USERS_HTTP_PORT}
+      - ${SMQ_USERS_GRPC_PORT}:${SMQ_USERS_GRPC_PORT}
     networks:
       - supermq-base-net
     volumes:
-      - ./templates/${SMQ_USERS_RESET_PWD_TEMPLATE}:/email.tmpl
+      - ./templates/${SMQ_PASSWORD_RESET_EMAIL_TEMPLATE}:/${SMQ_PASSWORD_RESET_EMAIL_TEMPLATE}
+      - ./templates/${SMQ_VERIFICATION_EMAIL_TEMPLATE}:/${SMQ_VERIFICATION_EMAIL_TEMPLATE}
       # Auth gRPC client certificates
       - type: bind
         source: ${SMQ_AUTH_GRPC_CLIENT_CERT:-ssl/certs/dummy/client_cert}
@@ -908,8 +930,58 @@ services:
         bind:
           create_host_path: true
 
+  notifications:
+    image: docker.io/supermq/notifications:${SMQ_RELEASE_TAG}
+    container_name: supermq-notifications
+    depends_on:
+      - nats
+    restart: on-failure
+    environment:
+      SMQ_NOTIFICATIONS_LOG_LEVEL: ${SMQ_NOTIFICATIONS_LOG_LEVEL}
+      SMQ_NOTIFICATIONS_INSTANCE_ID: ${SMQ_NOTIFICATIONS_INSTANCE_ID}
+      SMQ_ES_URL: ${SMQ_ES_URL}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY}
+      SMQ_EMAIL_HOST: ${SMQ_EMAIL_HOST}
+      SMQ_EMAIL_PORT: ${SMQ_EMAIL_PORT}
+      SMQ_EMAIL_USERNAME: ${SMQ_EMAIL_USERNAME}
+      SMQ_EMAIL_PASSWORD: ${SMQ_EMAIL_PASSWORD}
+      SMQ_EMAIL_FROM_ADDRESS: ${SMQ_EMAIL_FROM_ADDRESS}
+      SMQ_EMAIL_FROM_NAME: ${SMQ_EMAIL_FROM_NAME}
+      SMQ_EMAIL_INVITATION_TEMPLATE: ${SMQ_EMAIL_INVITATION_TEMPLATE}
+      SMQ_EMAIL_ACCEPTANCE_TEMPLATE: ${SMQ_EMAIL_ACCEPTANCE_TEMPLATE}
+      SMQ_EMAIL_REJECTION_TEMPLATE: ${SMQ_EMAIL_REJECTION_TEMPLATE}
+      SMQ_USERS_GRPC_URL: ${SMQ_USERS_GRPC_URL}
+      SMQ_USERS_GRPC_TIMEOUT: ${SMQ_USERS_GRPC_TIMEOUT}
+      SMQ_USERS_GRPC_CLIENT_CERT: ${SMQ_USERS_GRPC_CLIENT_CERT:+/users-grpc-client.crt}
+      SMQ_USERS_GRPC_CLIENT_KEY: ${SMQ_USERS_GRPC_CLIENT_KEY:+/users-grpc-client.key}
+      SMQ_USERS_GRPC_SERVER_CA_CERTS: ${SMQ_USERS_GRPC_SERVER_CA_CERTS:+/users-grpc-server-ca.crt}
+    networks:
+      - supermq-base-net
+    volumes:
+      - ./templates/${SMQ_EMAIL_INVITATION_TEMPLATE}:/${SMQ_EMAIL_INVITATION_TEMPLATE}
+      - ./templates/${SMQ_EMAIL_ACCEPTANCE_TEMPLATE}:/${SMQ_EMAIL_ACCEPTANCE_TEMPLATE}
+      - ./templates/${SMQ_EMAIL_REJECTION_TEMPLATE}:/${SMQ_EMAIL_REJECTION_TEMPLATE}
+      # Users gRPC client certificates
+      - type: bind
+        source: ${SMQ_USERS_GRPC_CLIENT_CERT:-ssl/certs/dummy/client_cert}
+        target: /users-grpc-client${SMQ_USERS_GRPC_CLIENT_CERT:+.crt}
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_USERS_GRPC_CLIENT_KEY:-ssl/certs/dummy/client_key}
+        target: /users-grpc-client${SMQ_USERS_GRPC_CLIENT_KEY:+.key}
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_USERS_GRPC_SERVER_CA_CERTS:-ssl/certs/dummy/server_ca}
+        target: /users-grpc-server-ca${SMQ_USERS_GRPC_SERVER_CA_CERTS:+.crt}
+        bind:
+          create_host_path: true
+
   groups-db:
-    image: postgres:16.2-alpine
+    image: docker.io/postgres:18.0-alpine3.22
     container_name: supermq-groups-db
     restart: on-failure
     command: postgres -c "max_connections=${SMQ_POSTGRES_MAX_CONNECTIONS}"
@@ -924,7 +996,7 @@ services:
       - supermq-groups-db-volume:/var/lib/postgresql/data
 
   groups:
-    image: supermq/groups:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/groups:${SMQ_RELEASE_TAG}
     container_name: supermq-groups
     depends_on:
       - groups-db
@@ -992,6 +1064,7 @@ services:
       SMQ_GROUPS_CALLOUT_CERT: ${SMQ_GROUPS_CALLOUT_CERT}
       SMQ_GROUPS_CALLOUT_KEY: ${SMQ_GROUPS_CALLOUT_KEY}
       SMQ_GROUPS_CALLOUT_OPERATIONS: ${SMQ_GROUPS_CALLOUT_OPERATIONS}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER}
     ports:
       - ${SMQ_GROUPS_HTTP_PORT}:${SMQ_GROUPS_HTTP_PORT}
       - ${SMQ_GROUPS_GRPC_PORT}:${SMQ_GROUPS_GRPC_PORT}
@@ -1086,7 +1159,7 @@ services:
           create_host_path: true
 
   jaeger:
-    image: jaegertracing/all-in-one:1.66.0
+    image: docker.io/jaegertracing/all-in-one:1.74.0
     container_name: supermq-jaeger
     environment:
       COLLECTOR_OTLP_ENABLED: ${SMQ_JAEGER_COLLECTOR_OTLP_ENABLED}
@@ -1098,7 +1171,7 @@ services:
       - supermq-base-net
 
   mqtt-adapter:
-    image: supermq/mqtt:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/mqtt:${SMQ_RELEASE_TAG}
     container_name: supermq-mqtt
     depends_on:
       - clients
@@ -1197,7 +1270,7 @@ services:
           create_host_path: true
 
   http-adapter:
-    image: supermq/http:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/http:${SMQ_RELEASE_TAG}
     container_name: supermq-http
     depends_on:
       - clients
@@ -1309,7 +1382,7 @@ services:
           create_host_path: true
 
   coap-adapter:
-    image: supermq/coap:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/coap:${SMQ_RELEASE_TAG}
     container_name: supermq-coap
     depends_on:
       - clients
@@ -1319,8 +1392,9 @@ services:
       SMQ_COAP_ADAPTER_LOG_LEVEL: ${SMQ_COAP_ADAPTER_LOG_LEVEL}
       SMQ_COAP_ADAPTER_HOST: ${SMQ_COAP_ADAPTER_HOST}
       SMQ_COAP_ADAPTER_PORT: ${SMQ_COAP_ADAPTER_PORT}
-      SMQ_COAP_ADAPTER_SERVER_CERT: ${SMQ_COAP_ADAPTER_SERVER_CERT}
-      SMQ_COAP_ADAPTER_SERVER_KEY: ${SMQ_COAP_ADAPTER_SERVER_KEY}
+      SMQ_COAP_ADAPTER_SERVER_CERT_FILE: ${SMQ_COAP_ADAPTER_SERVER_CERT_FILE:+/coap-server.crt}
+      SMQ_COAP_ADAPTER_SERVER_KEY_FILE: ${SMQ_COAP_ADAPTER_SERVER_KEY_FILE:+/coap-server.key}
+      SMQ_COAP_ADAPTER_SERVER_CA_FILE: ${SMQ_COAP_ADAPTER_SERVER_CA_FILE:+/coap-server-ca.crt}
       SMQ_COAP_ADAPTER_HTTP_HOST: ${SMQ_COAP_ADAPTER_HTTP_HOST}
       SMQ_COAP_ADAPTER_HTTP_PORT: ${SMQ_COAP_ADAPTER_HTTP_PORT}
       SMQ_COAP_ADAPTER_HTTP_SERVER_CERT: ${SMQ_COAP_ADAPTER_HTTP_SERVER_CERT}
@@ -1355,6 +1429,22 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      # DTLS certificates for CoAP
+      - type: bind
+        source: ${SMQ_COAP_ADAPTER_SERVER_CERT_FILE:-ssl/certs/dummy/server_cert}
+        target: /coap-server${SMQ_COAP_ADAPTER_SERVER_CERT_FILE:+.crt}
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_COAP_ADAPTER_SERVER_KEY_FILE:-ssl/certs/dummy/server_key}
+        target: /coap-server${SMQ_COAP_ADAPTER_SERVER_KEY_FILE:+.key}
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_COAP_ADAPTER_SERVER_CA_FILE:-ssl/certs/dummy/server_ca}
+        target: /coap-server-ca${SMQ_COAP_ADAPTER_SERVER_CA_FILE:+.crt}
+        bind:
+          create_host_path: true
       # Clients gRPC mTLS client certificates
       - type: bind
         source: ${SMQ_CLIENTS_GRPC_CLIENT_CERT:-ssl/certs/dummy/client_cert}
@@ -1410,7 +1500,7 @@ services:
           create_host_path: true
 
   ws-adapter:
-    image: supermq/ws:${SMQ_RELEASE_TAG}
+    image: docker.io/supermq/ws:${SMQ_RELEASE_TAG}
     container_name: supermq-ws
     depends_on:
       - clients
@@ -1522,7 +1612,7 @@ services:
           create_host_path: true
 
   rabbitmq:
-    image: rabbitmq:4.0.5-management-alpine
+    image: docker.io/rabbitmq:4.1.4-management-alpine
     container_name: supermq-rabbitmq
     restart: on-failure
     environment:
@@ -1543,7 +1633,7 @@ services:
       - supermq-base-net
 
   nats:
-    image: nats:2.10.25-alpine
+    image: docker.io/nats:2.12.0-alpine3.22
     container_name: supermq-nats
     restart: on-failure
     command: "--config=/etc/nats/nats.conf"

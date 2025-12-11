@@ -21,7 +21,11 @@ impl PubSub {
     pub async fn new(config: MqttConfig) -> Result<(Self, EventLoop)> {
         let mut mqtt_options = MqttOptions::new(
             config.client_id,
-            config.address.split("://").nth(1).unwrap_or(&config.address),
+            config
+                .address
+                .split("://")
+                .nth(1)
+                .unwrap_or(&config.address),
             1883,
         );
 
@@ -35,8 +39,7 @@ impl PubSub {
     }
 
     pub async fn publish<T: Serialize>(&self, topic: &str, payload: &T) -> Result<()> {
-        let json = serde_json::to_vec(payload)
-            .context("Failed to serialize payload")?;
+        let json = serde_json::to_vec(payload).context("Failed to serialize payload")?;
 
         self.client
             .publish(topic, QoS::ExactlyOnce, false, json)
@@ -81,15 +84,11 @@ pub struct MqttMessage {
 
 impl MqttMessage {
     pub fn decode<T: DeserializeOwned>(&self) -> Result<T> {
-        serde_json::from_slice(&self.payload)
-            .context("Failed to deserialize message payload")
+        serde_json::from_slice(&self.payload).context("Failed to deserialize message payload")
     }
 }
 
-pub async fn process_mqtt_events(
-    mut eventloop: EventLoop,
-    tx: mpsc::UnboundedSender<MqttMessage>,
-) {
+pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::UnboundedSender<MqttMessage>) {
     info!("Starting MQTT event loop");
 
     loop {
@@ -119,5 +118,5 @@ pub async fn process_mqtt_events(
 }
 
 pub fn build_topic(domain_id: &str, channel_id: &str, path: &str) -> String {
-    format!("m/{}/c/{}/messages/{}", domain_id, channel_id, path)
+    format!("m/{}/c/{}/{}", domain_id, channel_id, path)
 }

@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	baseTopic = "m/%s/c/%s/messages"
+	baseTopic = "m/%s/c/%s"
 	namegen   = namegenerator.NewGenerator()
 )
 

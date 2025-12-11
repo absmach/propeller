@@ -15,8 +15,8 @@ const (
 	connTimeout    = 10
 	reconnTimeout  = 1
 	disconnTimeout = 250
-	PubTopic       = "m/%s/c/%s/messages/registry/server"
-	SubTopic       = "m/%s/c/%s/messages/registry/proplet"
+	PubTopic       = "m/%s/c/%s/registry/server"
+	SubTopic       = "m/%s/c/%s/registry/proplet"
 )
 
 type ProxyService struct {
