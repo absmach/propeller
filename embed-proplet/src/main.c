@@ -44,6 +44,11 @@ int main(void)
     LOG_ERR("MQTT discovery publish failed");
   }
 
+  for (int i = 0; i < 20; i++) {
+    mqtt_client_process();
+    k_sleep(K_MSEC(100));
+  }
+
   int64_t next_alive = k_uptime_get() + PROPLET_LIVELINESS_INTERVAL_MS;
   int64_t next_metrics = k_uptime_get() + PROPLET_METRICS_INTERVAL_MS;
 
@@ -64,8 +69,4 @@ int main(void)
 
     k_sleep(K_MSEC(200));
   }
-
-  /* Unreachable while(1); left intentionally. */
-  /* mqtt_client_disconnect(); */
-  /* return 0; */
 }

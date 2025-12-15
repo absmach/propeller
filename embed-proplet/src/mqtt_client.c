@@ -1,4 +1,3 @@
-// #include <zephyr/data/json.h>
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "net/mqtt.h"
@@ -27,7 +26,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "10.42.0.1"
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE "m/%s/c/%s/control/manager/registry"
@@ -41,13 +40,11 @@ LOG_MODULE_REGISTER(mqtt_client);
 
 #define METRICS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/metrics"
 
-#define WILL_MESSAGE_TEMPLATE \
-  "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}"
+#define WILL_MESSAGE_TEMPLATE "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}"
 #define WILL_QOS MQTT_QOS_1_AT_LEAST_ONCE
 #define WILL_RETAIN 1
 
 #define CLIENT_ID "proplet-esp32s3"
-
 #define DEFAULT_NAMESPACE "embedded"
 
 #define MAX_ID_LEN 64
@@ -58,10 +55,6 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
-
-/* -------------------------------------------------------------------------- */
-/* FIX #1: struct task must be defined before g_current_task                   */
-/* -------------------------------------------------------------------------- */
 
 struct task {
   char id[MAX_ID_LEN];
@@ -83,17 +76,8 @@ struct task {
   char updated_at[MAX_TIMESTAMP_LEN];
 };
 
-/*
- * Keep the most recent "start" Task here, so if
- * we fetch the WASM from the registry, we can call
- * the WASM with the same inputs.
- *
- * If you support multiple tasks in parallel, you'll need
- * a more robust approach than a single global.
- */
 static struct task g_current_task;
 
-/* Store the connected proplet_id so alive can use it. */
 static char g_proplet_id[MAX_ID_LEN];
 static const char *g_namespace = DEFAULT_NAMESPACE;
 
@@ -190,7 +174,7 @@ static void mqtt_event_handler(struct mqtt_client *client,
       LOG_ERR("Failed to read payload [%d]", ret);
       return;
     }
-    payload[ret] = '\0'; /* Null-terminate */
+    payload[ret] = '\0';
     LOG_INF("Payload: %s", payload);
 
     if (strncmp(pub->message.topic.topic.utf8, start_topic,
@@ -280,11 +264,6 @@ int publish(const char *domain_id, const char *channel_id,
   return 0;
 }
 
-/* -------------------------------------------------------------------------- */
-/* FIX #2/#3: connect uses passed proplet_id (no hardcoded placeholders)       */
-/*             and stores it for alive publishing.                            */
-/* NOTE: password is intentionally unset here because your header has 3 args. */
-/* -------------------------------------------------------------------------- */
 int mqtt_client_connect(const char *domain_id,
                         const char *proplet_id,
                         const char *channel_id)
@@ -303,7 +282,6 @@ int mqtt_client_connect(const char *domain_id,
 
   mqtt_client_init(&client_ctx);
 
-  /* Save proplet_id for alive messages. */
   strncpy(g_proplet_id, proplet_id, sizeof(g_proplet_id) - 1);
   g_proplet_id[sizeof(g_proplet_id) - 1] = '\0';
 
@@ -329,17 +307,18 @@ int mqtt_client_connect(const char *domain_id,
       .qos = WILL_QOS,
   };
 
+  (void)will_topic;
+  (void)will_message;
+
   client_ctx.broker = &broker_addr;
   client_ctx.evt_cb = mqtt_event_handler;
   client_ctx.client_id = MQTT_UTF8_LITERAL(CLIENT_ID);
 
-  /* Username = proplet_id passed from main.c */
   static struct mqtt_utf8 username;
   username.utf8 = (const uint8_t *)g_proplet_id;
   username.size = strlen(g_proplet_id);
   client_ctx.user_name = &username;
 
-  /* No password in 3-arg API. Leave unset unless your broker requires it. */
   client_ctx.password = NULL;
 
   client_ctx.protocol_version = MQTT_VERSION_3_1_1;
@@ -348,12 +327,6 @@ int mqtt_client_connect(const char *domain_id,
   client_ctx.rx_buf_size = RX_BUFFER_SIZE;
   client_ctx.tx_buf = tx_buffer;
   client_ctx.tx_buf_size = TX_BUFFER_SIZE;
-
-  /* If you enable will later, these are the correct fields:
-   * client_ctx.will_topic = &will_topic;
-   * client_ctx.will_message = &will_message;
-   * client_ctx.will_retain = WILL_RETAIN;
-   */
 
   while (!mqtt_connected) {
     LOG_INF("Attempting to connect to the MQTT broker...");
@@ -392,9 +365,9 @@ int mqtt_client_connect(const char *domain_id,
 
 int subscribe(const char *domain_id, const char *channel_id)
 {
-  char start_topic[128];
-  char stop_topic[128];
-  char registry_response_topic[128];
+  static char start_topic[128];
+  static char stop_topic[128];
+  static char registry_response_topic[128];
 
   snprintf(start_topic, sizeof(start_topic),
            START_TOPIC_TEMPLATE, domain_id, channel_id);
@@ -489,9 +462,6 @@ void handle_start_command(const char *payload)
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
-  /* ---------------------------------------------------------------------- */
-  /* FIX: execute with 't' (current task) not g_current_task before memcpy.  */
-  /* ---------------------------------------------------------------------- */
   if (strlen(t.file) > 0) {
     size_t wasm_decoded_len = 0;
     static uint8_t wasm_binary[MAX_BASE64_LEN];
@@ -568,7 +538,6 @@ void handle_stop_command(const char *payload)
   cJSON_Delete(json);
 }
 
-/* Handles a single chunk "data" field with the full base64 WASM. */
 int handle_registry_response(const char *payload)
 {
   cJSON *json = cJSON_Parse(payload);
@@ -602,7 +571,7 @@ int handle_registry_response(const char *payload)
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
+  size_t decoded_len = (encoded_len * 3) / 4;
 
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
@@ -633,9 +602,6 @@ int handle_registry_response(const char *payload)
   return 0;
 }
 
-/* -------------------------------------------------------------------------- */
-/* FIX #4: alive publishes the actual proplet_id you connected with            */
-/* -------------------------------------------------------------------------- */
 void publish_alive_message(const char *domain_id, const char *channel_id)
 {
   char payload[192];
