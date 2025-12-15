@@ -12,6 +12,7 @@
 #include <zephyr/net/socket.h>
 #include <zephyr/random/random.h>
 #include <zephyr/sys/base64.h>
+#include <zephyr/sys/util.h>
 
 #if defined(CONFIG_CPU_LOAD)
 #include <zephyr/debug/cpu_load.h>
@@ -26,7 +27,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 256
 #define TX_BUFFER_SIZE 256
 
-#define MQTT_BROKER_HOSTNAME "10.42.0.1"
+#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE "m/%s/c/%s/control/manager/registry"
@@ -165,7 +166,9 @@ static void mqtt_event_handler(struct mqtt_client *client,
     snprintf(registry_response_topic, sizeof(registry_response_topic),
              REGISTRY_RESPONSE_TOPIC, domain_id, channel_id);
 
-    LOG_INF("Message received on topic: %s", pub->message.topic.topic.utf8);
+    LOG_INF("Message received on topic: %.*s",
+            pub->message.topic.topic.size,
+            pub->message.topic.topic.utf8);
 
     ret = mqtt_read_publish_payload(
         &client_ctx, payload,
@@ -174,17 +177,19 @@ static void mqtt_event_handler(struct mqtt_client *client,
       LOG_ERR("Failed to read payload [%d]", ret);
       return;
     }
-    payload[ret] = '\0';
+    payload[ret] = '\0'; /* Null-terminate */
     LOG_INF("Payload: %s", payload);
 
-    if (strncmp(pub->message.topic.topic.utf8, start_topic,
-                pub->message.topic.topic.size) == 0) {
+    const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
+
+    if (rtopic->size == strlen(start_topic) &&
+        memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
       handle_start_command(payload);
-    } else if (strncmp(pub->message.topic.topic.utf8, stop_topic,
-                       pub->message.topic.topic.size) == 0) {
+    } else if (rtopic->size == strlen(stop_topic) &&
+               memcmp(rtopic->utf8, stop_topic, rtopic->size) == 0) {
       handle_stop_command(payload);
-    } else if (strncmp(pub->message.topic.topic.utf8, registry_response_topic,
-                       pub->message.topic.topic.size) == 0) {
+    } else if (rtopic->size == strlen(registry_response_topic) &&
+               memcmp(rtopic->utf8, registry_response_topic, rtopic->size) == 0) {
       (void)handle_registry_response(payload);
     } else {
       LOG_WRN("Unknown topic");
@@ -538,6 +543,7 @@ void handle_stop_command(const char *payload)
   cJSON_Delete(json);
 }
 
+/* Handles a single chunk "data" field with the full base64 WASM. */
 int handle_registry_response(const char *payload)
 {
   cJSON *json = cJSON_Parse(payload);
@@ -571,7 +577,7 @@ int handle_registry_response(const char *payload)
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4;
+  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
 
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
