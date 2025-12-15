@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <zephyr/net/mqtt.h>
 
-#define PAYLOAD_BUFFER_SIZE 256
+#define PAYLOAD_BUFFER_SIZE 1024
 
 extern bool mqtt_connected;
 

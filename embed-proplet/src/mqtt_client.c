@@ -24,8 +24,8 @@
 
 LOG_MODULE_REGISTER(mqtt_client);
 
-#define RX_BUFFER_SIZE 256
-#define TX_BUFFER_SIZE 256
+#define RX_BUFFER_SIZE 1024
+#define TX_BUFFER_SIZE 1024
 
 #define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
