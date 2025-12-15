@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -24,12 +23,13 @@ const (
 )
 
 type config struct {
-	LogLevel            string        `env:"PROPLET_LOG_LEVEL"             envDefault:"info"`
+	LogLevel            string        `env:"PROPLET_LOG_LEVEL" envDefault:"info"`
 	InstanceID          string        `env:"PROPLET_INSTANCE_ID"`
-	MQTTAddress         string        `env:"PROPLET_MQTT_ADDRESS"          envDefault:"tcp://localhost:1883"`
-	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT"          envDefault:"30s"`
-	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS"              envDefault:"2"`
-	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL"   envDefault:"10s"`
+	MQTTAddress         string        `env:"PROPLET_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
+	MQTTTimeout         time.Duration `env:"PROPLET_MQTT_TIMEOUT" envDefault:"30s"`
+	MQTTQoS             byte          `env:"PROPLET_MQTT_QOS" envDefault:"2"`
+	LivelinessInterval  time.Duration `env:"PROPLET_LIVELINESS_INTERVAL" envDefault:"10s"`
+	MetricsInterval     time.Duration `env:"PROPLET_METRICS_INTERVAL" envDefault:"30s"`
 	DomainID            string        `env:"PROPLET_DOMAIN_ID"`
 	ChannelID           string        `env:"PROPLET_CHANNEL_ID"`
 	ClientID            string        `env:"PROPLET_CLIENT_ID"`
@@ -44,7 +44,7 @@ func main() {
 
 	cfg := config{}
 	if err := env.Parse(&cfg); err != nil {
-		log.Fatalf("failed to load configuration : %s", err.Error())
+		log.Fatalf("failed to load configuration: %s", err)
 	}
 
 	if cfg.InstanceID == "" {
@@ -52,56 +52,69 @@ func main() {
 	}
 
 	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
-		_, err := os.Stat(configPath)
-		switch err {
-		case nil:
-			conf, err := propeller.LoadConfig(configPath)
-			if err != nil {
-				log.Fatalf("failed to load TOML configuration: %s", err.Error())
-			}
-			cfg.DomainID = conf.Proplet.DomainID
-			cfg.ClientID = conf.Proplet.ClientID
-			cfg.ClientKey = conf.Proplet.ClientKey
-			cfg.ChannelID = conf.Proplet.ChannelID
-		default:
-			log.Fatalf("failed to load TOML configuration: %s", err.Error())
+		conf, err := propeller.LoadConfig(configPath)
+		if err != nil {
+			log.Fatalf("failed to load TOML configuration: %s", err)
 		}
+		cfg.DomainID = conf.Proplet.DomainID
+		cfg.ClientID = conf.Proplet.ClientID
+		cfg.ClientKey = conf.Proplet.ClientKey
+		cfg.ChannelID = conf.Proplet.ChannelID
 	}
 
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
-		log.Fatalf("failed to parse log level: %s", err.Error())
+		log.Fatalf("failed to parse log level: %s", err)
 	}
-	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	})
-	logger := slog.New(logHandler)
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(
+		cfg.MQTTAddress,
+		cfg.MQTTQoS,
+		cfg.InstanceID,
+		cfg.ClientID,
+		cfg.ClientKey,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.MQTTTimeout,
+		logger,
+	)
 	if err != nil {
-		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
+		logger.Error("failed to initialize mqtt", slog.Any("error", err))
 
 		return
 	}
 
 	var runtime proplet.Runtime
-	switch cfg.ExternalWasmRuntime != "" {
-	case true:
+	if cfg.ExternalWasmRuntime != "" {
 		runtime = runtimes.NewHostRuntime(logger, mqttPubSub, cfg.DomainID, cfg.ChannelID, cfg.ExternalWasmRuntime)
-	default:
+	} else {
 		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.DomainID, cfg.ChannelID)
 	}
 
-	service, err := proplet.NewService(ctx, cfg.DomainID, cfg.ChannelID, cfg.ClientID, cfg.ClientKey, cfg.ManagerK8sNamespace, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
+	service, err := proplet.NewService(
+		ctx,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.ClientID,
+		cfg.ClientKey,
+		cfg.ManagerK8sNamespace,
+		cfg.LivelinessInterval,
+		cfg.MetricsInterval,
+		mqttPubSub,
+		logger,
+		runtime,
+	)
 	if err != nil {
-		logger.Error("failed to initialize service", slog.Any("error", err))
+		logger.Error("failed to initialize proplet service", slog.Any("error", err))
 
 		return
 	}
 
 	if err := service.Run(ctx, logger); err != nil {
-		logger.Error("failed to run service", slog.Any("error", err))
+		logger.Error("service exited", slog.Any("error", err))
 
 		return
 	}
@@ -111,6 +124,6 @@ func main() {
 	})
 
 	if err := g.Wait(); err != nil {
-		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
+		logger.Error(svcName+" stopped with error", slog.Any("error", err))
 	}
 }
