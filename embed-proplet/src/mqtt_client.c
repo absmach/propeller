@@ -27,6 +27,11 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RX_BUFFER_SIZE 1024
 #define TX_BUFFER_SIZE 1024
 
+#if defined(PAYLOAD_BUFFER_SIZE) && (PAYLOAD_BUFFER_SIZE < 1024)
+#undef PAYLOAD_BUFFER_SIZE
+#define PAYLOAD_BUFFER_SIZE 1024
+#endif
+
 #define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
 
@@ -87,6 +92,11 @@ static uint8_t tx_buffer[TX_BUFFER_SIZE];
 
 static struct mqtt_client client_ctx;
 static struct sockaddr_storage broker_addr;
+
+static char g_will_topic_str[128];
+static char g_will_message_str[256];
+static struct mqtt_utf8 g_will_message;
+static struct mqtt_topic g_will_topic;
 
 static struct zsock_pollfd fds[1];
 static int nfds;
@@ -290,30 +300,22 @@ int mqtt_client_connect(const char *domain_id,
   strncpy(g_proplet_id, proplet_id, sizeof(g_proplet_id) - 1);
   g_proplet_id[sizeof(g_proplet_id) - 1] = '\0';
 
-  char will_topic_str[128];
-  snprintf(will_topic_str, sizeof(will_topic_str),
+  snprintf(g_will_topic_str, sizeof(g_will_topic_str),
            ALIVE_TOPIC_TEMPLATE, domain_id, channel_id);
 
-  char will_message_str[256];
-  snprintf(will_message_str, sizeof(will_message_str),
+  snprintf(g_will_message_str, sizeof(g_will_message_str),
            WILL_MESSAGE_TEMPLATE, proplet_id, g_namespace);
 
-  struct mqtt_utf8 will_message = {
-      .utf8 = (const uint8_t *)will_message_str,
-      .size = strlen(will_message_str),
-  };
+  g_will_message.utf8 = (const uint8_t *)g_will_message_str;
+  g_will_message.size = strlen(g_will_message_str);
 
-  struct mqtt_topic will_topic = {
-      .topic =
-          {
-              .utf8 = (const uint8_t *)will_topic_str,
-              .size = strlen(will_topic_str),
-          },
-      .qos = WILL_QOS,
-  };
+  g_will_topic.topic.utf8 = (const uint8_t *)g_will_topic_str;
+  g_will_topic.topic.size = strlen(g_will_topic_str);
+  g_will_topic.qos = WILL_QOS;
 
-  (void)will_topic;
-  (void)will_message;
+  client_ctx.will_topic = &g_will_topic;
+  client_ctx.will_message = &g_will_message;
+  (void)WILL_RETAIN;
 
   client_ctx.broker = &broker_addr;
   client_ctx.evt_cb = mqtt_event_handler;
@@ -325,7 +327,6 @@ int mqtt_client_connect(const char *domain_id,
   client_ctx.user_name = &username;
 
   client_ctx.password = NULL;
-
   client_ctx.protocol_version = MQTT_VERSION_3_1_1;
 
   client_ctx.rx_buf = rx_buffer;
