@@ -1,4 +1,4 @@
-use super::{Runtime, RuntimeContext};
+use super::{Runtime, RuntimeContext, StartConfig};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -10,11 +10,10 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 pub struct HostRuntime {
     runtime_path: String,
-    processes: Arc<Mutex<HashMap<Uuid, Child>>>,
+    processes: Arc<Mutex<HashMap<String, Child>>>,
 }
 
 impl HostRuntime {
@@ -25,7 +24,7 @@ impl HostRuntime {
         }
     }
 
-    async fn create_temp_wasm_file(&self, id: Uuid, wasm_binary: &[u8]) -> Result<PathBuf> {
+    async fn create_temp_wasm_file(&self, id: &str, wasm_binary: &[u8]) -> Result<PathBuf> {
         let temp_dir = std::env::temp_dir();
         let file_path = temp_dir.join(format!("proplet_{}.wasm", id));
 
@@ -39,7 +38,6 @@ impl HostRuntime {
 
         file.flush().await?;
 
-        debug!("Created temporary wasm file: {:?}", file_path);
         Ok(file_path)
     }
 
@@ -59,94 +57,108 @@ impl Runtime for HostRuntime {
     async fn start_app(
         &self,
         _ctx: RuntimeContext,
-        wasm_binary: Vec<u8>,
-        cli_args: Vec<String>,
-        id: Uuid,
-        function_name: String,
-        daemon: bool,
-        env: HashMap<String, String>,
-        args: Vec<f64>,
+        config: StartConfig,
     ) -> Result<Vec<u8>> {
         info!(
-            "Starting Host runtime app: task_id={}, function={}, daemon={}",
-            id, function_name, daemon
+            "Starting Host runtime app: task_id={}, function={}, daemon={}, wasm_size={}",
+            config.id,
+            config.function_name,
+            config.daemon,
+            config.wasm_binary.len()
         );
 
-        // Create temporary wasm file
-        let temp_file = self.create_temp_wasm_file(id, &wasm_binary).await?;
+        let temp_file = self.create_temp_wasm_file(&config.id, &config.wasm_binary).await?;
 
-        // Build command
         let mut cmd = Command::new(&self.runtime_path);
 
-        // Add wasm file as first argument
-        cmd.arg(&temp_file);
-
-        // Add CLI arguments
-        for arg in &cli_args {
+        for arg in &config.cli_args {
             cmd.arg(arg);
         }
 
-        // Add numeric parameters as additional arguments
-        for arg in &args {
+        cmd.arg(&temp_file);
+
+        for arg in &config.args {
             cmd.arg(arg.to_string());
         }
 
-        // Set environment variables
-        cmd.envs(&env);
+        cmd.envs(&config.env);
 
-        // Configure stdio
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null());
 
-        // Spawn the process
-        let mut child = cmd
-            .spawn()
-            .context("Failed to spawn host runtime process")?;
+        let child = cmd.spawn().context(format!(
+            "Failed to spawn host runtime process: {}. Command: {} {:?}",
+            self.runtime_path, self.runtime_path, config.cli_args
+        ))?;
 
-        debug!("Process spawned with PID: {:?}", child.id());
+        info!("Process spawned with PID: {:?}", child.id());
 
-        if daemon {
+        if config.daemon {
+            info!("Running in daemon mode for task: {}", config.id);
             // For daemon mode, store the process and return immediately
             let mut processes = self.processes.lock().await;
-            processes.insert(id, child);
+            processes.insert(config.id.clone(), child);
 
-            // Spawn a background task to wait for the process and cleanup
             let processes = self.processes.clone();
             let temp_file_clone = temp_file.clone();
-            let task_id = id;
+            let task_id = config.id.clone();
 
             tokio::spawn(async move {
-                // Wait for the process to complete
-                if let Some(mut process) = processes.lock().await.remove(&task_id) {
-                    match process.wait().await {
-                        Ok(status) => {
-                            info!("Daemon task {} exited with status: {}", task_id, status);
+                // Poll the process status periodically instead of blocking on wait()
+                // This allows stop_app to still access and kill the process
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    
+                    let mut should_cleanup = false;
+                    {
+                        let mut processes_guard = processes.lock().await;
+                        if let Some(process) = processes_guard.get_mut(&task_id) {
+                            match process.try_wait() {
+                                Ok(Some(status)) => {
+                                    info!("Daemon task {} exited with status: {}", task_id, status);
+                                    should_cleanup = true;
+                                }
+                                Ok(None) => {
+                                    // Process is still running, continue polling
+                                }
+                                Err(e) => {
+                                    error!("Daemon task {} try_wait error: {}", task_id, e);
+                                    should_cleanup = true;
+                                }
+                            }
+                        } else {
+                            // Process was removed (likely by stop_app), exit the loop
+                            break;
                         }
-                        Err(e) => {
-                            error!("Daemon task {} wait error: {}", task_id, e);
-                        }
+                    }
+
+                    if should_cleanup {
+                        processes.lock().await.remove(&task_id);
+                        break;
                     }
                 }
 
-                // Cleanup temp file
                 let _ = fs::remove_file(temp_file_clone).await;
             });
 
+            info!("Daemon task {} started, returning immediately", config.id);
             Ok(Vec::new())
         } else {
-            // Wait for process to complete
+            info!("Running in synchronous mode, waiting for task: {}", config.id);
+
             let output = child
                 .wait_with_output()
                 .await
                 .context("Failed to wait for host runtime process")?;
 
-            // Cleanup temp file
+            info!("Process completed for task: {}", config.id);
+
             self.cleanup_temp_file(temp_file).await?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                error!("Task {} failed: {}", id, stderr);
+                error!("Task {} failed with stderr: {}", config.id, stderr);
                 return Err(anyhow::anyhow!(
                     "Process exited with status: {}, stderr: {}",
                     output.status,
@@ -154,17 +166,11 @@ impl Runtime for HostRuntime {
                 ));
             }
 
-            debug!(
-                "Task {} completed successfully, output size: {} bytes",
-                id,
-                output.stdout.len()
-            );
-
             Ok(output.stdout)
         }
     }
 
-    async fn stop_app(&self, id: Uuid) -> Result<()> {
+    async fn stop_app(&self, id: String) -> Result<()> {
         info!("Stopping Host runtime app: task_id={}", id);
 
         let mut processes = self.processes.lock().await;
@@ -175,5 +181,106 @@ impl Runtime for HostRuntime {
         } else {
             Err(anyhow::anyhow!("Task {} not found", id))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_runtime_new() {
+        let runtime = HostRuntime::new("/usr/bin/wasmtime".to_string());
+        assert_eq!(runtime.runtime_path, "/usr/bin/wasmtime");
+    }
+
+    #[test]
+    fn test_temp_file_path_generation() {
+        let temp_dir = std::env::temp_dir();
+        let task_id = "task-123";
+        let expected_path = temp_dir.join(format!("proplet_{}.wasm", task_id));
+
+        assert!(expected_path
+            .to_string_lossy()
+            .contains("proplet_task-123.wasm"));
+    }
+
+    #[test]
+    fn test_temp_file_path_with_special_chars() {
+        let temp_dir = std::env::temp_dir();
+        let task_id = "task-with-dashes-123";
+        let file_path = temp_dir.join(format!("proplet_{}.wasm", task_id));
+
+        assert!(file_path
+            .to_string_lossy()
+            .contains("proplet_task-with-dashes-123.wasm"));
+    }
+
+    #[tokio::test]
+    async fn test_create_and_cleanup_temp_file() {
+        let runtime = HostRuntime::new("/usr/bin/wasmtime".to_string());
+        let task_id = "test-cleanup-task";
+        let wasm_data = vec![0x00, 0x61, 0x73, 0x6d]; // WASM magic number
+
+        let file_path = runtime
+            .create_temp_wasm_file(task_id, &wasm_data)
+            .await
+            .unwrap();
+
+        assert!(file_path.exists());
+
+        let content = tokio::fs::read(&file_path).await.unwrap();
+        assert_eq!(content, wasm_data);
+
+        runtime.cleanup_temp_file(file_path.clone()).await.unwrap();
+
+        assert!(!file_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_nonexistent_file() {
+        let runtime = HostRuntime::new("/usr/bin/wasmtime".to_string());
+        let fake_path = std::env::temp_dir().join("nonexistent-file.wasm");
+
+        let result = runtime.cleanup_temp_file(fake_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_create_temp_file_with_empty_data() {
+        let runtime = HostRuntime::new("/usr/bin/wasmtime".to_string());
+        let task_id = "empty-task";
+        let wasm_data = vec![];
+
+        let file_path = runtime
+            .create_temp_wasm_file(task_id, &wasm_data)
+            .await
+            .unwrap();
+
+        assert!(file_path.exists());
+
+        let content = tokio::fs::read(&file_path).await.unwrap();
+        assert_eq!(content.len(), 0);
+
+        runtime.cleanup_temp_file(file_path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_create_temp_file_with_large_data() {
+        let runtime = HostRuntime::new("/usr/bin/wasmtime".to_string());
+        let task_id = "large-task";
+        let wasm_data = vec![0xAB; 1024 * 1024]; // 1 MB of data
+
+        let file_path = runtime
+            .create_temp_wasm_file(task_id, &wasm_data)
+            .await
+            .unwrap();
+
+        assert!(file_path.exists());
+
+        let content = tokio::fs::read(&file_path).await.unwrap();
+        assert_eq!(content.len(), 1024 * 1024);
+
+        runtime.cleanup_temp_file(file_path).await.unwrap();
     }
 }

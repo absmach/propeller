@@ -18,10 +18,8 @@ use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load configuration
     let config = PropletConfig::from_env();
 
-    // Initialize logging
     let log_level = match config.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
@@ -41,53 +39,66 @@ async fn main() -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    info!("Starting Proplet (Rust) - Instance ID: {}", config.instance_id);
-    info!("MQTT Address: {}", config.mqtt_address);
-    info!("Domain ID: {}", config.domain_id);
-    info!("Channel ID: {}", config.channel_id);
+    info!(
+        "Starting Proplet (Rust) - Instance ID: {}",
+        config.instance_id
+    );
 
-    // Create MQTT client
     let mqtt_config = MqttConfig {
         address: config.mqtt_address.clone(),
         client_id: config.instance_id.to_string(),
         timeout: config.mqtt_timeout(),
         qos: config.qos(),
+        keep_alive: config.mqtt_keep_alive(),
+        max_packet_size: config.mqtt_max_packet_size,
+        inflight: config.mqtt_inflight,
+        request_channel_capacity: config.mqtt_request_channel_capacity,
+        username: config.client_id.clone(),
+        password: config.client_key.clone(),
     };
 
     let (pubsub, eventloop) = PubSub::new(mqtt_config).await?;
+    let pubsub_clone = pubsub.clone();
 
-    // Create message channel
-    let (tx, rx) = mpsc::unbounded_channel();
+    // Bounded channel for backpressure to prevent overwhelming the task executor
+    let (tx, rx) = mpsc::channel(128);
 
-    // Start MQTT event processing
     tokio::spawn(async move {
         process_mqtt_events(eventloop, tx).await;
     });
 
-    // Create runtime based on configuration
     let runtime: Arc<dyn Runtime> = if let Some(external_runtime) = &config.external_wasm_runtime {
         info!("Using external Wasm runtime: {}", external_runtime);
         Arc::new(HostRuntime::new(external_runtime.clone()))
     } else {
         info!("Using Wasmtime runtime");
-        Arc::new(WasmtimeRuntime::new())
+        Arc::new(WasmtimeRuntime::new()?)
     };
 
-    // Create and run service
     let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
 
-    // Handle shutdown signal
-    tokio::spawn(async move {
+    let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for ctrl-c");
 
-        info!("Received shutdown signal, exiting...");
+        info!("Received shutdown signal, cleaning up...");
+
+        if let Err(e) = pubsub_clone.disconnect().await {
+            tracing::error!("Failed to disconnect gracefully: {}", e);
+        }
+
+        info!("Graceful shutdown complete");
         std::process::exit(0);
     });
 
-    // Run the service
-    service.run(rx).await?;
+    tokio::select! {
+        result = service.run(rx) => {
+            result?;
+        }
+        _ = shutdown_handle => {
+        }
+    }
 
     Ok(())
 }

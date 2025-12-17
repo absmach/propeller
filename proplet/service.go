@@ -14,7 +14,10 @@ import (
 	"github.com/absmach/propeller/task"
 )
 
-const pollingInterval = 5 * time.Second
+const (
+	pollingInterval = 5 * time.Second
+	chunkTTL        = 5 * time.Minute
+)
 
 var (
 	aliveTopicTemplate        = "m/%s/c/%s/control/proplet/alive"
@@ -25,6 +28,39 @@ var (
 	fetchRequestTopicTemplate = "m/%s/c/%s/registry/proplet"
 )
 
+type chunkAssemblyState struct {
+	chunks      map[int][]byte
+	totalChunks int
+	createdAt   time.Time
+}
+
+func newChunkAssemblyState(totalChunks int) *chunkAssemblyState {
+	return &chunkAssemblyState{
+		chunks:      make(map[int][]byte),
+		totalChunks: totalChunks,
+		createdAt:   time.Now(),
+	}
+}
+
+func (s *chunkAssemblyState) isComplete() bool {
+	return len(s.chunks) == s.totalChunks
+}
+
+func (s *chunkAssemblyState) isExpired(ttl time.Duration) bool {
+	return time.Since(s.createdAt) > ttl
+}
+
+func (s *chunkAssemblyState) assemble() []byte {
+	var wasmBinary []byte
+	for i := range s.totalChunks {
+		if chunk, exists := s.chunks[i]; exists {
+			wasmBinary = append(wasmBinary, chunk...)
+		}
+	}
+
+	return wasmBinary
+}
+
 type PropletService struct {
 	domainID           string
 	channelID          string
@@ -33,8 +69,7 @@ type PropletService struct {
 	k8sNamespace       string
 	livelinessInterval time.Duration
 	pubsub             pkgmqtt.PubSub
-	chunks             map[string][][]byte
-	chunkMetadata      map[string]*ChunkPayload
+	chunkAssembly      map[string]*chunkAssemblyState
 	chunksMutex        sync.Mutex
 	runtime            Runtime
 	logger             *slog.Logger
@@ -65,13 +100,13 @@ func NewService(ctx context.Context, domainID, channelID, clientID, clientKey, k
 		k8sNamespace:       k8sNamespace,
 		livelinessInterval: livelinessInterval,
 		pubsub:             pubsub,
-		chunks:             make(map[string][][]byte),
-		chunkMetadata:      make(map[string]*ChunkPayload),
+		chunkAssembly:      make(map[string]*chunkAssemblyState),
 		runtime:            runtime,
 		logger:             logger,
 	}
 
 	go p.startLivelinessUpdates(ctx)
+	go p.startChunkExpiryTask(ctx)
 
 	return p, nil
 }
@@ -96,6 +131,38 @@ func (p *PropletService) Run(ctx context.Context, logger *slog.Logger) error {
 	<-ctx.Done()
 
 	return nil
+}
+
+func (p *PropletService) startChunkExpiryTask(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("stopping chunk expiry task")
+
+			return
+		case <-ticker.C:
+			p.chunksMutex.Lock()
+			var expired []string
+			for appName, state := range p.chunkAssembly {
+				if state.isExpired(chunkTTL) {
+					expired = append(expired, appName)
+				}
+			}
+			for _, appName := range expired {
+				if state, exists := p.chunkAssembly[appName]; exists {
+					p.logger.Warn("expired incomplete chunk assembly",
+						slog.String("app_name", appName),
+						slog.Int("received_chunks", len(state.chunks)),
+						slog.Int("total_chunks", state.totalChunks))
+					delete(p.chunkAssembly, appName)
+				}
+			}
+			p.chunksMutex.Unlock()
+		}
+	}
 }
 
 func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
@@ -154,7 +221,16 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
 		if req.WasmFile != nil {
-			if err := p.runtime.StartApp(ctx, req.WasmFile, req.CLIArgs, req.ID, req.FunctionName, req.Daemon, req.Env, req.Params...); err != nil {
+			config := StartConfig{
+				ID:           req.ID,
+				FunctionName: req.FunctionName,
+				Daemon:       req.Daemon,
+				WasmBinary:   req.WasmFile,
+				CLIArgs:      req.CLIArgs,
+				Env:          req.Env,
+				Args:         req.Params,
+			}
+			if err := p.runtime.StartApp(ctx, config); err != nil {
 				return err
 			}
 
@@ -174,14 +250,29 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 
 			for {
 				p.chunksMutex.Lock()
-				metadata, exists := p.chunkMetadata[req.imageURL]
-				receivedChunks := len(p.chunks[req.imageURL])
+				state, exists := p.chunkAssembly[req.imageURL]
+				isComplete := exists && state.isComplete()
 				p.chunksMutex.Unlock()
 
-				if exists && receivedChunks == metadata.TotalChunks {
+				if isComplete {
 					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
-					wasmBinary := assembleChunks(p.chunks[req.imageURL])
-					if err := p.runtime.StartApp(ctx, wasmBinary, req.CLIArgs, req.ID, req.FunctionName, req.Daemon, req.Env, req.Params...); err != nil {
+
+					p.chunksMutex.Lock()
+					wasmBinary := state.assemble()
+
+					delete(p.chunkAssembly, req.imageURL)
+					p.chunksMutex.Unlock()
+
+					config := StartConfig{
+						ID:           req.ID,
+						FunctionName: req.FunctionName,
+						Daemon:       req.Daemon,
+						WasmBinary:   wasmBinary,
+						CLIArgs:      req.CLIArgs,
+						Env:          req.Env,
+						Args:         req.Params,
+					}
+					if err := p.runtime.StartApp(ctx, config); err != nil {
 						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
 					}
 
@@ -239,25 +330,34 @@ func (p *PropletService) handleChunk(_ context.Context) func(topic string, msg m
 		p.chunksMutex.Lock()
 		defer p.chunksMutex.Unlock()
 
-		if _, exists := p.chunkMetadata[chunk.AppName]; !exists {
-			p.chunkMetadata[chunk.AppName] = &chunk
+		state, exists := p.chunkAssembly[chunk.AppName]
+		if !exists {
+			state = newChunkAssemblyState(chunk.TotalChunks)
+			p.chunkAssembly[chunk.AppName] = state
 		}
 
-		p.chunks[chunk.AppName] = append(p.chunks[chunk.AppName], chunk.Data)
+		if state.totalChunks != chunk.TotalChunks {
+			p.logger.Warn("chunk total_chunks mismatch",
+				slog.String("app_name", chunk.AppName),
+				slog.Int("expected", state.totalChunks),
+				slog.Int("got", chunk.TotalChunks))
 
-		log.Printf("Received chunk %d/%d for app '%s'\n", chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName)
+			return fmt.Errorf("chunk total_chunks mismatch for '%s'", chunk.AppName)
+		}
+
+		if _, exists := state.chunks[chunk.ChunkIdx]; exists {
+			p.logger.Debug("duplicate chunk, ignoring",
+				slog.Int("chunk_idx", chunk.ChunkIdx),
+				slog.String("app_name", chunk.AppName))
+		} else {
+			state.chunks[chunk.ChunkIdx] = chunk.Data
+			log.Printf("Stored chunk %d/%d for app '%s' (%d/%d chunks received)\n",
+				chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName,
+				len(state.chunks), state.totalChunks)
+		}
 
 		return nil
 	}
-}
-
-func assembleChunks(chunks [][]byte) []byte {
-	var wasmBinary []byte
-	for _, chunk := range chunks {
-		wasmBinary = append(wasmBinary, chunk...)
-	}
-
-	return wasmBinary
 }
 
 func (c *ChunkPayload) Validate() error {

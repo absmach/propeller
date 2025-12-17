@@ -32,34 +32,36 @@ func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID
 	}
 }
 
-func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, env map[string]string, args ...uint64) error {
+func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) error {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("error getting current directory: %w", err)
 	}
-	f, err := os.Create(filepath.Join(currentDir, id+".wasm"))
+	f, err := os.Create(filepath.Join(currentDir, config.ID+".wasm"))
 	if err != nil {
 		return fmt.Errorf("error creating file: %w", err)
 	}
 
-	if _, err = f.Write(wasmBinary); err != nil {
+	if _, err = f.Write(config.WasmBinary); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("error closing file: %w", err)
 	}
 
-	cliArgs = append(cliArgs, filepath.Join(currentDir, id+".wasm"))
-	for i := range args {
-		cliArgs = append(cliArgs, strconv.FormatUint(args[i], 10))
+	cliArgs := config.CLIArgs
+
+	cliArgs = append(cliArgs, filepath.Join(currentDir, config.ID+".wasm"))
+	for i := range config.Args {
+		cliArgs = append(cliArgs, strconv.FormatUint(config.Args[i], 10))
 	}
 	cmd := exec.Command(w.wasmRuntime, cliArgs...)
 	results := bytes.Buffer{}
 	cmd.Stdout = &results
 
-	if env != nil {
+	if config.Env != nil {
 		cmd.Env = os.Environ()
-		for key, value := range env {
+		for key, value := range config.Env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
 		}
 	}
@@ -68,8 +70,8 @@ func (w *hostRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs [
 		return fmt.Errorf("error starting command: %w", err)
 	}
 
-	if !daemon {
-		go w.wait(ctx, cmd, filepath.Join(currentDir, id+".wasm"), id, &results)
+	if !config.Daemon {
+		go w.wait(ctx, cmd, filepath.Join(currentDir, config.ID+".wasm"), config.ID, &results)
 	}
 
 	return nil

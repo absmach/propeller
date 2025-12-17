@@ -33,52 +33,52 @@ func NewWazeroRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channel
 	}
 }
 
-func (w *wazeroRuntime) StartApp(ctx context.Context, wasmBinary []byte, cliArgs []string, id, functionName string, daemon bool, env map[string]string, args ...uint64) error {
+func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig) error {
 	r := wazero.NewRuntime(ctx)
 
 	w.mutex.Lock()
-	w.runtimes[id] = r
+	w.runtimes[config.ID] = r
 	w.mutex.Unlock()
 
 	// Instantiate WASI, which implements host functions needed for TinyGo to
 	// implement `panic`.
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
-	module, err := r.InstantiateWithConfig(ctx, wasmBinary, wazero.NewModuleConfig().WithStartFunctions("_initialize"))
+	module, err := r.InstantiateWithConfig(ctx, config.WasmBinary, wazero.NewModuleConfig().WithStartFunctions("_initialize"))
 	if err != nil {
 		return errors.Join(errors.New("failed to instantiate Wasm module"), err)
 	}
 
-	function := module.ExportedFunction(functionName)
+	function := module.ExportedFunction(config.FunctionName)
 	if function == nil {
 		return errors.New("failed to find exported function")
 	}
 
 	go func() {
-		results, err := function.Call(ctx, args...)
+		results, err := function.Call(ctx, config.Args...)
 		if err != nil {
-			w.logger.Error("failed to call function", slog.String("id", id), slog.String("function", functionName), slog.String("error", err.Error()))
+			w.logger.Error("failed to call function", slog.String("id", config.ID), slog.String("function", config.FunctionName), slog.String("error", err.Error()))
 
 			return
 		}
 
-		if err := w.StopApp(ctx, id); err != nil {
-			w.logger.Error("failed to stop app", slog.String("id", id), slog.String("error", err.Error()))
+		if err := w.StopApp(ctx, config.ID); err != nil {
+			w.logger.Error("failed to stop app", slog.String("id", config.ID), slog.String("error", err.Error()))
 		}
 
 		payload := map[string]interface{}{
-			"task_id": id,
+			"task_id": config.ID,
 			"results": results,
 		}
 
 		topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
 		if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
-			w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
+			w.logger.Error("failed to publish results", slog.String("id", config.ID), slog.String("error", err.Error()))
 
 			return
 		}
 
-		w.logger.Info("Finished running app", slog.String("id", id))
+		w.logger.Info("Finished running app", slog.String("id", config.ID))
 	}()
 
 	time.Sleep(5 * time.Second)
