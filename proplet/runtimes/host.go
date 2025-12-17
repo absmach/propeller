@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proplet"
@@ -20,6 +21,9 @@ type hostRuntime struct {
 	channelID   string
 	logger      *slog.Logger
 	wasmRuntime string
+
+	mu   sync.Mutex
+	proc map[string]*exec.Cmd
 }
 
 func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID, wasmRuntime string) proplet.Runtime {
@@ -29,6 +33,7 @@ func NewHostRuntime(logger *slog.Logger, pubsub mqtt.PubSub, domainID, channelID
 		channelID:   channelID,
 		logger:      logger,
 		wasmRuntime: wasmRuntime,
+		proc:        make(map[string]*exec.Cmd),
 	}
 }
 
@@ -57,8 +62,11 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 	}
 
 	cmd := exec.Command(w.wasmRuntime, cliArgs...)
-	results := bytes.Buffer{}
-	cmd.Stdout = &results
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	if config.Env != nil {
 		cmd.Env = os.Environ()
@@ -68,8 +76,13 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 	}
 
 	if err := cmd.Start(); err != nil {
+		_ = os.Remove(wasmPath)
 		return fmt.Errorf("error starting command: %w", err)
 	}
+
+	w.mu.Lock()
+	w.proc[id] = cmd
+	w.mu.Unlock()
 
 	if !config.Daemon {
 		go w.wait(ctx, cmd, filepath.Join(currentDir, config.ID+".wasm"), config.ID, &results)
@@ -79,6 +92,15 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 }
 
 func (w *hostRuntime) StopApp(ctx context.Context, id string) error {
+	w.mu.Lock()
+	cmd, ok := w.proc[id]
+	w.mu.Unlock()
+
+	if !ok || cmd == nil || cmd.Process == nil {
+		return nil
+	}
+
+	_ = cmd.Process.Kill()
 	return nil
 }
 
@@ -86,29 +108,52 @@ func (w *hostRuntime) wait(
 	ctx context.Context,
 	cmd *exec.Cmd,
 	fileName, id string,
-	results *bytes.Buffer,
+	stdout, stderr *bytes.Buffer,
 	mode, propletID string,
 	env map[string]string,
 ) {
 	defer func() {
+		w.mu.Lock()
+		delete(w.proc, id)
+		w.mu.Unlock()
+
 		if err := os.Remove(fileName); err != nil {
-			w.logger.Error("failed to remove file", slog.String("fileName", fileName), slog.String("error", err.Error()))
+			w.logger.Error(
+				"failed to remove file",
+				slog.String("fileName", fileName),
+				slog.String("error", err.Error()),
+			)
 		}
 	}()
 
-	outStr := results.String()
+	waitErr := cmd.Wait()
 
-	// Use shared helper (in fl_helpers.go) to avoid duplicate declarations.
+	outStr := stdout.String()
+	errStr := stderr.String()
+
 	payload := buildFLPayloadFromString(id, mode, propletID, env, outStr)
 
-	if err := cmd.Wait(); err != nil {
-		w.logger.Error("failed to wait for command", slog.String("id", id), slog.String("error", err.Error()))
-		payload["error"] = err.Error()
+	if waitErr != nil {
+		w.logger.Error(
+			"failed to wait for command",
+			slog.String("id", id),
+			slog.String("error", waitErr.Error()),
+		)
+		if errStr != "" {
+			payload["stderr"] = errStr
+		}
+		payload["error"] = waitErr.Error()
+	} else if errStr != "" {
+		payload["stderr"] = errStr
 	}
 
 	topic := fmt.Sprintf(proplet.ResultsTopic, w.domainID, w.channelID)
 	if err := w.pubsub.Publish(ctx, topic, payload); err != nil {
-		w.logger.Error("failed to publish results", slog.String("id", id), slog.String("error", err.Error()))
+		w.logger.Error(
+			"failed to publish results",
+			slog.String("id", id),
+			slog.String("error", err.Error()),
+		)
 		return
 	}
 

@@ -82,7 +82,6 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig
 		w.logger.Info("Finished running app", slog.String("id", config.ID))
 	}()
 
-	// Kept as-is from your original implementation.
 	time.Sleep(5 * time.Second)
 
 	return nil
@@ -90,17 +89,16 @@ func (w *wazeroRuntime) StartApp(ctx context.Context, config proplet.StartConfig
 
 func (w *wazeroRuntime) StopApp(ctx context.Context, id string) error {
 	w.mutex.Lock()
-	defer w.mutex.Unlock()
-
 	r, exists := w.runtimes[id]
 	if !exists {
-		return errors.New("there is no runtime for this id")
+		w.mutex.Unlock()
+		return nil
 	}
+	delete(w.runtimes, id)
+	w.mutex.Unlock()
 
 	if err := r.Close(ctx); err != nil {
 		return err
 	}
-
-	delete(w.runtimes, id)
 	return nil
 }
