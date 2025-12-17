@@ -1,6 +1,8 @@
 package proplet
 
-import "context"
+import (
+	"context"
+)
 
 var ResultsTopic = "m/%s/c/%s/control/proplet/results"
 

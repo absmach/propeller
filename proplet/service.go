@@ -173,7 +173,6 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			p.logger.Info("stopping liveliness updates")
-
 			return
 		case <-ticker.C:
 			topic := fmt.Sprintf(aliveTopicTemplate, p.domainID, p.channelID)
@@ -194,6 +193,21 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 
 func (p *PropletService) handleStartCommand(ctx context.Context) func(topic string, msg map[string]interface{}) error {
 	return func(topic string, msg map[string]interface{}) error {
+		// If the manager targets a specific proplet, ignore messages not meant for us.
+		if rawPID, ok := msg["proplet_id"]; ok {
+			targetPID, ok := rawPID.(string)
+			if !ok {
+				return errors.New("invalid proplet_id")
+			}
+			if targetPID != "" && targetPID != p.clientID {
+				p.logger.Debug("Ignoring start command for different proplet",
+					slog.String("target_proplet_id", targetPID),
+					slog.String("this_proplet_id", p.clientID),
+				)
+				return nil
+			}
+		}
+
 		data, err := json.Marshal(msg)
 		if err != nil {
 			return err
@@ -225,6 +239,8 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			mode = "infer"
 		}
 
+		flSpec := payload.FL
+
 		if req.WasmFile != nil {
 			config := StartConfig{
 				ID:           req.ID,
@@ -238,6 +254,7 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			if err := p.runtime.StartApp(ctx, config); err != nil {
 				return err
 			}
+
 			return nil
 		}
 
@@ -293,6 +310,20 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 
 func (p *PropletService) handleStopCommand(ctx context.Context) func(topic string, msg map[string]interface{}) error {
 	return func(topic string, msg map[string]interface{}) error {
+		if rawPID, ok := msg["proplet_id"]; ok {
+			targetPID, ok := rawPID.(string)
+			if !ok {
+				return errors.New("invalid proplet_id")
+			}
+			if targetPID != "" && targetPID != p.clientID {
+				p.logger.Debug("Ignoring stop command for different proplet",
+					slog.String("target_proplet_id", targetPID),
+					slog.String("this_proplet_id", p.clientID),
+				)
+				return nil
+			}
+		}
+
 		data, err := json.Marshal(msg)
 		if err != nil {
 			return err
