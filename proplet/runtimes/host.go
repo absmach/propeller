@@ -42,23 +42,30 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 	if err != nil {
 		return fmt.Errorf("error getting current directory: %w", err)
 	}
-	f, err := os.Create(filepath.Join(currentDir, config.ID+".wasm"))
+
+	wasmPath := filepath.Join(currentDir, config.ID+".wasm")
+	f, err := os.Create(wasmPath)
 	if err != nil {
 		return fmt.Errorf("error creating file: %w", err)
 	}
 
 	if _, err = f.Write(config.WasmBinary); err != nil {
+		_ = f.Close()
+		_ = os.Remove(wasmPath)
+
 		return fmt.Errorf("error writing to file: %w", err)
 	}
+
 	if err := f.Close(); err != nil {
+		_ = os.Remove(wasmPath)
+
 		return fmt.Errorf("error closing file: %w", err)
 	}
 
-	cliArgs := config.CLIArgs
-
-	cliArgs = append(cliArgs, filepath.Join(currentDir, config.ID+".wasm"))
-	for i := range config.Args {
-		cliArgs = append(cliArgs, strconv.FormatUint(config.Args[i], 10))
+	cliArgs := append([]string(nil), config.CLIArgs...)
+	cliArgs = append(cliArgs, wasmPath)
+	for _, a := range config.Args {
+		cliArgs = append(cliArgs, strconv.FormatUint(a, 10))
 	}
 
 	cmd := exec.Command(w.wasmRuntime, cliArgs...)
@@ -77,15 +84,16 @@ func (w *hostRuntime) StartApp(ctx context.Context, config proplet.StartConfig) 
 
 	if err := cmd.Start(); err != nil {
 		_ = os.Remove(wasmPath)
+
 		return fmt.Errorf("error starting command: %w", err)
 	}
 
 	w.mu.Lock()
-	w.proc[id] = cmd
+	w.proc[config.ID] = cmd
 	w.mu.Unlock()
 
 	if !config.Daemon {
-		go w.wait(ctx, cmd, filepath.Join(currentDir, config.ID+".wasm"), config.ID, &results)
+		go w.wait(ctx, cmd, wasmPath, config.ID, &stdout, &stderr, config.Mode, config.PropletID, config.Env)
 	}
 
 	return nil
@@ -101,6 +109,7 @@ func (w *hostRuntime) StopApp(ctx context.Context, id string) error {
 	}
 
 	_ = cmd.Process.Kill()
+
 	return nil
 }
 
@@ -154,6 +163,7 @@ func (w *hostRuntime) wait(
 			slog.String("id", id),
 			slog.String("error", err.Error()),
 		)
+
 		return
 	}
 
