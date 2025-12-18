@@ -8,9 +8,10 @@ import (
 	flpkg "github.com/absmach/propeller/pkg/fl"
 )
 
+const modeTrain = "train"
+
 func buildFLPayloadFromString(taskID, mode, propletID string, env map[string]string, rawOut string) map[string]any {
-	// Backward-compatible inference behavior.
-	if mode != "train" {
+	if mode != modeTrain {
 		return map[string]any{
 			"task_id": taskID,
 			"results": rawOut,
@@ -36,7 +37,7 @@ func buildFLPayloadFromString(taskID, mode, propletID string, env map[string]str
 }
 
 func buildFLPayloadFromUint64Slice(taskID, mode, propletID string, env map[string]string, results []uint64) map[string]any {
-	if mode != "train" {
+	if mode != modeTrain {
 		return map[string]any{
 			"task_id": taskID,
 			"results": results,
@@ -67,13 +68,16 @@ func parseUint64(env map[string]string, key string) uint64 {
 	if env == nil {
 		return 0
 	}
-	s, ok := env[key]
-	if !ok || s == "" {
+
+	s := env[key]
+	if s == "" {
 		return 0
 	}
+
 	v, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return 0
 	}
+
 	return v
 }
