@@ -2,6 +2,8 @@ package proplet
 
 import (
 	"context"
+
+	"github.com/absmach/propeller/task"
 )
 
 var ResultsTopic = "m/%s/c/%s/control/proplet/results"
@@ -14,6 +16,9 @@ type StartConfig struct {
 	CLIArgs      []string
 	Env          map[string]string
 	Args         []uint64
+	Mode         string
+	PropletID    string
+	FL           *task.FLSpec
 }
 
 type Runtime interface {
