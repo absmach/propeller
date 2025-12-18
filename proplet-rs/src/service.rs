@@ -2,7 +2,9 @@ use crate::config::PropletConfig;
 use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
-use anyhow::Result;
+use aes_gcm::{aead::Aead, Aes256Gcm, Key, KeyInit, Nonce};
+use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -13,14 +15,16 @@ use tracing::{debug, error, info, warn};
 struct ChunkAssemblyState {
     chunks: BTreeMap<usize, Vec<u8>>,
     total_chunks: usize,
+    checksum: String,
     created_at: Instant,
 }
 
 impl ChunkAssemblyState {
-    fn new(total_chunks: usize) -> Self {
+    fn new(total_chunks: usize, checksum: String) -> Self {
         Self {
             chunks: BTreeMap::new(),
             total_chunks,
+            checksum,
             created_at: Instant::now(),
         }
     }
@@ -49,11 +53,21 @@ pub struct PropletService {
     runtime: Arc<dyn Runtime>,
     chunk_assembly: Arc<Mutex<HashMap<String, ChunkAssemblyState>>>,
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
+    workload_key: Key<Aes256Gcm>,
 }
 
 impl PropletService {
-    pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
+    pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Result<Self> {
         let proplet = Proplet::new(config.instance_id, "proplet-rs".to_string());
+
+        let key_bytes = hex::decode(&config.workload_key)
+            .context("Failed to decode PROPLET_WORKLOAD_KEY from hex")?;
+        
+        if key_bytes.len() != 32 {
+            return Err(anyhow::anyhow!("PROPLET_WORKLOAD_KEY must be 32 bytes (AES-256)"));
+        }
+        
+        let workload_key = *Key::<Aes256Gcm>::from_slice(&key_bytes);
 
         let service = Self {
             config,
@@ -62,11 +76,28 @@ impl PropletService {
             runtime,
             chunk_assembly: Arc::new(Mutex::new(HashMap::new())),
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
+            workload_key,
         };
 
         service.start_chunk_expiry_task();
 
-        service
+        Ok(service)
+    }
+
+    fn decrypt_payload(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+        let cipher = Aes256Gcm::new(&self.workload_key);
+        
+        if ciphertext.len() < 12 + 16 {
+            return Err(anyhow::anyhow!("Ciphertext too short"));
+        }
+
+        let nonce_slice = &ciphertext[0..12];
+        let nonce = Nonce::from_slice(nonce_slice);
+        
+        let encrypted_data = &ciphertext[12..];
+
+        cipher.decrypt(nonce, encrypted_data)
+            .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))
     }
 
     fn start_chunk_expiry_task(&self) {
@@ -220,10 +251,6 @@ impl PropletService {
     async fn handle_message(&self, msg: MqttMessage) -> Result<()> {
         debug!("Handling message from topic: {}", msg.topic);
 
-        if let Ok(payload_str) = String::from_utf8(msg.payload.clone()) {
-            debug!("Raw message payload: {}", payload_str);
-        }
-
         if msg.topic.contains("control/manager/start") {
             self.handle_start_command(msg).await
         } else if msg.topic.contains("control/manager/stop") {
@@ -251,19 +278,41 @@ impl PropletService {
         let wasm_binary = if !req.file.is_empty() {
             use base64::{engine::general_purpose::STANDARD, Engine};
             match STANDARD.decode(&req.file) {
-                Ok(decoded) => {
-                    info!("Decoded wasm binary, size: {} bytes", decoded.len());
-                    decoded
+                Ok(encrypted_bytes) => {
+                    info!("Decoded encrypted payload, size: {} bytes", encrypted_bytes.len());
+
+                    if !req.checksum.is_empty() {
+                        let mut hasher = Sha256::new();
+                        hasher.update(&encrypted_bytes);
+                        let result = hasher.finalize();
+                        let computed_checksum = hex::encode(result);
+                        
+                        if computed_checksum != req.checksum {
+                            let err_msg = format!("Checksum mismatch. Expected: {}, Got: {}", req.checksum, computed_checksum);
+                            error!("{}", err_msg);
+                            self.publish_result(&req.id, Vec::new(), Some(err_msg)).await?;
+                            return Err(anyhow::anyhow!("Checksum mismatch"));
+                        }
+                        debug!("Checksum verified for task {}", req.id);
+                    }
+
+                    match self.decrypt_payload(&encrypted_bytes) {
+                        Ok(decrypted) => decrypted,
+                        Err(e) => {
+                            error!("Decryption failed for task {}: {}", req.id, e);
+                            self.publish_result(&req.id, Vec::new(), Some(e.to_string())).await?;
+                            return Err(e);
+                        }
+                    }
                 }
                 Err(e) => {
                     error!("Failed to decode base64 file for task {}: {}", req.id, e);
-                    self.running_tasks.lock().await.remove(&req.id);
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result(&req.id, Vec::new(), Some(e.to_string())).await?;
                     return Err(e.into());
                 }
             }
         } else if !req.image_url.is_empty() {
+
             info!("Requesting binary from registry: {}", req.image_url);
             self.request_binary_from_registry(&req.image_url).await?;
 
@@ -271,18 +320,14 @@ impl PropletService {
                 Ok(binary) => binary,
                 Err(e) => {
                     error!("Failed to get binary for task {}: {}", req.id, e);
-                    self.running_tasks.lock().await.remove(&req.id);
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result(&req.id, Vec::new(), Some(e.to_string())).await?;
                     return Err(e);
                 }
             }
         } else {
             let err = anyhow::anyhow!("No wasm binary or image URL provided");
             error!("Validation error for task {}: {}", req.id, err);
-            self.running_tasks.lock().await.remove(&req.id);
-            self.publish_result(&req.id, Vec::new(), Some(err.to_string()))
-                .await?;
+            self.publish_result(&req.id, Vec::new(), Some(err.to_string())).await?;
             return Err(err);
         };
 
@@ -343,8 +388,6 @@ impl PropletService {
 
             let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
 
-            info!("Publishing result for task {}", task_id);
-
             if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
                 error!("Failed to publish result for task {}: {}", task_id, e);
             } else {
@@ -384,7 +427,7 @@ impl PropletService {
 
         let state = assembly
             .entry(chunk.app_name.clone())
-            .or_insert_with(|| ChunkAssemblyState::new(chunk.total_chunks));
+            .or_insert_with(|| ChunkAssemblyState::new(chunk.total_chunks, chunk.checksum.clone()));
 
         if state.total_chunks != chunk.total_chunks {
             warn!(
@@ -397,21 +440,21 @@ impl PropletService {
             ));
         }
 
-        if state.chunks.contains_key(&chunk.chunk_idx) {
-            debug!(
-                "Duplicate chunk {} for app '{}', ignoring",
-                chunk.chunk_idx, chunk.app_name
-            );
-        } else {
-            state.chunks.insert(chunk.chunk_idx, chunk.data);
-            debug!(
-                "Stored chunk {} for app '{}' ({}/{} chunks received)",
-                chunk.chunk_idx,
-                chunk.app_name,
-                state.chunks.len(),
-                state.total_chunks
-            );
+        if !chunk.checksum.is_empty() && state.checksum.is_empty() {
+             state.checksum = chunk.checksum;
+        } else if !chunk.checksum.is_empty() && state.checksum != chunk.checksum {
+             warn!("Chunk checksum mismatch for '{}'", chunk.app_name);
+             return Err(anyhow::anyhow!("Chunk checksum mismatch"));
         }
+
+        state.chunks.insert(chunk.chunk_idx, chunk.data);
+        debug!(
+            "Stored chunk {} for app '{}' ({}/{} chunks received)",
+            chunk.chunk_idx,
+            chunk.app_name,
+            state.chunks.len(),
+            state.total_chunks
+        );
 
         Ok(())
     }
@@ -440,7 +483,7 @@ impl PropletService {
     async fn wait_for_binary(&self, app_name: &str) -> Result<Vec<u8>> {
         let timeout = tokio::time::Duration::from_secs(60);
         let start = tokio::time::Instant::now();
-        let polling_interval = tokio::time::Duration::from_secs(5);
+        let polling_interval = tokio::time::Duration::from_secs(1);
 
         loop {
             if start.elapsed() > timeout {
@@ -461,18 +504,34 @@ impl PropletService {
 
         if let Some(state) = assembly.get(app_name) {
             if state.is_complete() {
-                let binary = state.assemble();
+                let encrypted_binary = state.assemble();
+                let checksum = state.checksum.clone();
 
                 info!(
-                    "Assembled binary for app '{}', size: {} bytes from {} chunks",
+                    "Assembled binary for app '{}', encrypted size: {} bytes",
                     app_name,
-                    binary.len(),
-                    state.total_chunks
+                    encrypted_binary.len()
                 );
 
                 assembly.remove(app_name);
 
-                return Ok(Some(binary));
+                if !checksum.is_empty() {
+                    let mut hasher = Sha256::new();
+                    hasher.update(&encrypted_binary);
+                    let result = hasher.finalize();
+                    let computed_checksum = hex::encode(result);
+                    
+                    if computed_checksum != checksum {
+                        error!("Checksum mismatch for app {}. Expected: {}, Got: {}", app_name, checksum, computed_checksum);
+                        return Err(anyhow::anyhow!("Checksum mismatch during reassembly"));
+                    }
+                    debug!("Checksum verified for assembled app {}", app_name);
+                }
+
+                let decrypted_binary = self.decrypt_payload(&encrypted_binary)
+                    .context("Failed to decrypt assembled chunks")?;
+
+                return Ok(Some(decrypted_binary));
             }
         }
 

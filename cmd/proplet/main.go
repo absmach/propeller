@@ -34,6 +34,10 @@ type config struct {
 	ChannelID           string        `env:"PROPLET_CHANNEL_ID"`
 	ClientID            string        `env:"PROPLET_CLIENT_ID"`
 	ClientKey           string        `env:"PROPLET_CLIENT_KEY"`
+	WorkloadKey         string        `env:"PROPLET_WORKLOAD_KEY"`
+	MQTTCAPath          string        `env:"PROPLET_MQTT_CA_PATH"`
+	MQTTCertPath        string        `env:"PROPLET_MQTT_CERT_PATH"`
+	MQTTKeyPath         string        `env:"PROPLET_MQTT_KEY_PATH"`
 	ExternalWasmRuntime string        `env:"PROPLET_EXTERNAL_WASM_RUNTIME" envDefault:""`
 	ManagerK8sNamespace string        `env:"PROPLET_MANAGER_K8S_NAMESPACE" envDefault:"default"`
 }
@@ -51,7 +55,7 @@ func main() {
 		cfg.InstanceID = uuid.NewString()
 	}
 
-	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
+	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" || cfg.WorkloadKey == "" {
 		_, err := os.Stat(configPath)
 		switch err {
 		case nil:
@@ -63,6 +67,7 @@ func main() {
 			cfg.ClientID = conf.Proplet.ClientID
 			cfg.ClientKey = conf.Proplet.ClientKey
 			cfg.ChannelID = conf.Proplet.ChannelID
+			cfg.WorkloadKey = conf.Proplet.WorkloadKey
 		default:
 			log.Fatalf("failed to load TOML configuration: %s", err.Error())
 		}
@@ -78,7 +83,20 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(
+		cfg.MQTTAddress,
+		cfg.MQTTQoS,
+		cfg.InstanceID,
+		cfg.ClientID,
+		cfg.ClientKey,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.MQTTTimeout,
+		cfg.MQTTCAPath,
+		cfg.MQTTCertPath,
+		cfg.MQTTKeyPath,
+		logger,
+	)
 	if err != nil {
 		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
 
@@ -93,7 +111,19 @@ func main() {
 		runtime = runtimes.NewWazeroRuntime(logger, mqttPubSub, cfg.DomainID, cfg.ChannelID)
 	}
 
-	service, err := proplet.NewService(ctx, cfg.DomainID, cfg.ChannelID, cfg.ClientID, cfg.ClientKey, cfg.ManagerK8sNamespace, cfg.LivelinessInterval, mqttPubSub, logger, runtime)
+	service, err := proplet.NewService(
+		ctx,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.InstanceID,
+		cfg.ClientKey,
+		cfg.ManagerK8sNamespace,
+		cfg.LivelinessInterval,
+		mqttPubSub,
+		logger,
+		runtime,
+		cfg.WorkloadKey,
+	)
 	if err != nil {
 		logger.Error("failed to initialize service", slog.Any("error", err))
 

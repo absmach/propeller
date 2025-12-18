@@ -35,6 +35,7 @@ type Task struct {
 	State      State             `json:"state"`
 	ImageURL   string            `json:"image_url,omitempty"`
 	File       []byte            `json:"file,omitempty"`
+	Checksum   string            `json:"checksum,omitempty"`
 	CLIArgs    []string          `json:"cli_args"`
 	Inputs     []uint64          `json:"inputs,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`

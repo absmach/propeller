@@ -23,15 +23,19 @@ const (
 )
 
 type config struct {
-	LogLevel    string        `env:"PROXY_LOG_LEVEL"    envDefault:"info"`
-	InstanceID  string        `env:"PROXY_INSTANCE_ID"`
-	MQTTAddress string        `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
-	MQTTTimeout time.Duration `env:"PROXY_MQTT_TIMEOUT" envDefault:"30s"`
-	MQTTQoS     byte          `env:"PROXY_MQTT_QOS"     envDefault:"2"`
-	DomainID    string        `env:"PROXY_DOMAIN_ID"`
-	ChannelID   string        `env:"PROXY_CHANNEL_ID"`
-	ClientID    string        `env:"PROXY_CLIENT_ID"`
-	ClientKey   string        `env:"PROXY_CLIENT_KEY"`
+	LogLevel     string        `env:"PROXY_LOG_LEVEL"    envDefault:"info"`
+	InstanceID   string        `env:"PROXY_INSTANCE_ID"`
+	MQTTAddress  string        `env:"PROXY_MQTT_ADDRESS" envDefault:"tcp://localhost:1883"`
+	MQTTTimeout  time.Duration `env:"PROXY_MQTT_TIMEOUT" envDefault:"30s"`
+	MQTTQoS      byte          `env:"PROXY_MQTT_QOS"     envDefault:"2"`
+	DomainID     string        `env:"PROXY_DOMAIN_ID"`
+	ChannelID    string        `env:"PROXY_CHANNEL_ID"`
+	ClientID     string        `env:"PROXY_CLIENT_ID"`
+	ClientKey    string        `env:"PROXY_CLIENT_KEY"`
+	WorkloadKey  string        `env:"PROXY_WORKLOAD_KEY"`
+	MQTTCAPath   string        `env:"PROXY_MQTT_CA_PATH"`
+	MQTTCertPath string        `env:"PROXY_MQTT_CERT_PATH"`
+	MQTTKeyPath  string        `env:"PROXY_MQTT_KEY_PATH"`
 	// HTTP Registry configuration
 	ChunkSize    int    `env:"PROXY_CHUNK_SIZE"            envDefault:"512000"`
 	Authenticate bool   `env:"PROXY_AUTHENTICATE"          envDefault:"false"`
@@ -53,7 +57,7 @@ func main() {
 		cfg.InstanceID = uuid.NewString()
 	}
 
-	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" {
+	if cfg.ClientID == "" || cfg.ClientKey == "" || cfg.ChannelID == "" || cfg.WorkloadKey == "" {
 		_, err := os.Stat(configPath)
 		switch err {
 		case nil:
@@ -65,6 +69,7 @@ func main() {
 			cfg.ClientID = conf.Proxy.ClientID
 			cfg.ClientKey = conf.Proxy.ClientKey
 			cfg.ChannelID = conf.Proxy.ChannelID
+			cfg.WorkloadKey = conf.Proxy.WorkloadKey
 		default:
 			log.Fatalf("failed to load TOML configuration: %s", err.Error())
 		}
@@ -80,7 +85,20 @@ func main() {
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
 
-	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.InstanceID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
+	mqttPubSub, err := mqtt.NewPubSub(
+		cfg.MQTTAddress,
+		cfg.MQTTQoS,
+		cfg.InstanceID,
+		cfg.ClientID,
+		cfg.ClientKey,
+		cfg.DomainID,
+		cfg.ChannelID,
+		cfg.MQTTTimeout,
+		cfg.MQTTCAPath,
+		cfg.MQTTCertPath,
+		cfg.MQTTKeyPath,
+		logger,
+	)
 	if err != nil {
 		logger.Error("failed to initialize mqtt client", slog.Any("error", err))
 
@@ -103,7 +121,7 @@ func main() {
 
 	logger.Info("successfully initialized MQTT and HTTP config")
 
-	service, err := proxy.NewService(ctx, mqttPubSub, cfg.DomainID, cfg.ChannelID, httpCfg, logger)
+	service, err := proxy.NewService(ctx, mqttPubSub, cfg.DomainID, cfg.ChannelID, httpCfg, logger, cfg.WorkloadKey)
 	if err != nil {
 		logger.Error("failed to create proxy service", slog.Any("error", err))
 

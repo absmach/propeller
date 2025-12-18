@@ -2,12 +2,14 @@ package manager
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/0x6flab/namegenerator"
+	"github.com/absmach/propeller/pkg/crypto"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/scheduler"
@@ -36,13 +38,23 @@ type service struct {
 	baseTopic     string
 	pubsub        mqtt.PubSub
 	logger        *slog.Logger
+	workloadKey   []byte
 }
 
 func NewService(
 	tasksDB, propletsDB, taskPropletDB storage.Storage,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
-	domainID, channelID string, logger *slog.Logger,
+	domainID, channelID, workloadKey string, logger *slog.Logger,
 ) Service {
+	decodedKey, err := hex.DecodeString(workloadKey)
+	if err != nil {
+		panic(fmt.Sprintf("failed to decode workload key: %s", err))
+	}
+
+	if len(decodedKey) != 32 {
+		panic(fmt.Sprintf("workload key must be 32 bytes (AES-256), got %d", len(decodedKey)))
+	}
+
 	return &service{
 		tasksDB:       tasksDB,
 		propletsDB:    propletsDB,
@@ -51,6 +63,7 @@ func NewService(
 		baseTopic:     fmt.Sprintf(baseTopic, domainID, channelID),
 		pubsub:        pubsub,
 		logger:        logger,
+		workloadKey:   decodedKey,
 	}
 }
 
@@ -180,12 +193,23 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
+
+	var filePayload []byte
+	if len(t.File) > 0 {
+		encrypted, err := crypto.Encrypt(t.File, svc.workloadKey)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt workload: %w", err)
+		}
+		filePayload = encrypted
+	}
+
 	payload := map[string]interface{}{
 		"id":        t.ID,
 		"name":      t.Name,
 		"state":     t.State,
 		"image_url": t.ImageURL,
-		"file":      t.File,
+		"file":      filePayload,
+		"checksum":  t.Checksum,
 		"inputs":    t.Inputs,
 		"cli_args":  t.CLIArgs,
 		"daemon":    t.Daemon,

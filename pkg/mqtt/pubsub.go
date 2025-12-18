@@ -2,10 +2,13 @@ package mqtt
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -44,12 +47,12 @@ type PubSub interface {
 	Disconnect(ctx context.Context) error
 }
 
-func NewPubSub(url string, qos byte, id, username, password, domainID, channelID string, timeout time.Duration, logger *slog.Logger) (PubSub, error) {
+func NewPubSub(url string, qos byte, id, username, password, domainID, channelID string, timeout time.Duration, caPath, certPath, keyPath string, logger *slog.Logger) (PubSub, error) {
 	if id == "" {
 		return nil, errEmptyID
 	}
 
-	client, err := newClient(url, id, username, password, domainID, channelID, timeout, logger)
+	client, err := newClient(url, id, username, password, domainID, channelID, timeout, caPath, certPath, keyPath, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +131,7 @@ func (ps *pubsub) Disconnect(ctx context.Context) error {
 	}
 }
 
-func newClient(address, id, username, password, domainID, channelID string, timeout time.Duration, logger *slog.Logger) (mqtt.Client, error) {
+func newClient(address, id, username, password, domainID, channelID string, timeout time.Duration, caPath, certPath, keyPath string, logger *slog.Logger) (mqtt.Client, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(address).
 		SetClientID(id).
@@ -139,14 +142,18 @@ func newClient(address, id, username, password, domainID, channelID string, time
 		SetConnectTimeout(connTimeout * time.Second).
 		SetMaxReconnectInterval(reconnTimeout * time.Minute)
 
+	if err := applyTLSConfig(opts, caPath, certPath, keyPath); err != nil {
+		return nil, err
+	}
+
 	if channelID != "" {
 		topic := fmt.Sprintf(aliveTopicTemplate, domainID, channelID)
-		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, username)
+		lwtPayload := fmt.Sprintf(lwtPayloadTemplate, id)
 		opts.SetWill(topic, lwtPayload, 0, false)
 	}
 
 	opts.SetOnConnectHandler(func(_ mqtt.Client) {
-		logger.Info("MQTT connection lost")
+		logger.Info("MQTT connection established")
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {
@@ -184,6 +191,39 @@ func newClient(address, id, username, password, domainID, channelID string, time
 	return client, nil
 }
 
+func applyTLSConfig(opts *mqtt.ClientOptions, caPath, certPath, keyPath string) error {
+	if caPath == "" {
+		return nil
+	}
+
+	caCert, err := os.ReadFile(caPath)
+	if err != nil {
+		return fmt.Errorf("failed to read CA certificate: %w", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+		return errors.New("failed to parse CA certificate")
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: false,
+		RootCAs:            caCertPool,
+	}
+
+	if certPath != "" && keyPath != "" {
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			return fmt.Errorf("failed to load client key pair: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	opts.SetTLSConfig(tlsConfig)
+
+	return nil
+}
+
 func (ps *pubsub) mqttHandler(h Handler) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
 		var msg map[string]interface{}
@@ -196,7 +236,5 @@ func (ps *pubsub) mqttHandler(h Handler) mqtt.MessageHandler {
 		if err := h(m.Topic(), msg); err != nil {
 			ps.logger.Warn(fmt.Sprintf("Failed to handle MQTT message: %s", err))
 		}
-
-		m.Ack()
 	}
 }

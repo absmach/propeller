@@ -53,6 +53,8 @@ pub struct StartRequest {
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub image_url: String,
     #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub checksum: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub inputs: Vec<u64>,
     #[serde(default)]
     pub daemon: bool,
@@ -132,6 +134,8 @@ pub struct Chunk {
     pub total_chunks: usize,
     #[serde(deserialize_with = "deserialize_base64")]
     pub data: Vec<u8>,
+    #[serde(default)]
+    pub checksum: String,
 }
 
 fn deserialize_base64<'de, D>(deserializer: D) -> std::result::Result<Vec<u8>, D::Error>
@@ -227,6 +231,7 @@ mod tests {
             state: 0,
             file: "base64encodeddata".to_string(),
             image_url: String::new(),
+            checksum: String::new(),
             inputs: vec![1, 2, 3],
             daemon: false,
             env: Some(HashMap::new()),
@@ -244,6 +249,7 @@ mod tests {
             state: 0,
             file: String::new(),
             image_url: "registry.example.com/app:v1".to_string(),
+            checksum: String::new(),
             inputs: vec![],
             daemon: true,
             env: None,
@@ -261,6 +267,7 @@ mod tests {
             state: 0,
             file: "data".to_string(),
             image_url: String::new(),
+            checksum: String::new(),
             inputs: vec![],
             daemon: false,
             env: None,
@@ -280,6 +287,7 @@ mod tests {
             state: 0,
             file: "data".to_string(),
             image_url: String::new(),
+            checksum: String::new(),
             inputs: vec![],
             daemon: false,
             env: None,
@@ -299,6 +307,7 @@ mod tests {
             state: 0,
             file: String::new(),
             image_url: String::new(),
+            checksum: String::new(),
             inputs: vec![],
             daemon: false,
             env: None,
@@ -320,6 +329,7 @@ mod tests {
             "cli_args": null,
             "file": null,
             "image_url": "registry.example.com/app:v1",
+            "checksum": null,
             "inputs": null,
             "daemon": false,
             "env": null,
@@ -333,6 +343,7 @@ mod tests {
         assert!(req.cli_args.is_empty());
         assert!(req.file.is_empty());
         assert_eq!(req.image_url, "registry.example.com/app:v1");
+        assert!(req.checksum.is_empty());
         assert!(req.inputs.is_empty());
         assert_eq!(req.daemon, false);
         assert!(req.env.is_none());
@@ -347,6 +358,7 @@ mod tests {
             "cli_args": ["--arg1", "value1"],
             "file": "ZGF0YQ==",
             "image_url": "",
+            "checksum": "deadbeef",
             "inputs": [10, 20, 30],
             "daemon": true,
             "env": {
@@ -360,6 +372,7 @@ mod tests {
 
         assert_eq!(req.id, "task-complete");
         assert_eq!(req.cli_args.len(), 2);
+        assert_eq!(req.checksum, "deadbeef");
         assert_eq!(req.inputs, vec![10, 20, 30]);
         assert!(req.daemon);
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
@@ -403,7 +416,8 @@ mod tests {
             "app_name": "my-app",
             "chunk_idx": 2,
             "total_chunks": 10,
-            "data": "aGVsbG8gd29ybGQ="  // "hello world" in base64
+            "data": "aGVsbG8gd29ybGQ=",
+            "checksum": "checksum123"
         });
 
         let chunk: Chunk = serde_json::from_value(json_data).unwrap();
@@ -412,6 +426,7 @@ mod tests {
         assert_eq!(chunk.chunk_idx, 2);
         assert_eq!(chunk.total_chunks, 10);
         assert_eq!(chunk.data, b"hello world");
+        assert_eq!(chunk.checksum, "checksum123");
     }
 
     #[test]
@@ -579,6 +594,7 @@ mod tests {
             state: 0,
             file: "data".to_string(),
             image_url: String::new(),
+            checksum: String::new(),
             inputs: vec![],
             daemon: false,
             env: Some(env.clone()),
@@ -597,7 +613,7 @@ mod tests {
             "app_name": "empty-app",
             "chunk_idx": 0,
             "total_chunks": 1,
-            "data": ""  // empty base64 string
+            "data": ""
         });
 
         let chunk: Chunk = serde_json::from_value(json_data).unwrap();

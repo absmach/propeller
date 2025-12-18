@@ -29,7 +29,9 @@ type HTTPProxyConfig struct {
 	RegistryURL  string
 }
 
-func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string, chunkSize int) ([]proplet.ChunkPayload, error) {
+// FetchFromReg now returns the raw byte slice of the container layer.
+// Chunking is deferred until after encryption in service.go.
+func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string) ([]byte, error) {
 	repo, err := remote.NewRepository(containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create repository for %s: %w", containerPath, err)
@@ -60,7 +62,7 @@ func (c *HTTPProxyConfig) FetchFromReg(ctx context.Context, containerPath string
 		return nil, fmt.Errorf("failed to read layer for %s: %w", containerPath, err)
 	}
 
-	return createChunks(data, containerPath, chunkSize), nil
+	return data, nil
 }
 
 func (c *HTTPProxyConfig) setupAuthentication(repo *remote.Repository) {
@@ -130,7 +132,9 @@ func findLargestLayer(manifest *ocispec.Manifest) (ocispec.Descriptor, error) {
 	return largestLayer, nil
 }
 
-func createChunks(data []byte, containerPath string, chunkSize int) []proplet.ChunkPayload {
+// CreateChunks splits a byte slice into smaller chunks for transport.
+// This is now exported (Public) so it can be called from service.go.
+func CreateChunks(data []byte, containerPath string, chunkSize int, checksum string) []proplet.ChunkPayload {
 	dataSize := len(data)
 	totalChunks := (dataSize + chunkSize - 1) / chunkSize
 
@@ -150,6 +154,7 @@ func createChunks(data []byte, containerPath string, chunkSize int) []proplet.Ch
 			ChunkIdx:    i,
 			TotalChunks: totalChunks,
 			Data:        chunkData,
+			Checksum:    checksum,
 		})
 	}
 

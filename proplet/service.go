@@ -2,6 +2,8 @@ package proplet
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/absmach/propeller/pkg/crypto"
 	pkgmqtt "github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/task"
 )
@@ -17,6 +20,7 @@ import (
 const (
 	pollingInterval = 5 * time.Second
 	chunkTTL        = 5 * time.Minute
+	startWaitTTL    = 2 * time.Minute
 )
 
 var (
@@ -31,13 +35,15 @@ var (
 type chunkAssemblyState struct {
 	chunks      map[int][]byte
 	totalChunks int
+	checksum    string
 	createdAt   time.Time
 }
 
-func newChunkAssemblyState(totalChunks int) *chunkAssemblyState {
+func newChunkAssemblyState(totalChunks int, checksum string) *chunkAssemblyState {
 	return &chunkAssemblyState{
 		chunks:      make(map[int][]byte),
 		totalChunks: totalChunks,
+		checksum:    checksum,
 		createdAt:   time.Now(),
 	}
 }
@@ -50,29 +56,35 @@ func (s *chunkAssemblyState) isExpired(ttl time.Duration) bool {
 	return time.Since(s.createdAt) > ttl
 }
 
-func (s *chunkAssemblyState) assemble() []byte {
+func (s *chunkAssemblyState) assemble() ([]byte, error) {
 	var wasmBinary []byte
-	for i := range s.totalChunks {
-		if chunk, exists := s.chunks[i]; exists {
-			wasmBinary = append(wasmBinary, chunk...)
+	for i := range s.totalChunks { // Go 1.22+ integer range (intrange)
+		data, ok := s.chunks[i]
+		if !ok {
+			return nil, fmt.Errorf("missing chunk index %d", i)
 		}
+		wasmBinary = append(wasmBinary, data...)
 	}
 
-	return wasmBinary
+	return wasmBinary, nil
 }
 
 type PropletService struct {
 	domainID           string
 	channelID          string
-	clientID           string
+	instanceID         string
 	clientKey          string
 	k8sNamespace       string
 	livelinessInterval time.Duration
 	pubsub             pkgmqtt.PubSub
-	chunkAssembly      map[string]*chunkAssemblyState
-	chunksMutex        sync.Mutex
-	runtime            Runtime
-	logger             *slog.Logger
+
+	chunkAssembly map[string]*chunkAssemblyState
+	chunksMutex   sync.Mutex
+
+	runtime Runtime
+	logger  *slog.Logger
+
+	workloadKey []byte
 }
 
 type ChunkPayload struct {
@@ -80,13 +92,30 @@ type ChunkPayload struct {
 	ChunkIdx    int    `json:"chunk_idx"`
 	TotalChunks int    `json:"total_chunks"`
 	Data        []byte `json:"data"`
+	Checksum    string `json:"checksum"`
 }
 
-func NewService(ctx context.Context, domainID, channelID, clientID, clientKey, k8sNamespace string, livelinessInterval time.Duration, pubsub pkgmqtt.PubSub, logger *slog.Logger, runtime Runtime) (*PropletService, error) {
+func NewService(
+	ctx context.Context,
+	domainID, channelID, instanceID, clientKey, k8sNamespace string,
+	livelinessInterval time.Duration,
+	pubsub pkgmqtt.PubSub,
+	logger *slog.Logger,
+	runtime Runtime,
+	workloadKey string,
+) (*PropletService, error) {
+	decodedKey, err := hex.DecodeString(workloadKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode workload key: %w", err)
+	}
+	if len(decodedKey) != 32 {
+		return nil, fmt.Errorf("workload key must be 32 bytes (AES-256), got %d", len(decodedKey))
+	}
+
 	topic := fmt.Sprintf(discoveryTopicTemplate, domainID, channelID)
 	payload := map[string]interface{}{
 		"namespace":  k8sNamespace,
-		"proplet_id": clientID,
+		"proplet_id": instanceID,
 	}
 	if err := pubsub.Publish(ctx, topic, payload); err != nil {
 		return nil, errors.Join(errors.New("failed to publish discovery"), err)
@@ -95,7 +124,7 @@ func NewService(ctx context.Context, domainID, channelID, clientID, clientKey, k
 	p := &PropletService{
 		domainID:           domainID,
 		channelID:          channelID,
-		clientID:           clientID,
+		instanceID:         instanceID,
 		clientKey:          clientKey,
 		k8sNamespace:       k8sNamespace,
 		livelinessInterval: livelinessInterval,
@@ -103,6 +132,7 @@ func NewService(ctx context.Context, domainID, channelID, clientID, clientKey, k
 		chunkAssembly:      make(map[string]*chunkAssemblyState),
 		runtime:            runtime,
 		logger:             logger,
+		workloadKey:        decodedKey,
 	}
 
 	go p.startLivelinessUpdates(ctx)
@@ -143,6 +173,7 @@ func (p *PropletService) startChunkExpiryTask(ctx context.Context) {
 			p.logger.Info("stopping chunk expiry task")
 
 			return
+
 		case <-ticker.C:
 			p.chunksMutex.Lock()
 			var expired []string
@@ -175,19 +206,17 @@ func (p *PropletService) startLivelinessUpdates(ctx context.Context) {
 			p.logger.Info("stopping liveliness updates")
 
 			return
+
 		case <-ticker.C:
 			topic := fmt.Sprintf(aliveTopicTemplate, p.domainID, p.channelID)
 			payload := map[string]interface{}{
 				"status":     "alive",
 				"namespace":  p.k8sNamespace,
-				"proplet_id": p.clientID,
+				"proplet_id": p.instanceID,
 			}
-
 			if err := p.pubsub.Publish(ctx, topic, payload); err != nil {
 				p.logger.Error("failed to publish liveliness message", slog.Any("error", err))
 			}
-
-			p.logger.Debug("Published liveliness message", slog.String("topic", topic))
 		}
 	}
 }
@@ -209,7 +238,8 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 			CLIArgs:      payload.CLIArgs,
 			FunctionName: payload.Name,
 			WasmFile:     payload.File,
-			imageURL:     payload.ImageURL,
+			ImageURL:     payload.ImageURL,
+			Checksum:     payload.Checksum,
 			Params:       payload.Inputs,
 			Daemon:       payload.Daemon,
 			Env:          payload.Env,
@@ -221,69 +251,140 @@ func (p *PropletService) handleStartCommand(ctx context.Context) func(topic stri
 		p.logger.Info("Received start command", slog.String("app_name", req.FunctionName))
 
 		if req.WasmFile != nil {
-			config := StartConfig{
-				ID:           req.ID,
-				FunctionName: req.FunctionName,
-				Daemon:       req.Daemon,
-				WasmBinary:   req.WasmFile,
-				CLIArgs:      req.CLIArgs,
-				Env:          req.Env,
-				Args:         req.Params,
-			}
-			if err := p.runtime.StartApp(ctx, config); err != nil {
-				return err
-			}
-
-			return nil
+			return p.handleWasmFileStart(ctx, req)
 		}
 
-		pl := map[string]interface{}{
-			"app_name": req.imageURL,
+		return p.handleRegistryStart(ctx, req)
+	}
+}
+
+func (p *PropletService) handleWasmFileStart(ctx context.Context, req startRequest) error {
+	wasm := req.WasmFile
+
+	if req.Checksum != "" {
+		sum := sha256.Sum256(wasm)
+		computed := hex.EncodeToString(sum[:])
+		if computed != req.Checksum {
+			return fmt.Errorf("checksum mismatch: expected %s, got %s", req.Checksum, computed)
 		}
-		tp := fmt.Sprintf(fetchRequestTopicTemplate, p.domainID, p.channelID)
-		if err := p.pubsub.Publish(ctx, tp, pl); err != nil {
-			return err
-		}
+	}
 
-		go func() {
-			p.logger.Info("Waiting for chunks", slog.String("app_name", req.imageURL))
+	dec, err := crypto.Decrypt(wasm, p.workloadKey)
+	if err != nil {
+		p.logger.Error("Failed to decrypt workload", slog.Any("error", err))
 
-			for {
-				p.chunksMutex.Lock()
-				state, exists := p.chunkAssembly[req.imageURL]
-				isComplete := exists && state.isComplete()
-				p.chunksMutex.Unlock()
+		return err
+	}
 
-				if isComplete {
-					p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.imageURL))
+	config := StartConfig{
+		ID:           req.ID,
+		FunctionName: req.FunctionName,
+		Daemon:       req.Daemon,
+		WasmBinary:   dec,
+		CLIArgs:      req.CLIArgs,
+		Env:          req.Env,
+		Args:         req.Params,
+	}
 
-					p.chunksMutex.Lock()
-					wasmBinary := state.assemble()
+	return p.runtime.StartApp(ctx, config)
+}
 
-					delete(p.chunkAssembly, req.imageURL)
-					p.chunksMutex.Unlock()
+func (p *PropletService) handleRegistryStart(ctx context.Context, req startRequest) error {
+	pl := map[string]interface{}{
+		"app_name": req.ImageURL,
+	}
+	tp := fmt.Sprintf(fetchRequestTopicTemplate, p.domainID, p.channelID)
+	if err := p.pubsub.Publish(ctx, tp, pl); err != nil {
+		return err
+	}
 
-					config := StartConfig{
-						ID:           req.ID,
-						FunctionName: req.FunctionName,
-						Daemon:       req.Daemon,
-						WasmBinary:   wasmBinary,
-						CLIArgs:      req.CLIArgs,
-						Env:          req.Env,
-						Args:         req.Params,
-					}
-					if err := p.runtime.StartApp(ctx, config); err != nil {
-						p.logger.Error("Failed to start app", slog.String("app_name", req.imageURL), slog.Any("error", err))
-					}
+	go p.waitForChunks(ctx, req)
 
-					break
-				}
+	return nil
+}
 
-				time.Sleep(pollingInterval)
+func (p *PropletService) waitForChunks(ctx context.Context, req startRequest) {
+	p.logger.Info("Waiting for chunks", slog.String("app_name", req.ImageURL))
+
+	timeout := time.NewTimer(startWaitTTL)
+	defer timeout.Stop()
+
+	ticker := time.NewTicker(pollingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-timeout.C:
+			p.logger.Error("Timeout waiting for chunks", slog.String("app_name", req.ImageURL))
+
+			return
+
+		case <-ticker.C:
+			p.chunksMutex.Lock()
+			state, exists := p.chunkAssembly[req.ImageURL]
+			isComplete := exists && state.isComplete()
+			p.chunksMutex.Unlock()
+
+			if !isComplete {
+				continue
 			}
-		}()
 
-		return nil
+			p.processCompleteChunks(ctx, req)
+
+			return
+		}
+	}
+}
+
+func (p *PropletService) processCompleteChunks(ctx context.Context, req startRequest) {
+	p.logger.Info("All chunks received, deploying app", slog.String("app_name", req.ImageURL))
+
+	p.chunksMutex.Lock()
+	state := p.chunkAssembly[req.ImageURL]
+	delete(p.chunkAssembly, req.ImageURL)
+	p.chunksMutex.Unlock()
+
+	wasmBinary, err := state.assemble()
+	if err != nil {
+		p.logger.Error("Assembly failed", slog.String("app_name", req.ImageURL), slog.Any("error", err))
+
+		return
+	}
+
+	if state.checksum != "" {
+		sum := sha256.Sum256(wasmBinary)
+		computed := hex.EncodeToString(sum[:])
+		if computed != state.checksum {
+			p.logger.Error("Checksum mismatch on reassembly",
+				slog.String("app_name", req.ImageURL),
+				slog.String("expected", state.checksum),
+				slog.String("got", computed))
+
+			return
+		}
+	}
+
+	dec, err := crypto.Decrypt(wasmBinary, p.workloadKey)
+	if err != nil {
+		p.logger.Error("Failed to decrypt assembled workload", slog.Any("error", err))
+
+		return
+	}
+
+	config := StartConfig{
+		ID:           req.ID,
+		FunctionName: req.FunctionName,
+		Daemon:       req.Daemon,
+		WasmBinary:   dec,
+		CLIArgs:      req.CLIArgs,
+		Env:          req.Env,
+		Args:         req.Params,
+	}
+	if err := p.runtime.StartApp(ctx, config); err != nil {
+		p.logger.Error("Failed to start app", slog.String("app_name", req.ImageURL), slog.Any("error", err))
 	}
 }
 
@@ -303,11 +404,7 @@ func (p *PropletService) handleStopCommand(ctx context.Context) func(topic strin
 			return err
 		}
 
-		if err := p.runtime.StopApp(ctx, req.ID); err != nil {
-			return err
-		}
-
-		return nil
+		return p.runtime.StopApp(ctx, req.ID)
 	}
 }
 
@@ -332,7 +429,7 @@ func (p *PropletService) handleChunk(_ context.Context) func(topic string, msg m
 
 		state, exists := p.chunkAssembly[chunk.AppName]
 		if !exists {
-			state = newChunkAssemblyState(chunk.TotalChunks)
+			state = newChunkAssemblyState(chunk.TotalChunks, chunk.Checksum)
 			p.chunkAssembly[chunk.AppName] = state
 		}
 
@@ -345,16 +442,30 @@ func (p *PropletService) handleChunk(_ context.Context) func(topic string, msg m
 			return fmt.Errorf("chunk total_chunks mismatch for '%s'", chunk.AppName)
 		}
 
-		if _, exists := state.chunks[chunk.ChunkIdx]; exists {
+		if state.checksum != "" && chunk.Checksum != "" && state.checksum != chunk.Checksum {
+			p.logger.Warn("chunk checksum mismatch",
+				slog.String("app_name", chunk.AppName),
+				slog.String("expected", state.checksum),
+				slog.String("got", chunk.Checksum))
+
+			return fmt.Errorf("chunk checksum mismatch for '%s'", chunk.AppName)
+		}
+		if state.checksum == "" {
+			state.checksum = chunk.Checksum
+		}
+
+		if _, dup := state.chunks[chunk.ChunkIdx]; dup {
 			p.logger.Debug("duplicate chunk, ignoring",
 				slog.Int("chunk_idx", chunk.ChunkIdx),
 				slog.String("app_name", chunk.AppName))
-		} else {
-			state.chunks[chunk.ChunkIdx] = chunk.Data
-			log.Printf("Stored chunk %d/%d for app '%s' (%d/%d chunks received)\n",
-				chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName,
-				len(state.chunks), state.totalChunks)
+
+			return nil
 		}
+
+		state.chunks[chunk.ChunkIdx] = chunk.Data
+		log.Printf("Stored chunk %d/%d for app '%s' (%d/%d chunks received)\n",
+			chunk.ChunkIdx+1, chunk.TotalChunks, chunk.AppName,
+			len(state.chunks), state.totalChunks)
 
 		return nil
 	}
@@ -369,6 +480,15 @@ func (c *ChunkPayload) Validate() error {
 	}
 	if len(c.Data) == 0 {
 		return errors.New("chunk validation: data is empty")
+	}
+
+	if c.Checksum != "" {
+		if len(c.Checksum) != 64 {
+			return fmt.Errorf("chunk validation: checksum must be 64 hex chars, got %d", len(c.Checksum))
+		}
+		if _, err := hex.DecodeString(c.Checksum); err != nil {
+			return fmt.Errorf("chunk validation: checksum is not valid hex: %w", err)
+		}
 	}
 
 	return nil
