@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
         Arc::new(WasmtimeRuntime::new()?)
     };
 
-    let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
+    let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime)?);
 
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()

@@ -28,6 +28,7 @@ pub struct PropletConfig {
     pub client_key: String,
     pub k8s_namespace: Option<String>,
     pub external_wasm_runtime: Option<String>,
+    pub workload_key: String,
 }
 
 impl Default for PropletConfig {
@@ -49,6 +50,7 @@ impl Default for PropletConfig {
             client_key: String::new(),
             k8s_namespace: None,
             external_wasm_runtime: None,
+            workload_key: String::new(),
         }
     }
 }
@@ -137,6 +139,10 @@ impl PropletConfig {
             config.external_wasm_runtime = Some(val);
         }
 
+        if let Ok(val) = env::var("PROPLET_WORKLOAD_KEY") {
+            config.workload_key = val;
+        }
+
         config
     }
 
@@ -181,6 +187,7 @@ mod tests {
         assert!(config.client_key.is_empty());
         assert!(config.k8s_namespace.is_none());
         assert!(config.external_wasm_runtime.is_none());
+        assert!(config.workload_key.is_empty());
     }
 
     #[test]
@@ -334,6 +341,16 @@ mod tests {
     }
 
     #[test]
+    fn test_proplet_config_from_env_workload_key() {
+        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        env::set_var("PROPLET_WORKLOAD_KEY", key);
+        let config = PropletConfig::from_env();
+        env::remove_var("PROPLET_WORKLOAD_KEY");
+
+        assert_eq!(config.workload_key, key);
+    }
+
+    #[test]
     fn test_proplet_config_from_env_instance_id_valid() {
         let uuid = Uuid::new_v4();
         env::set_var("PROPLET_INSTANCE_ID", uuid.to_string());
@@ -385,6 +402,7 @@ mod tests {
             "PROPLET_CLIENT_KEY",
             "PROPLET_MANAGER_K8S_NAMESPACE",
             "PROPLET_EXTERNAL_WASM_RUNTIME",
+            "PROPLET_WORKLOAD_KEY",
         ];
 
         for var in &vars_to_clear {
@@ -396,6 +414,7 @@ mod tests {
         assert_eq!(config.log_level, "info");
         assert_eq!(config.mqtt_address, "tcp://localhost:1883");
         assert_eq!(config.mqtt_timeout, 30);
+        assert_eq!(config.workload_key, "");
     }
 
     #[test]
