@@ -1,20 +1,8 @@
 package proplet
 
-import (
-	"context"
-	"time"
-
-	"github.com/absmach/propeller/task"
-)
+import "time"
 
 const aliveTimeout = 10 * time.Second
-
-type Service interface {
-	StartTask(ctx context.Context, task task.Task) error
-	RunTask(ctx context.Context, taskID string) ([]uint64, error)
-	StopTask(ctx context.Context, taskID string) error
-	RemoveTask(ctx context.Context, taskID string) error
-}
 
 type Proplet struct {
 	ID           string      `json:"id"`
@@ -41,4 +29,11 @@ type PropletPage struct {
 	Limit    uint64    `json:"limit"`
 	Total    uint64    `json:"total"`
 	Proplets []Proplet `json:"proplets"`
+}
+
+type ChunkPayload struct {
+	AppName     string `json:"app_name"`
+	ChunkIdx    int    `json:"chunk_idx"`
+	TotalChunks int    `json:"total_chunks"`
+	Data        []byte `json:"data"`
 }

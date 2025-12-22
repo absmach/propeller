@@ -65,7 +65,7 @@ impl PubSub {
         self.client
             .subscribe(topic, qos)
             .await
-            .context(format!("Failed to subscribe to topic: {}", topic))?;
+            .context(format!("Failed to subscribe to topic: {topic}"))?;
 
         info!("Subscribed to topic: {}", topic);
         Ok(())
@@ -76,7 +76,7 @@ impl PubSub {
         self.client
             .unsubscribe(topic)
             .await
-            .context(format!("Failed to unsubscribe from topic: {}", topic))?;
+            .context(format!("Failed to unsubscribe from topic: {topic}"))?;
 
         info!("Unsubscribed from topic: {}", topic);
         Ok(())
@@ -137,7 +137,7 @@ pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::Sender<Mqtt
 }
 
 pub fn build_topic(domain_id: &str, channel_id: &str, path: &str) -> String {
-    format!("m/{}/c/{}/{}", domain_id, channel_id, path)
+    format!("m/{domain_id}/c/{channel_id}/{path}")
 }
 
 /// Parse MQTT broker address into (host, port, use_tls)
@@ -157,7 +157,7 @@ fn parse_mqtt_address(address: &str) -> Result<(String, u16, bool)> {
 
         let mut host = url
             .host_str()
-            .ok_or_else(|| anyhow!("Missing host in URL: {}", address))?
+            .ok_or_else(|| anyhow!("Missing host in URL: {address}"))?
             .to_string();
 
         if host.starts_with('[') && host.ends_with(']') {

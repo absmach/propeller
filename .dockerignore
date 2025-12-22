@@ -1,7 +1,34 @@
+# Version control
 .git
 .github
+.gitignore
+.gitmodules
+
+# Build artifacts
 build
+
+# Docker files (not needed in build context)
 docker
+
+# Documentation
 docs
+
+# Embedded proplet
 embed-proplet
+
+# Examples
 examples
+
+# Rust build artifacts
+proplet/target/debug
+proplet/target/doc
+proplet/target/.rustc_info.json
+proplet/target/CACHEDIR.TAG
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store

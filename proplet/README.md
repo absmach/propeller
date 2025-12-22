@@ -1,10 +1,10 @@
-# Proplet-rs
+# Proplet
 
 A Rust implementation of the Proplet worker component for the Propeller orchestration system.
 
 ## Overview
 
-Proplet-rs is a lightweight worker service that executes WebAssembly workloads on edge devices, IoT nodes, or cloud instances. It communicates with a central Manager via MQTT and provides task lifecycle management.
+Proplet is a lightweight worker service that executes WebAssembly workloads on edge devices, IoT nodes, or cloud instances. It communicates with a central Manager via MQTT and provides task lifecycle management.
 
 ## Features
 
@@ -70,16 +70,16 @@ export PROPLET_LIVELINESS_INTERVAL=10
 
 ```bash
 # Using Wasmtime runtime (default)
-./target/release/proplet-rs
+./target/release/proplet
 
 # Using external runtime
 export PROPLET_EXTERNAL_WASM_RUNTIME=/path/to/wasmtime
-./target/release/proplet-rs
+./target/release/proplet
 ```
 
 ## MQTT Topics
 
-Proplet-rs uses the following MQTT topic structure:
+Proplet uses the following MQTT topic structure:
 
 ```
 m/{domainID}/c/{channelID}/control/proplet/alive

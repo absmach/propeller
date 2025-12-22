@@ -1706,12 +1706,14 @@ services:
       PROPLET_CLIENT_KEY: ${PROPLET_CLIENT_KEY}
       PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME}
       PROPLET_MANAGER_K8S_NAMESPACE: ${PROPLET_MANAGER_K8S_NAMESPACE}
+      PROPLET_CONFIG_FILE: ${PROPLET_CONFIG_FILE}
+      PROPLET_CONFIG_SECTION: ${PROPLET_CONFIG_SECTION}
     networks:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
     # volumes:
-    #   - ./config.toml:/config.toml
+    #   - ./config.toml:/home/proplet/config.toml
 
   proxy:
     image: ghcr.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}

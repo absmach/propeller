@@ -3,7 +3,7 @@ package manager
 import (
 	"context"
 
-	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/task"
 )
 

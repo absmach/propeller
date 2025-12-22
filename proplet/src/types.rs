@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::time::SystemTime;
 use uuid::Uuid;
@@ -100,32 +99,6 @@ impl StopRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Task {
-    pub id: String,
-    pub name: String,
-    pub state: u8,
-    pub image_url: String,
-    pub file: Vec<u8>,
-    pub cli_args: Vec<String>,
-    pub inputs: Vec<u64>,
-    pub env: HashMap<String, String>,
-    pub daemon: bool,
-    pub proplet_id: String,
-    pub results: Value,
-    pub error: String,
-    pub start_time: SystemTime,
-    pub finish_time: SystemTime,
-    pub created_at: SystemTime,
-    pub updated_at: SystemTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChunkMetadata {
-    pub app_name: String,
-    pub total_chunks: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
     pub app_name: String,
     pub chunk_idx: usize,
@@ -162,7 +135,7 @@ pub struct DiscoveryMessage {
 pub struct ResultMessage {
     pub task_id: String,
     pub proplet_id: Uuid,
-    pub result: Vec<u8>,
+    pub results: String,
     pub error: Option<String>,
 }
 
@@ -384,20 +357,6 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_metadata_serialization() {
-        let metadata = ChunkMetadata {
-            app_name: "test-app".to_string(),
-            total_chunks: 5,
-        };
-
-        let json = serde_json::to_string(&metadata).unwrap();
-        let deserialized: ChunkMetadata = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(deserialized.app_name, "test-app");
-        assert_eq!(deserialized.total_chunks, 5);
-    }
-
-    #[test]
     fn test_chunk_deserialize_with_base64() {
         let json_data = json!({
             "app_name": "my-app",
@@ -462,7 +421,7 @@ mod tests {
         let msg = ResultMessage {
             task_id: "task-result-1".to_string(),
             proplet_id: Uuid::new_v4(),
-            result: vec![1, 2, 3, 4],
+            results: String::from("hello world"),
             error: None,
         };
 
@@ -470,7 +429,7 @@ mod tests {
         let deserialized: ResultMessage = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.task_id, "task-result-1");
-        assert_eq!(deserialized.result, vec![1, 2, 3, 4]);
+        assert_eq!(deserialized.results, "hello world");
         assert!(deserialized.error.is_none());
     }
 
@@ -479,7 +438,7 @@ mod tests {
         let msg = ResultMessage {
             task_id: "task-result-2".to_string(),
             proplet_id: Uuid::new_v4(),
-            result: Vec::new(),
+            results: String::new(),
             error: Some("Execution failed".to_string()),
         };
 
@@ -487,7 +446,7 @@ mod tests {
         let deserialized: ResultMessage = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.task_id, "task-result-2");
-        assert!(deserialized.result.is_empty());
+        assert!(deserialized.results.is_empty());
         assert_eq!(deserialized.error, Some("Execution failed".to_string()));
     }
 
@@ -506,33 +465,6 @@ mod tests {
                 _ => panic!("Serialization round-trip failed"),
             }
         }
-    }
-
-    #[test]
-    fn test_task_complete_structure() {
-        let now = SystemTime::now();
-        let task = Task {
-            id: "task-complete-1".to_string(),
-            name: "test_task".to_string(),
-            state: 1,
-            image_url: "registry.example.com/app:v1".to_string(),
-            file: vec![1, 2, 3],
-            cli_args: vec!["--arg".to_string()],
-            inputs: vec![100, 200],
-            env: HashMap::new(),
-            daemon: false,
-            proplet_id: "proplet-xyz".to_string(),
-            results: json!({"output": "success"}),
-            error: String::new(),
-            start_time: now,
-            finish_time: now,
-            created_at: now,
-            updated_at: now,
-        };
-
-        assert_eq!(task.id, "task-complete-1");
-        assert_eq!(task.state, 1);
-        assert_eq!(task.inputs.len(), 2);
     }
 
     #[test]

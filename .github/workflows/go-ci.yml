@@ -1,4 +1,4 @@
-name: Continuous Integration
+name: Go Continuous Integration Pipeline
 
 on:
   pull_request:
@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint-and-build:
-    name: Lint and Build
+  go-lint-and-build:
+    name: Go Lint and Build
     runs-on: ubuntu-latest
 
     steps:

@@ -5,7 +5,6 @@ updates:
     schedule:
       interval: "monthly"
       day: "monday"
-      timezone: "Europe/Paris"
     groups:
       gh-dependency:
         patterns:
@@ -14,10 +13,19 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
-      timezone: "Europe/Paris"
     groups:
       go-dependency:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/proplet"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+    groups:
+      rs-dependencies:
         patterns:
           - "*"

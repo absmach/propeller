@@ -1,0 +1,41 @@
+FROM ubuntu:25.10
+
+LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
+LABEL org.opencontainers.image.licenses=Apache-2.0
+LABEL org.opencontainers.image.title="Propeller Proplet Dev (Rust)"
+LABEL org.opencontainers.image.description="Development image for Propeller edge runtime"
+
+ARG WASMTIME_VERSION=39.0.1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
+        xz-utils && \
+    wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
+    tar -xf wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
+    mv wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/ && \
+    rm -rf wasmtime-v${WASMTIME_VERSION}-x86_64-linux* && \
+    apt-get remove -y wget xz-utils && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r proplet && \
+    useradd -r -g proplet -s /bin/false proplet
+
+ARG SVC
+
+COPY ${SVC} /usr/local/bin/proplet
+
+RUN chown proplet:proplet /usr/local/bin/proplet && \
+    chmod +x /usr/local/bin/proplet
+
+RUN mkdir -p /home/proplet && \
+    chown proplet:proplet /home/proplet
+
+USER proplet
+
+WORKDIR /home/proplet
+
+ENTRYPOINT ["/usr/local/bin/proplet"]

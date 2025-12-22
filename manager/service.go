@@ -10,9 +10,9 @@ import (
 	"github.com/0x6flab/namegenerator"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/mqtt"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
-	"github.com/absmach/propeller/proplet"
 	"github.com/absmach/propeller/task"
 	"github.com/google/uuid"
 )
@@ -364,7 +364,7 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]int
 	t.UpdatedAt = time.Now()
 	t.FinishTime = time.Now()
 
-	if errMsg, ok := msg["error"].(string); ok {
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
 		t.Error = errMsg
 	}
 

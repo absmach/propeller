@@ -1,16 +1,25 @@
 use rumqttc::QoS;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
 
+const DEFAULT_CONFIG_PATH: &str = "config.toml";
+const DEFAULT_CONFIG_SECTION: &str = "proplet";
+
+/// Configuration fields that can be loaded from TOML file
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
-pub struct Config {
-    pub proplet: PropletConfig,
+pub struct PropletFileConfig {
+    pub domain_id: String,
+    pub client_id: String,
+    pub client_key: String,
+    pub channel_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PropletConfig {
     pub log_level: String,
     pub instance_id: Uuid,
@@ -54,6 +63,63 @@ impl Default for PropletConfig {
 }
 
 impl PropletConfig {
+    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+        let mut config = Self::from_env();
+
+        if config.domain_id.is_empty()
+            || config.client_id.is_empty()
+            || config.client_key.is_empty()
+            || config.channel_id.is_empty()
+        {
+            let config_path =
+                env::var("PROPLET_CONFIG_FILE").unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string());
+
+            match fs::metadata(&config_path) {
+                Ok(_) => {
+                    let file_config = Self::from_file(&config_path)?;
+
+                    if config.client_id.is_empty() {
+                        config.client_id = file_config.client_id;
+                    }
+                    if config.client_key.is_empty() {
+                        config.client_key = file_config.client_key;
+                    }
+                    if config.channel_id.is_empty() {
+                        config.channel_id = file_config.channel_id;
+                    }
+                    if config.domain_id.is_empty() {
+                        config.domain_id = file_config.domain_id;
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("config file '{config_path}' not accessible: {e}").into());
+                }
+            }
+        }
+
+        Ok(config)
+    }
+
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<PropletFileConfig, Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string(path)?;
+
+        let config: HashMap<String, toml::Value> = toml::from_str(&contents)?;
+
+        let section = env::var("PROPLET_CONFIG_SECTION")
+            .unwrap_or_else(|_| DEFAULT_CONFIG_SECTION.to_string());
+
+        let section_value = config
+            .get(&section)
+            .ok_or_else(|| format!("config section '{section}' not found in TOML file"))?;
+
+        let proplet_config: PropletFileConfig = section_value
+            .clone()
+            .try_into()
+            .map_err(|e| format!("failed to parse config section '{section}': {e}"))?;
+
+        Ok(proplet_config)
+    }
+
     pub fn from_env() -> Self {
         let mut config = Self::default();
 

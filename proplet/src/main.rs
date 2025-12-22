@@ -18,7 +18,8 @@ use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = PropletConfig::from_env();
+    let config =
+        PropletConfig::load().map_err(|e| anyhow::anyhow!("Failed to load configuration: {e}"))?;
 
     let log_level = match config.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,

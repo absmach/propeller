@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/task"
 	"github.com/absmach/supermq"
 )

@@ -3,7 +3,7 @@ package scheduler
 import (
 	"errors"
 
-	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/task"
 )
 

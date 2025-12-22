@@ -3,12 +3,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::oneshot;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::info;
 use wasmtime::*;
-use wasmtime_wasi::{WasiCtxBuilder};
+use wasmtime_wasi::WasiCtxBuilder;
 
 pub struct WasmtimeRuntime {
     engine: Engine,
@@ -36,11 +36,7 @@ impl WasmtimeRuntime {
 
 #[async_trait]
 impl Runtime for WasmtimeRuntime {
-    async fn start_app(
-        &self,
-        _ctx: RuntimeContext,
-        config: StartConfig,
-    ) -> Result<Vec<u8>> {
+    async fn start_app(&self, _ctx: RuntimeContext, config: StartConfig) -> Result<Vec<u8>> {
         info!(
             "Starting Wasmtime runtime app: task_id={}, function={}, daemon={}, wasm_size={}",
             config.id,
@@ -106,9 +102,9 @@ impl Runtime for WasmtimeRuntime {
             let args = config.args.clone();
             let tasks = self.tasks.clone();
             let engine = self.engine.clone();
-            
+
             let (result_tx, result_rx) = oneshot::channel();
-            
+
             let handle = tokio::task::spawn(async move {
                 let result = tokio::task::spawn_blocking(move || {
                     // Initialize the WASM runtime by calling _initialize if it exists
@@ -125,8 +121,8 @@ impl Runtime for WasmtimeRuntime {
                     let func = instance
                         .get_func(&mut store, &function_name)
                         .context(format!(
-                            "Function '{}' not found in module exports",
-                            function_name
+                            "Function '{function_name}' not found in module exports"
+
                         ))?;
 
                     let func_ty = func.ty(&store);
@@ -177,7 +173,7 @@ impl Runtime for WasmtimeRuntime {
                     engine.increment_epoch();
 
                     func.call(&mut store, &wasm_args, &mut results)
-                        .context(format!("Failed to call function '{}'", function_name))?;
+                        .context(format!("Failed to call function '{function_name}'"))?;
 
                     info!("Function '{}' executed successfully", function_name);
 
@@ -218,9 +214,9 @@ impl Runtime for WasmtimeRuntime {
                 let final_result = match result {
                     Ok(Ok(data)) => Ok(data),
                     Ok(Err(e)) => Err(e),
-                    Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
+                    Err(e) => Err(anyhow::anyhow!("Task join error: {e}")),
                 };
-                
+
                 let _ = result_tx.send(final_result);
             });
 
@@ -247,10 +243,7 @@ impl Runtime for WasmtimeRuntime {
             info!("Task {} aborted and removed from tasks", id);
             Ok(())
         } else {
-            Err(anyhow::anyhow!(
-                "Task {} not found in running tasks",
-                id
-            ))
+            Err(anyhow::anyhow!("Task {id} not found in running tasks"))
         }
     }
 }

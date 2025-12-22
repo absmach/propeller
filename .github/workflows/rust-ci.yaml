@@ -1,0 +1,48 @@
+name: Rust Continuous Integration Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "proplet/**"
+      - ".github/**"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "proplet/**"
+      - ".github/**"
+
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-lint-and-build:
+    name: Rust Lint and Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./proplet
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Check cargo
+        run: cargo check --release
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run linter
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Build release
+        run: cargo build --release

@@ -53,7 +53,7 @@ pub struct PropletService {
 
 impl PropletService {
     pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
-        let proplet = Proplet::new(config.instance_id, "proplet-rs".to_string());
+        let proplet = Proplet::new(config.instance_id, "proplet".to_string());
 
         let service = Self {
             config,
@@ -319,25 +319,25 @@ impl PropletService {
 
             let result = runtime.start_app(ctx, config).await;
 
-            let (result_data, error) = match result {
+            let (result_str, error) = match result {
                 Ok(data) => {
                     let result_str = String::from_utf8_lossy(&data).to_string();
                     info!(
                         "Task {} completed successfully. Result: {}",
                         task_id, result_str
                     );
-                    (data, None)
+                    (result_str, None)
                 }
                 Err(e) => {
                     error!("Task {} failed: {}", task_id, e);
-                    (Vec::new(), Some(e.to_string()))
+                    (String::new(), Some(e.to_string()))
                 }
             };
 
             let result_msg = ResultMessage {
                 task_id: task_id.clone(),
                 proplet_id,
-                result: result_data,
+                results: result_str,
                 error,
             };
 
@@ -397,19 +397,19 @@ impl PropletService {
             ));
         }
 
-        if state.chunks.contains_key(&chunk.chunk_idx) {
-            debug!(
-                "Duplicate chunk {} for app '{}', ignoring",
-                chunk.chunk_idx, chunk.app_name
-            );
-        } else {
-            state.chunks.insert(chunk.chunk_idx, chunk.data);
+        if let std::collections::btree_map::Entry::Vacant(e) = state.chunks.entry(chunk.chunk_idx) {
+            e.insert(chunk.data);
             debug!(
                 "Stored chunk {} for app '{}' ({}/{} chunks received)",
                 chunk.chunk_idx,
                 chunk.app_name,
                 state.chunks.len(),
                 state.total_chunks
+            );
+        } else {
+            debug!(
+                "Duplicate chunk {} for app '{}', ignoring",
+                chunk.chunk_idx, chunk.app_name
             );
         }
 
@@ -482,15 +482,16 @@ impl PropletService {
     async fn publish_result(
         &self,
         task_id: &str,
-        result: Vec<u8>,
+        results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
         let proplet_id = self.proplet.lock().await.id;
+        let result_str = String::from_utf8_lossy(&results).to_string();
 
         let result_msg = ResultMessage {
             task_id: task_id.to_string(),
             proplet_id,
-            result,
+            results: result_str,
             error,
         };
 

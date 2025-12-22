@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	pkgmqtt "github.com/absmach/propeller/pkg/mqtt"
-	"github.com/absmach/propeller/proplet"
+	"github.com/absmach/propeller/pkg/proplet"
 )
 
 const (

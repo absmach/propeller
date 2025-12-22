@@ -6,9 +6,12 @@ TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
 EXAMPLES = addition compute hello-world
-SERVICES = manager proplet cli proxy
+SERVICES = manager cli proxy
+RUST_SERVICES = proplet
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
+DOCKERS_RUST = $(addprefix docker_,$(RUST_SERVICES))
+DOCKERS_RUST_DEV = $(addprefix docker_dev_,$(RUST_SERVICES))
 DOCKER_IMAGE_NAME_PREFIX ?= ghcr.io/absmach/propeller
 
 define compile_service
@@ -45,8 +48,33 @@ define make_docker_dev
 		-f docker/Dockerfile.dev ./build
 endef
 
+define make_docker_rust
+	$(eval svc=$(subst docker_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg TIME=$(TIME) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		-f docker/Dockerfile.$(svc) .
+endef
+
+define make_docker_rust_dev
+	$(eval svc=$(subst docker_dev_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg SVC=$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		-f docker/Dockerfile.$(svc).dev ./proplet/target/release
+endef
+
 define docker_push
 		for svc in $(SERVICES); do \
+			docker push $(DOCKER_IMAGE_NAME_PREFIX)/$$svc:$(1); \
+		done
+		for svc in $(RUST_SERVICES); do \
 			docker push $(DOCKER_IMAGE_NAME_PREFIX)/$$svc:$(1); \
 		done
 endef
@@ -54,27 +82,39 @@ endef
 $(SERVICES):
 	$(call compile_service,$(@))
 
+$(RUST_SERVICES):
+	cd proplet && cargo build --release
+
 $(DOCKERS):
 	$(call make_docker,$(@),$(GOARCH))
 
 $(DOCKERS_DEV):
 	$(call make_docker_dev,$(@))
 
+$(DOCKERS_RUST):
+	$(call make_docker_rust,$(@))
+
+$(DOCKERS_RUST_DEV):
+	$(call make_docker_rust_dev,$(@))
+
 dockers: $(DOCKERS)
 dockers_dev: $(DOCKERS_DEV)
+dockers_rust: $(DOCKERS_RUST)
+dockers_rust_dev: $(DOCKERS_RUST_DEV)
 
-latest: dockers
+latest: dockers dockers_rust
 		$(call docker_push,latest)
 
 # Install all non-WASM executables from the build directory to GOBIN with 'propeller-' prefix
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(EXAMPLES)
-all: $(SERVICES) $(EXAMPLES)
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
+all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
 
 clean:
 	rm -rf build
+	cd proplet && cargo clean
 
 lint:
 	golangci-lint run  --config .golangci.yaml
@@ -97,10 +137,16 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  <service>:        build the binary for the service i.e manager, proplet, cli"
-	@echo "  all:              build all binaries i.e manager, proplet, cli"
+	@echo "  all:              build all binaries (Go: manager, cli; Rust: proplet)"
+	@echo "  proplet:          build the Rust proplet binary"
 	@echo "  install:          install the binary i.e copies to GOBIN"
-	@echo "  clean:            clean the build directory"
+	@echo "  clean:            clean the build directory and Rust target"
 	@echo "  lint:             run golangci-lint"
+	@echo "  dockers:          build and push all Docker images (Go and Rust services)"
+	@echo "  dockers_dev:      build all Go service dev Docker images"
+	@echo "  dockers_rust:     build all Rust service Docker images"
+	@echo "  dockers_rust_dev: build all Rust service dev Docker images"
+	@echo "  latest:           build and push all Go service Docker images"
 	@echo "  start-supermq:    start the supermq docker compose"
 	@echo "  stop-supermq:     stop the supermq docker compose"
 	@echo "  help:             display this help message"

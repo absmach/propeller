@@ -26,7 +26,7 @@ impl HostRuntime {
 
     async fn create_temp_wasm_file(&self, id: &str, wasm_binary: &[u8]) -> Result<PathBuf> {
         let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join(format!("proplet_{}.wasm", id));
+        let file_path = temp_dir.join(format!("proplet_{id}.wasm"));
 
         let mut file = fs::File::create(&file_path)
             .await
@@ -54,11 +54,7 @@ impl HostRuntime {
 
 #[async_trait]
 impl Runtime for HostRuntime {
-    async fn start_app(
-        &self,
-        _ctx: RuntimeContext,
-        config: StartConfig,
-    ) -> Result<Vec<u8>> {
+    async fn start_app(&self, _ctx: RuntimeContext, config: StartConfig) -> Result<Vec<u8>> {
         info!(
             "Starting Host runtime app: task_id={}, function={}, daemon={}, wasm_size={}",
             config.id,
@@ -67,7 +63,9 @@ impl Runtime for HostRuntime {
             config.wasm_binary.len()
         );
 
-        let temp_file = self.create_temp_wasm_file(&config.id, &config.wasm_binary).await?;
+        let temp_file = self
+            .create_temp_wasm_file(&config.id, &config.wasm_binary)
+            .await?;
 
         let mut cmd = Command::new(&self.runtime_path);
 
@@ -109,7 +107,7 @@ impl Runtime for HostRuntime {
                 // This allows stop_app to still access and kill the process
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    
+
                     let mut should_cleanup = false;
                     {
                         let mut processes_guard = processes.lock().await;
@@ -145,7 +143,10 @@ impl Runtime for HostRuntime {
             info!("Daemon task {} started, returning immediately", config.id);
             Ok(Vec::new())
         } else {
-            info!("Running in synchronous mode, waiting for task: {}", config.id);
+            info!(
+                "Running in synchronous mode, waiting for task: {}",
+                config.id
+            );
 
             let output = child
                 .wait_with_output()
@@ -179,7 +180,7 @@ impl Runtime for HostRuntime {
             debug!("Process for task {} killed", id);
             Ok(())
         } else {
-            Err(anyhow::anyhow!("Task {} not found", id))
+            Err(anyhow::anyhow!("Task {id} not found"))
         }
     }
 }

@@ -1,0 +1,60 @@
+FROM rust:1.83-alpine AS builder
+
+ARG VERSION
+ARG COMMIT
+ARG TIME
+
+WORKDIR /build
+
+RUN apk add --no-cache \
+    musl-dev \
+    upx
+
+COPY proplet/ ./
+
+RUN cargo build --release && \
+    strip target/release/proplet && \
+    upx --best --lzma target/release/proplet
+
+FROM ubuntu:25.10
+
+LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
+LABEL org.opencontainers.image.licenses=Apache-2.0
+LABEL org.opencontainers.image.title="Propeller Proplet (Rust)"
+LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
+
+ARG WASMTIME_VERSION=39.0.1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
+        xz-utils && \
+    wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
+    tar -xf wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
+    mv wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/ && \
+    rm -rf wasmtime-v${WASMTIME_VERSION}-x86_64-linux* && \
+    apt-get remove -y wget xz-utils && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r proplet && \
+    useradd -r -g proplet -s /bin/false proplet
+
+COPY --from=builder /build/target/release/proplet /usr/local/bin/proplet
+
+RUN chown proplet:proplet /usr/local/bin/proplet && \
+    chmod +x /usr/local/bin/proplet
+
+RUN mkdir -p /home/proplet && \
+    chown proplet:proplet /home/proplet
+
+USER proplet
+
+WORKDIR /home/proplet
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/local/bin/proplet", "--help"]
+
+ENTRYPOINT ["/usr/local/bin/proplet"]
