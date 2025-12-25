@@ -10,16 +10,16 @@ import (
 type inMemoryStorage struct {
 	sync.Mutex
 
-	data map[string]interface{}
+	data map[string]any
 }
 
 func NewInMemoryStorage() Storage {
 	return &inMemoryStorage{
-		data: make(map[string]interface{}),
+		data: make(map[string]any),
 	}
 }
 
-func (s *inMemoryStorage) Create(_ context.Context, key string, value interface{}) error {
+func (s *inMemoryStorage) Create(_ context.Context, key string, value any) error {
 	if key == "" {
 		return errors.ErrEmptyKey
 	}
@@ -36,7 +36,7 @@ func (s *inMemoryStorage) Create(_ context.Context, key string, value interface{
 	return nil
 }
 
-func (s *inMemoryStorage) Get(_ context.Context, key string) (interface{}, error) {
+func (s *inMemoryStorage) Get(_ context.Context, key string) (any, error) {
 	if key == "" {
 		return nil, errors.ErrEmptyKey
 	}
@@ -51,7 +51,7 @@ func (s *inMemoryStorage) Get(_ context.Context, key string) (interface{}, error
 	return nil, errors.ErrNotFound
 }
 
-func (s *inMemoryStorage) Update(_ context.Context, key string, value interface{}) error {
+func (s *inMemoryStorage) Update(_ context.Context, key string, value any) error {
 	if key == "" {
 		return errors.ErrEmptyKey
 	}
@@ -68,7 +68,7 @@ func (s *inMemoryStorage) Update(_ context.Context, key string, value interface{
 	return nil
 }
 
-func (s *inMemoryStorage) List(_ context.Context, offset, limit uint64) (result []interface{}, total uint64, err error) {
+func (s *inMemoryStorage) List(_ context.Context, offset, limit uint64) (result []any, total uint64, err error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -82,12 +82,9 @@ func (s *inMemoryStorage) List(_ context.Context, offset, limit uint64) (result 
 		return nil, 0, nil
 	}
 
-	end := offset + limit
-	if end > total {
-		end = total
-	}
+	end := min(offset+limit, total)
 
-	result = make([]interface{}, end-offset)
+	result = make([]any, end-offset)
 	for i := offset; i < end; i++ {
 		result[i-offset] = s.data[keys[i]]
 	}

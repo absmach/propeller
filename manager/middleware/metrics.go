@@ -116,6 +116,24 @@ func (mm *metricsMiddleware) StopTask(ctx context.Context, id string) error {
 	return mm.svc.StopTask(ctx, id)
 }
 
+func (mm *metricsMiddleware) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (manager.TaskMetricsPage, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-task-metrics").Add(1)
+		mm.latency.With("method", "get-task-metrics").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetTaskMetrics(ctx, taskID, offset, limit)
+}
+
+func (mm *metricsMiddleware) GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (manager.PropletMetricsPage, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-proplet-metrics").Add(1)
+		mm.latency.With("method", "get-proplet-metrics").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
+}
+
 func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "subscribe").Add(1)

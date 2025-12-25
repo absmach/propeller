@@ -137,10 +137,7 @@ func createChunks(data []byte, containerPath string, chunkSize int) []proplet.Ch
 	chunks := make([]proplet.ChunkPayload, 0, totalChunks)
 	for i := range make([]struct{}, totalChunks) {
 		start := i * chunkSize
-		end := start + chunkSize
-		if end > dataSize {
-			end = dataSize
-		}
+		end := min(start+chunkSize, dataSize)
 
 		chunkData := data[start:end]
 		log.Printf("Chunk %d size: %d bytes", i, len(chunkData))

@@ -118,6 +118,28 @@ func (tm *tracing) StopTask(ctx context.Context, id string) (err error) {
 	return tm.svc.StopTask(ctx, id)
 }
 
+func (tm *tracing) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (resp manager.TaskMetricsPage, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-task-metrics", trace.WithAttributes(
+		attribute.String("task_id", taskID),
+		attribute.Int64("offset", int64(offset)),
+		attribute.Int64("limit", int64(limit)),
+	))
+	defer span.End()
+
+	return tm.svc.GetTaskMetrics(ctx, taskID, offset, limit)
+}
+
+func (tm *tracing) GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (resp manager.PropletMetricsPage, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-proplet-metrics", trace.WithAttributes(
+		attribute.String("proplet_id", propletID),
+		attribute.Int64("offset", int64(offset)),
+		attribute.Int64("limit", int64(limit)),
+	))
+	defer span.End()
+
+	return tm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
+}
+
 func (tm *tracing) Subscribe(ctx context.Context) (err error) {
 	ctx, span := tm.tracer.Start(ctx, "subscribe")
 	defer span.End()

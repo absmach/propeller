@@ -32,6 +32,7 @@ type service struct {
 	tasksDB       storage.Storage
 	propletsDB    storage.Storage
 	taskPropletDB storage.Storage
+	metricsDB     storage.Storage
 	scheduler     scheduler.Scheduler
 	baseTopic     string
 	pubsub        mqtt.PubSub
@@ -39,7 +40,7 @@ type service struct {
 }
 
 func NewService(
-	tasksDB, propletsDB, taskPropletDB storage.Storage,
+	tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
 ) Service {
@@ -47,6 +48,7 @@ func NewService(
 		tasksDB:       tasksDB,
 		propletsDB:    propletsDB,
 		taskPropletDB: taskPropletDB,
+		metricsDB:     metricsDB,
 		scheduler:     s,
 		baseTopic:     fmt.Sprintf(baseTopic, domainID, channelID),
 		pubsub:        pubsub,
@@ -180,16 +182,17 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
-		"id":        t.ID,
-		"name":      t.Name,
-		"state":     t.State,
-		"image_url": t.ImageURL,
-		"file":      t.File,
-		"inputs":    t.Inputs,
-		"cli_args":  t.CLIArgs,
-		"daemon":    t.Daemon,
-		"env":       t.Env,
+	payload := map[string]any{
+		"id":                 t.ID,
+		"name":               t.Name,
+		"state":              t.State,
+		"image_url":          t.ImageURL,
+		"file":               t.File,
+		"inputs":             t.Inputs,
+		"cli_args":           t.CLIArgs,
+		"daemon":             t.Daemon,
+		"env":                t.Env,
+		"monitoring_profile": t.MonitoringProfile,
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
@@ -279,8 +282,72 @@ func (svc *service) Subscribe(ctx context.Context) error {
 	return nil
 }
 
-func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]interface{}) error {
-	return func(topic string, msg map[string]interface{}) error {
+func filterAndPaginateMetrics[T any](data []any, offset, limit uint64, filterFn func(any) (T, bool)) (entities []T, total uint64) {
+	var filtered []T
+	for _, item := range data {
+		if value, ok := filterFn(item); ok {
+			filtered = append(filtered, value)
+		}
+	}
+
+	totalFiltered := uint64(len(filtered))
+
+	if offset >= totalFiltered {
+		return []T{}, totalFiltered
+	}
+
+	start := offset
+	end := min(offset+limit, totalFiltered)
+
+	return filtered[start:end], totalFiltered
+}
+
+func (svc *service) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error) {
+	data, _, err := svc.metricsDB.List(ctx, 0, 100000)
+	if err != nil {
+		return TaskMetricsPage{}, err
+	}
+
+	metrics, total := filterAndPaginateMetrics(data, offset, limit, func(item any) (TaskMetrics, bool) {
+		if m, ok := item.(TaskMetrics); ok && m.TaskID == taskID {
+			return m, true
+		}
+
+		return TaskMetrics{}, false
+	})
+
+	return TaskMetricsPage{
+		Offset:  offset,
+		Limit:   limit,
+		Total:   total,
+		Metrics: metrics,
+	}, nil
+}
+
+func (svc *service) GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error) {
+	data, _, err := svc.metricsDB.List(ctx, 0, 100000)
+	if err != nil {
+		return PropletMetricsPage{}, err
+	}
+
+	metrics, total := filterAndPaginateMetrics(data, offset, limit, func(item any) (PropletMetrics, bool) {
+		if m, ok := item.(PropletMetrics); ok && m.PropletID == propletID {
+			return m, true
+		}
+
+		return PropletMetrics{}, false
+	})
+
+	return PropletMetricsPage{
+		Offset:  offset,
+		Limit:   limit,
+		Total:   total,
+		Metrics: metrics,
+	}, nil
+}
+
+func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]any) error {
+	return func(topic string, msg map[string]any) error {
 		switch topic {
 		case svc.baseTopic + "/control/proplet/create":
 			if err := svc.createPropletHandler(ctx, msg); err != nil {
@@ -291,13 +358,17 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
 			return svc.updateResultsHandler(ctx, msg)
+		case svc.baseTopic + "/control/proplet/task_metrics":
+			return svc.handleTaskMetrics(ctx, msg)
+		case svc.baseTopic + "/control/proplet/metrics":
+			return svc.handlePropletMetrics(ctx, msg)
 		}
 
 		return nil
 	}
 }
 
-func (svc *service) createPropletHandler(ctx context.Context, msg map[string]interface{}) error {
+func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any) error {
 	propletID, ok := msg["proplet_id"].(string)
 	if !ok {
 		return errors.New("invalid proplet_id")
@@ -317,7 +388,7 @@ func (svc *service) createPropletHandler(ctx context.Context, msg map[string]int
 	return nil
 }
 
-func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]interface{}) error {
+func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]any) error {
 	propletID, ok := msg["proplet_id"].(string)
 	if !ok {
 		return errors.New("invalid proplet_id")
@@ -346,7 +417,7 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]in
 	return nil
 }
 
-func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]interface{}) error {
+func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
 	if !ok {
 		return errors.New("invalid task_id")
@@ -373,4 +444,194 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]int
 	}
 
 	return nil
+}
+
+func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok {
+		return errors.New("invalid task_id")
+	}
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+
+	taskMetrics := TaskMetrics{
+		TaskID:    taskID,
+		PropletID: propletID,
+	}
+
+	if ts, ok := msg["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			taskMetrics.Timestamp = t
+		}
+	}
+	if taskMetrics.Timestamp.IsZero() {
+		taskMetrics.Timestamp = time.Now()
+	}
+
+	if metricsData, ok := msg["metrics"].(map[string]any); ok {
+		taskMetrics.Metrics = svc.parseProcessMetrics(metricsData)
+	}
+
+	if aggData, ok := msg["aggregated"].(map[string]any); ok {
+		taskMetrics.Aggregated = svc.parseAggregatedMetrics(aggData)
+	}
+
+	key := fmt.Sprintf("%s:%d", taskID, taskMetrics.Timestamp.UnixNano())
+	if err := svc.metricsDB.Create(ctx, key, taskMetrics); err != nil {
+		svc.logger.WarnContext(ctx, "failed to store task metrics", "error", err, "task_id", taskID)
+
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) handlePropletMetrics(ctx context.Context, msg map[string]any) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+	namespace, _ := msg["namespace"].(string)
+
+	propletMetrics := PropletMetrics{
+		PropletID: propletID,
+		Namespace: namespace,
+	}
+
+	if ts, ok := msg["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+			propletMetrics.Timestamp = t
+		}
+	}
+	if propletMetrics.Timestamp.IsZero() {
+		propletMetrics.Timestamp = time.Now()
+	}
+
+	if cpuData, ok := msg["cpu_metrics"].(map[string]any); ok {
+		propletMetrics.CPU = svc.parseCPUMetrics(cpuData)
+	}
+
+	if memData, ok := msg["memory_metrics"].(map[string]any); ok {
+		propletMetrics.Memory = svc.parseMemoryMetrics(memData)
+	}
+
+	key := fmt.Sprintf("%s:%d", propletID, propletMetrics.Timestamp.UnixNano())
+	if err := svc.metricsDB.Create(ctx, key, propletMetrics); err != nil {
+		svc.logger.WarnContext(ctx, "failed to store proplet metrics", "error", err, "proplet_id", propletID)
+
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) parseProcessMetrics(data map[string]any) proplet.ProcessMetrics {
+	metrics := proplet.ProcessMetrics{}
+
+	if val, ok := data["cpu_percent"].(float64); ok {
+		metrics.CPUPercent = val
+	}
+	if val, ok := data["memory_bytes"].(float64); ok {
+		metrics.MemoryBytes = uint64(val)
+	}
+	if val, ok := data["memory_percent"].(float64); ok {
+		metrics.MemoryPercent = float32(val)
+	}
+	if val, ok := data["disk_read_bytes"].(float64); ok {
+		metrics.DiskReadBytes = uint64(val)
+	}
+	if val, ok := data["disk_write_bytes"].(float64); ok {
+		metrics.DiskWriteBytes = uint64(val)
+	}
+	if val, ok := data["uptime_seconds"].(float64); ok {
+		metrics.UptimeSeconds = int64(val)
+	}
+	if val, ok := data["thread_count"].(float64); ok {
+		metrics.ThreadCount = int32(val)
+	}
+	if val, ok := data["file_descriptor_count"].(float64); ok {
+		metrics.FileDescriptorCount = int32(val)
+	}
+
+	return metrics
+}
+
+func (svc *service) parseAggregatedMetrics(data map[string]any) *proplet.AggregatedMetrics {
+	metrics := &proplet.AggregatedMetrics{}
+
+	if val, ok := data["avg_cpu_usage"].(float64); ok {
+		metrics.AvgCPUUsage = val
+	}
+	if val, ok := data["max_cpu_usage"].(float64); ok {
+		metrics.MaxCPUUsage = val
+	}
+	if val, ok := data["avg_memory_usage"].(float64); ok {
+		metrics.AvgMemoryUsage = uint64(val)
+	}
+	if val, ok := data["max_memory_usage"].(float64); ok {
+		metrics.MaxMemoryUsage = uint64(val)
+	}
+	if val, ok := data["total_disk_read"].(float64); ok {
+		metrics.TotalDiskRead = uint64(val)
+	}
+	if val, ok := data["total_disk_write"].(float64); ok {
+		metrics.TotalDiskWrite = uint64(val)
+	}
+	if val, ok := data["sample_count"].(float64); ok {
+		metrics.SampleCount = int(val)
+	}
+
+	return metrics
+}
+
+func (svc *service) parseCPUMetrics(data map[string]any) proplet.CPUMetrics {
+	metrics := proplet.CPUMetrics{}
+
+	if val, ok := data["user_seconds"].(float64); ok {
+		metrics.UserSeconds = val
+	}
+	if val, ok := data["system_seconds"].(float64); ok {
+		metrics.SystemSeconds = val
+	}
+	if val, ok := data["percent"].(float64); ok {
+		metrics.Percent = val
+	}
+
+	return metrics
+}
+
+func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetrics {
+	metrics := proplet.MemoryMetrics{}
+
+	if val, ok := data["rss_bytes"].(float64); ok {
+		metrics.RSSBytes = uint64(val)
+	}
+	if val, ok := data["heap_alloc_bytes"].(float64); ok {
+		metrics.HeapAllocBytes = uint64(val)
+	}
+	if val, ok := data["heap_sys_bytes"].(float64); ok {
+		metrics.HeapSysBytes = uint64(val)
+	}
+	if val, ok := data["heap_inuse_bytes"].(float64); ok {
+		metrics.HeapInuseBytes = uint64(val)
+	}
+	if val, ok := data["container_usage_bytes"].(float64); ok {
+		usageBytes := uint64(val)
+		metrics.ContainerUsageBytes = &usageBytes
+	}
+	if val, ok := data["container_limit_bytes"].(float64); ok {
+		limitBytes := uint64(val)
+		metrics.ContainerLimitBytes = &limitBytes
+	}
+
+	return metrics
 }

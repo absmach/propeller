@@ -20,3 +20,6 @@ config = "0.14"
 async-trait = "0.1"
 base64 = "0.22.1"
 url = "2.5"
+sysinfo = "0.32"
+chrono = { version = "0.4", features = ["serde"] }
+libc = "0.2"

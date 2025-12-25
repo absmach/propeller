@@ -226,6 +226,50 @@ func (lm *loggingMiddleware) StopTask(ctx context.Context, id string) (err error
 	return lm.svc.StopTask(ctx, id)
 }
 
+func (lm *loggingMiddleware) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (resp manager.TaskMetricsPage, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", taskID),
+			),
+			slog.Uint64("offset", offset),
+			slog.Uint64("limit", limit),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get task metrics failed", args...)
+
+			return
+		}
+		lm.logger.Info("Get task metrics completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetTaskMetrics(ctx, taskID, offset, limit)
+}
+
+func (lm *loggingMiddleware) GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (resp manager.PropletMetricsPage, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("proplet",
+				slog.String("id", propletID),
+			),
+			slog.Uint64("offset", offset),
+			slog.Uint64("limit", limit),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get proplet metrics failed", args...)
+
+			return
+		}
+		lm.logger.Info("Get proplet metrics completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
+}
+
 func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
 	defer func(begin time.Time) {
 		args := []any{

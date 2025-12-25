@@ -35,7 +35,7 @@ type pubsub struct {
 	logger  *slog.Logger
 }
 
-type Handler func(topic string, msg map[string]interface{}) error
+type Handler func(topic string, msg map[string]any) error
 
 type PubSub interface {
 	Publish(ctx context.Context, topic string, msg any) error
@@ -186,7 +186,7 @@ func newClient(address, id, username, password, domainID, channelID string, time
 
 func (ps *pubsub) mqttHandler(h Handler) mqtt.MessageHandler {
 	return func(_ mqtt.Client, m mqtt.Message) {
-		var msg map[string]interface{}
+		var msg map[string]any
 		if err := json.Unmarshal(m.Payload(), &msg); err != nil {
 			ps.logger.Warn(fmt.Sprintf("Failed to unmarshal received message: %s", err))
 

@@ -8,9 +8,17 @@ LOG_MODULE_REGISTER(main);
 #define WIFI_SSID "<YOUR_WIFI_SSID>"
 #define WIFI_PSK "<YOUR_WIFI_PSK>"
 #define PROPLET_ID "<YOUR_PROPLET_ID>"
-#define PROPLET_PASSWORD "<YOUR_PROPLET_PASSWORD>"
 #define DOMAIN_ID "<YOUR_DOMAIN_ID>"
 #define CHANNEL_ID "<YOUR_CHANNEL_ID>"
+#define PROPLET_NAMESPACE "embedded"
+
+#ifndef PROPLET_LIVELINESS_INTERVAL_MS
+#define PROPLET_LIVELINESS_INTERVAL_MS 10000
+#endif
+
+#ifndef PROPLET_METRICS_INTERVAL_MS
+#define PROPLET_METRICS_INTERVAL_MS 30000
+#endif
 
 const char *domain_id = DOMAIN_ID;
 const char *channel_id = CHANNEL_ID;
@@ -20,28 +28,46 @@ int main(void)
   LOG_INF("Starting Proplet...");
 
   wifi_manager_init();
-
   wifi_manager_connect(WIFI_SSID, WIFI_PSK);
 
-  mqtt_client_connect(DOMAIN_ID, PROPLET_ID, CHANNEL_ID);
+  if (mqtt_client_connect(domain_id, PROPLET_ID, channel_id) != 0) {
+    LOG_ERR("MQTT connect failed");
+    return -1;
+  }
 
-  publish_discovery(DOMAIN_ID, PROPLET_ID, CHANNEL_ID);
+  if (subscribe(domain_id, channel_id) != 0) {
+    LOG_ERR("MQTT subscribe failed");
+    return -1;
+  }
 
-  subscribe(DOMAIN_ID, CHANNEL_ID);
+  if (publish_discovery(domain_id, PROPLET_ID, channel_id) != 0) {
+    LOG_ERR("MQTT discovery publish failed");
+    return -1;
+  }
 
-  while (1)
-  {
+  for (int i = 0; i < 20; i++) {
+    mqtt_client_process();
+    k_sleep(K_MSEC(100));
+  }
+
+  int64_t next_alive = k_uptime_get() + PROPLET_LIVELINESS_INTERVAL_MS;
+  int64_t next_metrics = k_uptime_get() + PROPLET_METRICS_INTERVAL_MS;
+
+  while (1) {
     mqtt_client_process();
 
-    if (mqtt_connected)
-    {
-      publish_alive_message(DOMAIN_ID, CHANNEL_ID);
-    }
-    else
-    {
-      LOG_WRN("MQTT client is not connected");
+    int64_t now = k_uptime_get();
+
+    if (now >= next_alive) {
+      publish_alive_message(domain_id, channel_id);
+      next_alive = now + PROPLET_LIVELINESS_INTERVAL_MS;
     }
 
-    k_sleep(K_SECONDS(5));
+    if (now >= next_metrics) {
+      publish_metrics_message(domain_id, channel_id, PROPLET_ID, PROPLET_NAMESPACE);
+      next_metrics = now + PROPLET_METRICS_INTERVAL_MS;
+    }
+
+    k_sleep(K_MSEC(200));
   }
 }

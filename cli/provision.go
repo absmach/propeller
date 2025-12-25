@@ -216,7 +216,8 @@ var provisionCmd = &cobra.Command{
 			return
 		}
 
-		configContent := fmt.Sprintf(`# SuperMQ Configuration
+		var configContent strings.Builder
+		configContent.WriteString(fmt.Sprintf(`# SuperMQ Configuration
 
 [manager]
 domain_id = "%s"
@@ -228,7 +229,7 @@ channel_id = "%s"
 			managerClient.ID,
 			managerClient.Credentials.Secret,
 			managerChannel.ID,
-		)
+		))
 
 		for i, propletClient := range propletClients {
 			var sectionName string
@@ -252,7 +253,7 @@ channel_id = "%s"
 				propletClient.Credentials.Secret,
 				managerChannel.ID,
 			)
-			configContent += propletConfig
+			configContent.WriteString(propletConfig)
 		}
 
 		if len(propletClients) > 0 {
@@ -267,10 +268,10 @@ channel_id = "%s"`,
 				propletClients[0].Credentials.Secret,
 				managerChannel.ID,
 			)
-			configContent += proxyConfig
+			configContent.WriteString(proxyConfig)
 		}
 
-		if err := os.WriteFile(fileName, []byte(configContent), filePermission); err != nil {
+		if err := os.WriteFile(fileName, []byte(configContent.String()), filePermission); err != nil {
 			logErrorCmd(*cmd, errors.New(fmt.Sprintf("failed to create %s file", fileName)))
 
 			return

@@ -11,7 +11,7 @@ import (
 )
 
 func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(listEntityReq)
 		if !ok {
 			return listpropletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -32,7 +32,7 @@ func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func getPropletEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)
 		if !ok {
 			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -53,7 +53,7 @@ func getPropletEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func createTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(taskReq)
 		if !ok {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -75,7 +75,7 @@ func createTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(listEntityReq)
 		if !ok {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -96,7 +96,7 @@ func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func getTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)
 		if !ok {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -117,7 +117,7 @@ func getTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func updateTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(taskReq)
 		if !ok {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -135,7 +135,7 @@ func updateTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func deleteTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)
 		if !ok {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -156,7 +156,7 @@ func deleteTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func startTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)
 		if !ok {
 			return messageResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -176,7 +176,7 @@ func startTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 }
 
 func stopTaskEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request interface{}) (interface{}, error) {
+	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)
 		if !ok {
 			return messageResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
@@ -190,6 +190,48 @@ func stopTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 
 		return messageResponse{
 			"stopped": true,
+		}, nil
+	}
+}
+
+func getTaskMetricsEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(metricsReq)
+		if !ok {
+			return taskMetricsResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return taskMetricsResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		metrics, err := svc.GetTaskMetrics(ctx, req.id, req.offset, req.limit)
+		if err != nil {
+			return taskMetricsResponse{}, err
+		}
+
+		return taskMetricsResponse{
+			TaskMetricsPage: metrics,
+		}, nil
+	}
+}
+
+func getPropletMetricsEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(metricsReq)
+		if !ok {
+			return propletMetricsResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return propletMetricsResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		metrics, err := svc.GetPropletMetrics(ctx, req.id, req.offset, req.limit)
+		if err != nil {
+			return propletMetricsResponse{}, err
+		}
+
+		return propletMetricsResponse{
+			PropletMetricsPage: metrics,
 		}, nil
 	}
 }

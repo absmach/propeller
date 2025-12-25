@@ -20,5 +20,8 @@ type Service interface {
 	StartTask(ctx context.Context, taskID string) error
 	StopTask(ctx context.Context, taskID string) error
 
+	GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error)
+	GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error)
+
 	Subscribe(ctx context.Context) error
 }

@@ -1,21 +1,36 @@
-// #include <zephyr/data/json.h>
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "net/mqtt.h"
 #include "wasm_handler.h"
+
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/random/random.h>
-#include <zephyr/storage/disk_access.h>
 #include <zephyr/sys/base64.h>
+#include <zephyr/sys/util.h>
+
+#if defined(CONFIG_CPU_LOAD)
+#include <zephyr/debug/cpu_load.h>
+#endif
+
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS)
+#include <zephyr/sys/sys_heap.h>
+#endif
 
 LOG_MODULE_REGISTER(mqtt_client);
 
-#define RX_BUFFER_SIZE 256
-#define TX_BUFFER_SIZE 256
+#define RX_BUFFER_SIZE 1024
+#define TX_BUFFER_SIZE 1024
+
+#if defined(PAYLOAD_BUFFER_SIZE) && (PAYLOAD_BUFFER_SIZE < 1024)
+#undef PAYLOAD_BUFFER_SIZE
+#define PAYLOAD_BUFFER_SIZE 1024
+#endif
 
 #define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
 #define MQTT_BROKER_PORT 1883
@@ -29,15 +44,15 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define FETCH_REQUEST_TOPIC_TEMPLATE "m/%s/c/%s/registry/proplet"
 #define RESULTS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/results"
 
+#define METRICS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/metrics"
+
 #define WILL_MESSAGE_TEMPLATE                                                  \
   "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}"
 #define WILL_QOS MQTT_QOS_1_AT_LEAST_ONCE
 #define WILL_RETAIN 1
 
 #define CLIENT_ID "proplet-esp32s3"
-#define PROPLET_ID "<YOUR_PROPLET_ID>"
-#define PROPLET_PASSWORD "<YOUR_PROPLET_PASSWORD>"
-#define K8S_NAMESPACE "default"
+#define DEFAULT_NAMESPACE "embedded"
 
 #define MAX_ID_LEN 64
 #define MAX_NAME_LEN 64
@@ -47,27 +62,6 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
-
-/*
- * Keep the most recent "start" Task here, so if
- * we fetch the WASM from the registry, we can call
- * the WASM with the same inputs.
- *
- * If you support multiple tasks in parallel, you'll need
- * a more robust approach than a single global.
- */
-static struct task g_current_task;
-
-static uint8_t rx_buffer[RX_BUFFER_SIZE];
-static uint8_t tx_buffer[TX_BUFFER_SIZE];
-
-static struct mqtt_client client_ctx;
-static struct sockaddr_storage broker_addr;
-
-static struct zsock_pollfd fds[1];
-static int nfds;
-
-bool mqtt_connected = false;
 
 struct task {
   char id[MAX_ID_LEN];
@@ -88,6 +82,27 @@ struct task {
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
 };
+
+static struct task g_current_task;
+
+static char g_proplet_id[MAX_ID_LEN];
+static const char *g_namespace = DEFAULT_NAMESPACE;
+
+static uint8_t rx_buffer[RX_BUFFER_SIZE];
+static uint8_t tx_buffer[TX_BUFFER_SIZE];
+
+static struct mqtt_client client_ctx;
+static struct sockaddr_storage broker_addr;
+
+static char g_will_topic_str[128];
+static char g_will_message_str[256];
+static struct mqtt_utf8 g_will_message;
+static struct mqtt_topic g_will_topic;
+
+static struct zsock_pollfd fds[1];
+static int nfds;
+
+bool mqtt_connected = false;
 
 struct registry_response {
   char app_name[64];
@@ -159,7 +174,8 @@ static void mqtt_event_handler(struct mqtt_client *client,
     snprintf(registry_response_topic, sizeof(registry_response_topic),
              REGISTRY_RESPONSE_TOPIC, domain_id, channel_id);
 
-    LOG_INF("Message received on topic: %s", pub->message.topic.topic.utf8);
+    LOG_INF("Message received on topic: %.*s", pub->message.topic.topic.size,
+            pub->message.topic.topic.utf8);
 
     ret = mqtt_read_publish_payload(
         &client_ctx, payload,
@@ -171,15 +187,18 @@ static void mqtt_event_handler(struct mqtt_client *client,
     payload[ret] = '\0'; /* Null-terminate */
     LOG_INF("Payload: %s", payload);
 
-    if (strncmp(pub->message.topic.topic.utf8, start_topic,
-                pub->message.topic.topic.size) == 0) {
+    const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
+
+    if (rtopic->size == strlen(start_topic) &&
+        memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
       handle_start_command(payload);
-    } else if (strncmp(pub->message.topic.topic.utf8, stop_topic,
-                       pub->message.topic.topic.size) == 0) {
+    } else if (rtopic->size == strlen(stop_topic) &&
+               memcmp(rtopic->utf8, stop_topic, rtopic->size) == 0) {
       handle_stop_command(payload);
-    } else if (strncmp(pub->message.topic.topic.utf8, registry_response_topic,
-                       pub->message.topic.topic.size) == 0) {
-      handle_registry_response(payload);
+    } else if (rtopic->size == strlen(registry_response_topic) &&
+               memcmp(rtopic->utf8, registry_response_topic, rtopic->size) ==
+                   0) {
+      (void)handle_registry_response(payload);
     } else {
       LOG_WRN("Unknown topic");
     }
@@ -271,45 +290,42 @@ int mqtt_client_connect(const char *domain_id, const char *proplet_id,
 
   mqtt_client_init(&client_ctx);
 
-  char will_topic_str[128];
-  snprintf(will_topic_str, sizeof(will_topic_str), ALIVE_TOPIC_TEMPLATE,
+  strncpy(g_proplet_id, proplet_id, sizeof(g_proplet_id) - 1);
+  g_proplet_id[sizeof(g_proplet_id) - 1] = '\0';
+
+  snprintf(g_will_topic_str, sizeof(g_will_topic_str), ALIVE_TOPIC_TEMPLATE,
            domain_id, channel_id);
 
-  char will_message_str[256];
-  snprintf(will_message_str, sizeof(will_message_str), WILL_MESSAGE_TEMPLATE,
-           proplet_id, K8S_NAMESPACE);
+  snprintf(g_will_message_str, sizeof(g_will_message_str),
+           WILL_MESSAGE_TEMPLATE, proplet_id, g_namespace);
 
-  struct mqtt_utf8 will_message = {
-      .utf8 = (const uint8_t *)will_message_str,
-      .size = strlen(will_message_str),
-  };
+  g_will_message.utf8 = (const uint8_t *)g_will_message_str;
+  g_will_message.size = strlen(g_will_message_str);
 
-  struct mqtt_topic will_topic = {
-      .topic =
-          {
-              .utf8 = (const uint8_t *)will_topic_str,
-              .size = strlen(will_topic_str),
-          },
-      .qos = WILL_QOS,
-  };
+  g_will_topic.topic.utf8 = (const uint8_t *)g_will_topic_str;
+  g_will_topic.topic.size = strlen(g_will_topic_str);
+  g_will_topic.qos = WILL_QOS;
+
+  client_ctx.will_topic = &g_will_topic;
+  client_ctx.will_message = &g_will_message;
+  (void)WILL_RETAIN;
 
   client_ctx.broker = &broker_addr;
   client_ctx.evt_cb = mqtt_event_handler;
   client_ctx.client_id = MQTT_UTF8_LITERAL(CLIENT_ID);
 
-  client_ctx.password = &MQTT_UTF8_LITERAL(PROPLET_PASSWORD);
-  client_ctx.user_name = &MQTT_UTF8_LITERAL(PROPLET_ID);
+  static struct mqtt_utf8 username;
+  username.utf8 = (const uint8_t *)g_proplet_id;
+  username.size = strlen(g_proplet_id);
+  client_ctx.user_name = &username;
 
+  client_ctx.password = NULL;
   client_ctx.protocol_version = MQTT_VERSION_3_1_1;
 
   client_ctx.rx_buf = rx_buffer;
   client_ctx.rx_buf_size = RX_BUFFER_SIZE;
   client_ctx.tx_buf = tx_buffer;
   client_ctx.tx_buf_size = TX_BUFFER_SIZE;
-
-  // client->will_topic = &will_topic;
-  // client->will_message = &will_message;
-  // client->will_retain = WILL_RETAIN;
 
   while (!mqtt_connected) {
     LOG_INF("Attempting to connect to the MQTT broker...");
@@ -321,7 +337,6 @@ int mqtt_client_connect(const char *domain_id, const char *proplet_id,
       continue;
     }
 
-    /* Poll the socket for a response */
     ret = poll_mqtt_socket(&client_ctx, 5000);
     if (ret < 0) {
       LOG_ERR("Socket poll failed, ret=%d. Retrying in 5 seconds...", ret);
@@ -348,9 +363,9 @@ int mqtt_client_connect(const char *domain_id, const char *proplet_id,
 }
 
 int subscribe(const char *domain_id, const char *channel_id) {
-  char start_topic[128];
-  char stop_topic[128];
-  char registry_response_topic[128];
+  static char start_topic[128];
+  static char stop_topic[128];
+  static char registry_response_topic[128];
 
   snprintf(start_topic, sizeof(start_topic), START_TOPIC_TEMPLATE, domain_id,
            channel_id);
@@ -361,27 +376,16 @@ int subscribe(const char *domain_id, const char *channel_id) {
 
   struct mqtt_topic topics[] = {
       {
-          .topic =
-              {
-                  .utf8 = start_topic,
-                  .size = strlen(start_topic),
-              },
+          .topic = {.utf8 = start_topic, .size = strlen(start_topic)},
           .qos = MQTT_QOS_1_AT_LEAST_ONCE,
       },
       {
-          .topic =
-              {
-                  .utf8 = stop_topic,
-                  .size = strlen(stop_topic),
-              },
+          .topic = {.utf8 = stop_topic, .size = strlen(stop_topic)},
           .qos = MQTT_QOS_1_AT_LEAST_ONCE,
       },
       {
-          .topic =
-              {
-                  .utf8 = registry_response_topic,
-                  .size = strlen(registry_response_topic),
-              },
+          .topic = {.utf8 = registry_response_topic,
+                    .size = strlen(registry_response_topic)},
           .qos = MQTT_QOS_1_AT_LEAST_ONCE,
       },
   };
@@ -442,9 +446,10 @@ void handle_start_command(const char *payload) {
 
   if (cJSON_IsArray(inputs)) {
     int input_count = cJSON_GetArraySize(inputs);
-    t.inputs_count = (input_count > MAX_INPUTS) ? MAX_INPUTS : input_count;
+    t.inputs_count =
+        (input_count > MAX_INPUTS) ? MAX_INPUTS : (size_t)input_count;
     for (size_t i = 0; i < t.inputs_count; ++i) {
-      cJSON *input = cJSON_GetArrayItem(inputs, i);
+      cJSON *input = cJSON_GetArrayItem(inputs, (int)i);
       if (cJSON_IsNumber(input)) {
         t.inputs[i] = (uint64_t)input->valuedouble;
       }
@@ -455,9 +460,12 @@ void handle_start_command(const char *payload) {
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
+  memcpy(&g_current_task, &t, sizeof(t));
+
   if (strlen(t.file) > 0) {
     size_t wasm_decoded_len = 0;
     static uint8_t wasm_binary[MAX_BASE64_LEN];
+
     int ret = base64_decode(wasm_binary, sizeof(wasm_binary), &wasm_decoded_len,
                             (const uint8_t *)t.file, strlen(t.file));
     if (ret < 0) {
@@ -467,8 +475,10 @@ void handle_start_command(const char *payload) {
     }
 
     g_current_task.file_len = wasm_decoded_len;
-    execute_wasm_module(g_current_task.id, wasm_binary, g_current_task.file_len,
-                        g_current_task.inputs, g_current_task.inputs_count);
+
+    execute_wasm_module(t.id, wasm_binary, wasm_decoded_len, t.inputs,
+                        t.inputs_count);
+
   } else if (strlen(t.image_url) > 0) {
     LOG_INF("Requesting WASM from registry: %s", t.image_url);
     extern const char *channel_id;
@@ -477,9 +487,6 @@ void handle_start_command(const char *payload) {
   } else {
     LOG_WRN("No file or image_url specified; cannot start WASM task!");
   }
-
-  memcpy(&g_current_task, &t, sizeof(t));
-
   cJSON_Delete(json);
 }
 
@@ -528,7 +535,7 @@ void handle_stop_command(const char *payload) {
   cJSON_Delete(json);
 }
 
-// Handles a single chunk "data" field with the full base64 WASM.
+/* Handles a single chunk "data" field with the full base64 WASM. */
 int handle_registry_response(const char *payload) {
   cJSON *json = cJSON_Parse(payload);
   if (!json) {
@@ -561,7 +568,8 @@ int handle_registry_response(const char *payload) {
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4; // Maximum possible decoded size
+  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
+
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
     LOG_ERR("Failed to allocate memory for decoded binary");
@@ -593,11 +601,75 @@ int handle_registry_response(const char *payload) {
 }
 
 void publish_alive_message(const char *domain_id, const char *channel_id) {
-  char payload[128];
+  char payload[192];
+
+  const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+  const char *ns = (g_namespace != NULL) ? g_namespace : DEFAULT_NAMESPACE;
+
   snprintf(payload, sizeof(payload),
            "{\"status\":\"alive\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}",
-           CLIENT_ID, K8S_NAMESPACE);
-  publish(domain_id, channel_id, ALIVE_TOPIC_TEMPLATE, payload);
+           pid, ns);
+
+  (void)publish(domain_id, channel_id, ALIVE_TOPIC_TEMPLATE, payload);
+}
+
+void publish_metrics_message(const char *domain_id, const char *channel_id,
+                             const char *proplet_id, const char *namespace) {
+  double cpu_percent = 0.0;
+
+#if defined(CONFIG_CPU_LOAD)
+  cpu_percent = (double)cpu_load_get(false) / 10.0;
+#endif
+
+  uint32_t heap_free = 0U;
+  uint32_t heap_alloc = 0U;
+  uint32_t heap_max_alloc = 0U;
+
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS)
+  struct sys_memory_stats stat;
+  extern struct sys_heap _system_heap;
+
+  (void)sys_heap_runtime_stats_get(&_system_heap, &stat);
+  heap_free = stat.free_bytes;
+  heap_alloc = stat.allocated_bytes;
+  heap_max_alloc = stat.max_allocated_bytes;
+#endif
+
+  cJSON *root = cJSON_CreateObject();
+  if (root == NULL) {
+    return;
+  }
+
+  cJSON_AddStringToObject(root, "proplet_id", proplet_id);
+  cJSON_AddStringToObject(root, "namespace", namespace);
+  cJSON_AddNumberToObject(root, "timestamp", (double)k_uptime_get());
+
+  cJSON *cpu = cJSON_AddObjectToObject(root, "cpu_metrics");
+  if (cpu != NULL) {
+    cJSON_AddNumberToObject(cpu, "user_seconds", 0.0);
+    cJSON_AddNumberToObject(cpu, "system_seconds", 0.0);
+    cJSON_AddNumberToObject(cpu, "percent", cpu_percent);
+  }
+
+  cJSON *mem = cJSON_AddObjectToObject(root, "memory_metrics");
+  if (mem != NULL) {
+    cJSON_AddNumberToObject(mem, "rss_bytes", 0.0);
+    cJSON_AddNumberToObject(mem, "heap_alloc_bytes", (double)heap_alloc);
+    cJSON_AddNumberToObject(mem, "heap_sys_bytes",
+                            (double)(heap_alloc + heap_free));
+    cJSON_AddNumberToObject(mem, "heap_inuse_bytes", (double)heap_alloc);
+    cJSON_AddNumberToObject(mem, "heap_free_bytes", (double)heap_free);
+    cJSON_AddNumberToObject(mem, "heap_max_alloc_bytes",
+                            (double)heap_max_alloc);
+  }
+
+  char *payload = cJSON_PrintUnformatted(root);
+  if (payload != NULL) {
+    (void)publish(domain_id, channel_id, METRICS_TOPIC_TEMPLATE, payload);
+    cJSON_free(payload);
+  }
+
+  cJSON_Delete(root);
 }
 
 int publish_discovery(const char *domain_id, const char *proplet_id,

@@ -120,6 +120,7 @@ func main() {
 		storage.NewInMemoryStorage(),
 		storage.NewInMemoryStorage(),
 		storage.NewInMemoryStorage(),
+		storage.NewInMemoryStorage(),
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
 		cfg.DomainID,

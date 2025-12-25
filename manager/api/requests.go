@@ -36,3 +36,16 @@ type listEntityReq struct {
 func (e *listEntityReq) validate() error {
 	return nil
 }
+
+type metricsReq struct {
+	id            string
+	offset, limit uint64
+}
+
+func (m *metricsReq) validate() error {
+	if m.id == "" {
+		return apiutil.ErrMissingID
+	}
+
+	return nil
+}

@@ -118,6 +118,7 @@ clean:
 
 lint:
 	golangci-lint run  --config .golangci.yaml
+	cd proplet && cargo check --release && cargo fmt --all -- --check && cargo clippy -- -D warnings
 
 start-supermq:
 	docker compose -f docker/compose.yaml --env-file docker/.env up -d

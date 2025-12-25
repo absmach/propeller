@@ -1,10 +1,13 @@
 use crate::config::PropletConfig;
+use crate::metrics::MetricsCollector;
+use crate::monitoring::{system::SystemMonitor, ProcessMonitor};
 use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
 use anyhow::Result;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
@@ -49,11 +52,15 @@ pub struct PropletService {
     runtime: Arc<dyn Runtime>,
     chunk_assembly: Arc<Mutex<HashMap<String, ChunkAssemblyState>>>,
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
+    monitor: Arc<SystemMonitor>,
+    metrics_collector: Arc<Mutex<MetricsCollector>>,
 }
 
 impl PropletService {
     pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
-        let proplet = Proplet::new(config.instance_id, "proplet".to_string());
+        let proplet = Proplet::new(config.instance_id.clone(), "proplet".to_string());
+        let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
+        let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
 
         let service = Self {
             config,
@@ -62,6 +69,8 @@ impl PropletService {
             runtime,
             chunk_assembly: Arc::new(Mutex::new(HashMap::new())),
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
+            monitor,
+            metrics_collector,
         };
 
         service.start_chunk_expiry_task();
@@ -110,6 +119,14 @@ impl PropletService {
         tokio::spawn(async move {
             service.start_liveliness_updates().await;
         });
+
+        // Start proplet metrics updates if enabled
+        if self.config.enable_monitoring && self.config.metrics_interval > 0 {
+            let service = self.clone();
+            tokio::spawn(async move {
+                service.start_metrics_updates().await;
+            });
+        }
 
         while let Some(msg) = mqtt_rx.recv().await {
             let service = self.clone();
@@ -217,6 +234,57 @@ impl PropletService {
         Ok(())
     }
 
+    async fn start_metrics_updates(&self) {
+        let mut interval = tokio::time::interval(self.config.metrics_interval());
+
+        loop {
+            interval.tick().await;
+
+            if let Err(e) = self.publish_proplet_metrics().await {
+                error!("Failed to publish proplet metrics: {}", e);
+            }
+        }
+    }
+
+    async fn publish_proplet_metrics(&self) -> Result<()> {
+        let (cpu_metrics, memory_metrics) = {
+            let mut collector = self.metrics_collector.lock().await;
+            collector.collect()
+        };
+
+        #[derive(serde::Serialize)]
+        struct PropletMetricsMessage {
+            proplet_id: String,
+            namespace: String,
+            timestamp: SystemTime,
+            cpu_metrics: crate::metrics::CpuMetrics,
+            memory_metrics: crate::metrics::MemoryMetrics,
+        }
+
+        let msg = PropletMetricsMessage {
+            proplet_id: self.config.client_id.clone(),
+            namespace: self
+                .config
+                .k8s_namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+            timestamp: SystemTime::now(),
+            cpu_metrics,
+            memory_metrics,
+        };
+
+        let topic = build_topic(
+            &self.config.domain_id,
+            &self.config.channel_id,
+            "control/proplet/metrics",
+        );
+
+        self.pubsub.publish(&topic, &msg, self.config.qos()).await?;
+        debug!("Published proplet metrics");
+
+        Ok(())
+    }
+
     async fn handle_message(&self, msg: MqttMessage) -> Result<()> {
         debug!("Handling message from topic: {}", msg.topic);
 
@@ -247,6 +315,11 @@ impl PropletService {
         req.validate()?;
 
         info!("Received start command for task: {}", req.id);
+
+        {
+            let mut tasks = self.running_tasks.lock().await;
+            tasks.insert(req.id.clone(), TaskState::Running);
+        }
 
         let wasm_binary = if !req.file.is_empty() {
             use base64::{engine::general_purpose::STANDARD, Engine};
@@ -286,38 +359,121 @@ impl PropletService {
             return Err(err);
         };
 
+        let monitoring_profile = req.monitoring_profile.clone().unwrap_or_else(|| {
+            if req.daemon {
+                MonitoringProfile::long_running_daemon()
+            } else {
+                MonitoringProfile::standard()
+            }
+        });
+
         let runtime = self.runtime.clone();
         let pubsub = self.pubsub.clone();
         let running_tasks = self.running_tasks.clone();
+        let monitor = self.monitor.clone();
         let domain_id = self.config.domain_id.clone();
         let channel_id = self.config.channel_id.clone();
         let qos = self.config.qos();
-        let proplet_id = self.proplet.lock().await.id;
+        let proplet_id = self.proplet.lock().await.id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
         let env = req.env.unwrap_or_default();
+        let daemon = req.daemon;
+        let cli_args = req.cli_args.clone();
+        let inputs = req.inputs.clone();
 
-        {
-            let mut tasks = self.running_tasks.lock().await;
-            tasks.insert(req.id.clone(), TaskState::Running);
-        }
+        let export_metrics = monitoring_profile.enabled && monitoring_profile.export_to_mqtt;
 
         tokio::spawn(async move {
-            let ctx = RuntimeContext { proplet_id };
+            let ctx = RuntimeContext {
+                proplet_id: proplet_id.clone(),
+            };
 
             info!("Executing task {} in spawned task", task_id);
 
             let config = StartConfig {
                 id: task_id.clone(),
                 function_name: task_name.clone(),
-                daemon: req.daemon,
+                daemon,
                 wasm_binary,
-                cli_args: req.cli_args,
+                cli_args,
                 env,
-                args: req.inputs,
+                args: inputs,
+            };
+
+            // Start monitoring setup (if enabled)
+            if export_metrics {
+                if let Err(e) = monitor
+                    .start_monitoring(&task_id, monitoring_profile.clone())
+                    .await
+                {
+                    error!("Failed to start monitoring for task {}: {}", task_id, e);
+                }
+            }
+
+            // Spawn the monitoring attachment in a separate task to run concurrently
+            let monitor_handle = if export_metrics {
+                let monitor_clone = monitor.clone();
+                let runtime_clone = runtime.clone();
+                let task_id_clone = task_id.clone();
+                let pubsub_clone = pubsub.clone();
+                let domain_clone = domain_id.clone();
+                let channel_clone = channel_id.clone();
+                let proplet_id_clone = proplet_id.clone();
+
+                Some(tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                    if let Ok(Some(pid)) = runtime_clone.get_pid(&task_id_clone).await {
+                        let task_id_for_closure = task_id_clone.clone();
+                        let proplet_id_for_closure = proplet_id_clone.clone();
+                        monitor_clone
+                            .attach_pid(&task_id_clone, pid, move |metrics, aggregated| {
+                                let pubsub = pubsub_clone.clone();
+                                let domain = domain_clone.clone();
+                                let channel = channel_clone.clone();
+                                let task_id = task_id_for_closure.clone();
+                                let proplet_id = proplet_id_for_closure.clone();
+
+                                tokio::spawn(async move {
+                                    let metrics_msg = MetricsMessage {
+                                        task_id,
+                                        proplet_id,
+                                        metrics,
+                                        aggregated,
+                                        timestamp: SystemTime::now(),
+                                    };
+
+                                    let topic = build_topic(
+                                        &domain,
+                                        &channel,
+                                        "control/proplet/task_metrics",
+                                    );
+                                    if let Err(e) = pubsub.publish(&topic, &metrics_msg, qos).await
+                                    {
+                                        debug!("Failed to publish task metrics: {}", e);
+                                    }
+                                });
+                            })
+                            .await;
+                    } else {
+                        debug!(
+                            "No PID available for task {}, skipping monitoring",
+                            task_id_clone
+                        );
+                    }
+                }))
+            } else {
+                None
             };
 
             let result = runtime.start_app(ctx, config).await;
+
+            if let Some(handle) = monitor_handle {
+                let _ = handle.await;
+            }
+
+            monitor.stop_monitoring(&task_id).await.ok();
 
             let (result_str, error) = match result {
                 Ok(data) => {
@@ -364,6 +520,7 @@ impl PropletService {
         info!("Received stop command for task: {}", req.id);
 
         self.runtime.stop_app(req.id.clone()).await?;
+        self.monitor.stop_monitoring(&req.id).await.ok();
 
         self.running_tasks.lock().await.remove(&req.id);
 
@@ -485,7 +642,7 @@ impl PropletService {
         results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
-        let proplet_id = self.proplet.lock().await.id;
+        let proplet_id = self.proplet.lock().await.id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
 
         let result_msg = ResultMessage {

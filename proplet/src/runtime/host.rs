@@ -14,6 +14,7 @@ use tracing::{debug, error, info};
 pub struct HostRuntime {
     runtime_path: String,
     processes: Arc<Mutex<HashMap<String, Child>>>,
+    pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl HostRuntime {
@@ -21,6 +22,7 @@ impl HostRuntime {
         Self {
             runtime_path,
             processes: Arc::new(Mutex::new(HashMap::new())),
+            pids: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -90,15 +92,23 @@ impl Runtime for HostRuntime {
             self.runtime_path, self.runtime_path, config.cli_args
         ))?;
 
-        info!("Process spawned with PID: {:?}", child.id());
+        let pid = child.id();
+        info!("Process spawned with PID: {:?}", pid);
+
+        if let Some(pid_val) = pid {
+            let mut pids = self.pids.lock().await;
+            pids.insert(config.id.clone(), pid_val);
+        }
+
+        let mut processes = self.processes.lock().await;
+        processes.insert(config.id.clone(), child);
+        drop(processes);
 
         if config.daemon {
             info!("Running in daemon mode for task: {}", config.id);
-            // For daemon mode, store the process and return immediately
-            let mut processes = self.processes.lock().await;
-            processes.insert(config.id.clone(), child);
 
             let processes = self.processes.clone();
+            let pids = self.pids.clone();
             let temp_file_clone = temp_file.clone();
             let task_id = config.id.clone();
 
@@ -133,6 +143,7 @@ impl Runtime for HostRuntime {
 
                     if should_cleanup {
                         processes.lock().await.remove(&task_id);
+                        pids.lock().await.remove(&task_id);
                         break;
                     }
                 }
@@ -148,13 +159,79 @@ impl Runtime for HostRuntime {
                 config.id
             );
 
-            let output = child
-                .wait_with_output()
-                .await
-                .context("Failed to wait for host runtime process")?;
+            // Keep the child in the processes map during wait to allow interruption via stop_app
+            // We'll poll for completion instead of blocking with wait_with_output
+            let output = loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                let mut processes = self.processes.lock().await;
+                if let Some(child) = processes.get_mut(&config.id) {
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            // Process has completed, now we can safely remove it and collect output
+                            drop(processes);
+
+                            let mut child = {
+                                let mut processes = self.processes.lock().await;
+                                processes.remove(&config.id).ok_or_else(|| {
+                                    anyhow::anyhow!("Failed to retrieve child process")
+                                })?
+                            };
+
+                            // Collect stdout and stderr
+                            let stdout = if let Some(mut stdout_reader) = child.stdout.take() {
+                                use tokio::io::AsyncReadExt;
+                                let mut buf = Vec::new();
+                                stdout_reader
+                                    .read_to_end(&mut buf)
+                                    .await
+                                    .unwrap_or_default();
+                                buf
+                            } else {
+                                Vec::new()
+                            };
+
+                            let stderr = if let Some(mut stderr_reader) = child.stderr.take() {
+                                use tokio::io::AsyncReadExt;
+                                let mut buf = Vec::new();
+                                stderr_reader
+                                    .read_to_end(&mut buf)
+                                    .await
+                                    .unwrap_or_default();
+                                buf
+                            } else {
+                                Vec::new()
+                            };
+
+                            break std::process::Output {
+                                status,
+                                stdout,
+                                stderr,
+                            };
+                        }
+                        Ok(None) => {
+                            // Process is still running, continue polling
+                        }
+                        Err(e) => {
+                            // Error checking process status
+                            drop(processes);
+                            return Err(anyhow::anyhow!("Failed to check process status: {}", e));
+                        }
+                    }
+                } else {
+                    // Process was removed (likely by stop_app), meaning it was killed
+                    drop(processes);
+                    self.cleanup_temp_file(temp_file).await?;
+                    return Err(anyhow::anyhow!(
+                        "Task {} was stopped before completion",
+                        config.id
+                    ));
+                }
+            };
 
             info!("Process completed for task: {}", config.id);
 
+            self.pids.lock().await.remove(&config.id);
             self.cleanup_temp_file(temp_file).await?;
 
             if !output.status.success() {
@@ -174,6 +251,8 @@ impl Runtime for HostRuntime {
     async fn stop_app(&self, id: String) -> Result<()> {
         info!("Stopping Host runtime app: task_id={}", id);
 
+        self.pids.lock().await.remove(&id);
+
         let mut processes = self.processes.lock().await;
         if let Some(mut child) = processes.remove(&id) {
             child.kill().await.context("Failed to kill process")?;
@@ -181,6 +260,21 @@ impl Runtime for HostRuntime {
             Ok(())
         } else {
             Err(anyhow::anyhow!("Task {id} not found"))
+        }
+    }
+
+    async fn get_pid(&self, id: &str) -> Result<Option<u32>> {
+        let pids = self.pids.lock().await;
+        if let Some(&pid) = pids.get(id) {
+            return Ok(Some(pid));
+        }
+        drop(pids);
+
+        let processes = self.processes.lock().await;
+        if let Some(child) = processes.get(id) {
+            Ok(child.id())
+        } else {
+            Ok(None)
         }
     }
 }

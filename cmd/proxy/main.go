@@ -133,8 +133,8 @@ func main() {
 	}
 }
 
-func handle(logger *slog.Logger, containerChan chan<- string) func(topic string, msg map[string]interface{}) error {
-	return func(topic string, msg map[string]interface{}) error {
+func handle(logger *slog.Logger, containerChan chan<- string) func(topic string, msg map[string]any) error {
+	return func(topic string, msg map[string]any) error {
 		appName, ok := msg["app_name"].(string)
 		if !ok {
 			return errors.New("failed to unmarshal app_name")

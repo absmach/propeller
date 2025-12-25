@@ -21,7 +21,7 @@ const (
 	MaxLimitSize = 100
 )
 
-func EncodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
+func EncodeResponse(_ context.Context, w http.ResponseWriter, response any) error {
 	if ar, ok := response.(supermq.Response); ok {
 		for k, v := range ar.Headers() {
 			w.Header().Set(k, v)

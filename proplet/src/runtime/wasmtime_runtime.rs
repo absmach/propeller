@@ -246,6 +246,15 @@ impl Runtime for WasmtimeRuntime {
             Err(anyhow::anyhow!("Task {id} not found in running tasks"))
         }
     }
+
+    async fn get_pid(&self, _id: &str) -> Result<Option<u32>> {
+        let tasks = self.tasks.lock().await;
+        if !tasks.contains_key(_id) {
+            return Ok(None);
+        }
+
+        Ok(Some(std::process::id()))
+    }
 }
 
 #[cfg(test)]

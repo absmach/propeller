@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func logJSONCmd(cmd cobra.Command, iList ...interface{}) {
+func logJSONCmd(cmd cobra.Command, iList ...any) {
 	for _, i := range iList {
 		m, err := json.Marshal(i)
 		if err != nil {

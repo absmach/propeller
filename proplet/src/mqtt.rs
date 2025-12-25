@@ -204,7 +204,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("tcp://localhost:1883").unwrap();
         assert_eq!(host, "localhost");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("mqtt://broker.example.com:1883").unwrap();
         assert_eq!(host, "broker.example.com");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -220,7 +220,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("ssl://broker.example.com:8883").unwrap();
         assert_eq!(host, "broker.example.com");
         assert_eq!(port, 8883);
-        assert_eq!(tls, true);
+        assert!(tls);
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("tls://broker.example.com:8883").unwrap();
         assert_eq!(host, "broker.example.com");
         assert_eq!(port, 8883);
-        assert_eq!(tls, true);
+        assert!(tls);
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("mqtts://broker.example.com").unwrap();
         assert_eq!(host, "broker.example.com");
         assert_eq!(port, 8883); // Default TLS port
-        assert_eq!(tls, true);
+        assert!(tls);
     }
 
     #[test]
@@ -244,7 +244,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("192.168.1.100:1883").unwrap();
         assert_eq!(host, "192.168.1.100");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("tcp://[::1]:1883").unwrap();
         assert_eq!(host, "::1");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -260,7 +260,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("mqtts://[2001:db8::1]:8883").unwrap();
         assert_eq!(host, "2001:db8::1");
         assert_eq!(port, 8883);
-        assert_eq!(tls, true);
+        assert!(tls);
     }
 
     #[test]
@@ -268,7 +268,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("[::1]:1883").unwrap();
         assert_eq!(host, "::1");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("[fe80::1]").unwrap();
         assert_eq!(host, "fe80::1");
         assert_eq!(port, 1883); // Default port
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("localhost").unwrap();
         assert_eq!(host, "localhost");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -292,7 +292,7 @@ mod tests {
         let (host, port, tls) = parse_mqtt_address("tcp://broker.example.com").unwrap();
         assert_eq!(host, "broker.example.com");
         assert_eq!(port, 1883);
-        assert_eq!(tls, false);
+        assert!(!tls);
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
     fn test_mqtt_config_address_parsing_with_scheme_and_port() {
         // Test address parsing logic (unit test for the parsing logic)
         let address = "tcp://broker.example.com:1883";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_parsing_without_scheme() {
         let address = "localhost:1883";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_parsing_without_port() {
         let address = "tcp://broker.example.com";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_parsing_custom_port() {
         let address = "tcp://broker.example.com:8883";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_parsing_invalid_port() {
         let address = "tcp://broker.example.com:invalid";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_ipv4() {
         let address = "tcp://192.168.1.100:1883";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn test_mqtt_config_address_ipv6() {
         let address = "tcp://[::1]:1883";
-        let address_without_scheme = address.split("://").nth(1).unwrap_or(&address);
+        let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 
         let (host, port) = if let Some(colon_pos) = address_without_scheme.rfind(':') {
             let host = &address_without_scheme[..colon_pos];
