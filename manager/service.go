@@ -1129,6 +1129,7 @@ func (svc *service) buildNextRoundTask(
 		},
 		CreatedAt: time.Now(),
 	}
+}
 
 func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
