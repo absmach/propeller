@@ -40,6 +40,13 @@ const (
 	ModeTrain Mode = "train"
 )
 
+type TaskKind string
+
+const (
+	TaskKindStandard  TaskKind = "standard"
+	TaskKindFederated TaskKind = "federated"
+)
+
 type FLSpec struct {
 	JobID         string `json:"job_id"`
 	RoundID       uint64 `json:"round_id"`
@@ -47,16 +54,24 @@ type FLSpec struct {
 
 	MinParticipants uint64 `json:"min_participants,omitempty"`
 	RoundTimeoutSec uint64 `json:"round_timeout_sec,omitempty"`
+	ClientsPerRound uint64 `json:"clients_per_round,omitempty"`
+	TotalRounds     uint64 `json:"total_rounds,omitempty"`
 
 	Algorithm    string         `json:"algorithm,omitempty"`
 	UpdateFormat string         `json:"update_format,omitempty"`
 	Hyperparams  map[string]any `json:"hyperparams,omitempty"`
 	ModelRef     string         `json:"model_ref,omitempty"`
+
+	// Training hyperparameters
+	LocalEpochs  uint64  `json:"local_epochs,omitempty"`
+	BatchSize    uint64  `json:"batch_size,omitempty"`
+	LearningRate float64 `json:"learning_rate,omitempty"`
 }
 
 type Task struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`
+	Kind              TaskKind                   `json:"kind,omitempty"`
 	State             State                      `json:"state"`
 	ImageURL          string                     `json:"image_url,omitempty"`
 	File              []byte                     `json:"file,omitempty"`
@@ -72,6 +87,8 @@ type Task struct {
 	FinishTime        time.Time                  `json:"finish_time"`
 	CreatedAt         time.Time                  `json:"created_at"`
 	UpdatedAt         time.Time                  `json:"updated_at"`
+	Mode              Mode                       `json:"mode,omitempty"`
+	FL                *FLSpec                    `json:"fl,omitempty"`
 }
 
 type TaskPage struct {

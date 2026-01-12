@@ -127,6 +127,20 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 	t.ID = uuid.NewString()
 	t.CreatedAt = time.Now()
 
+	// Set default kind if not specified
+	if t.Kind == "" {
+		if t.FL != nil {
+			t.Kind = task.TaskKindFederated
+		} else {
+			t.Kind = task.TaskKindStandard
+		}
+	}
+
+	// Set default mode for FL tasks
+	if t.Kind == task.TaskKindFederated && t.Mode == "" {
+		t.Mode = task.ModeInfer
+	}
+
 	if err := svc.tasksDB.Create(ctx, t.ID, t); err != nil {
 		return task.Task{}, err
 	}
@@ -466,6 +480,34 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	if err != nil {
 		return err
 	}
+
+	// Handle FL training tasks
+	if t.FL != nil && t.Mode == modeTrain {
+		envlp, err := svc.parseAndValidateTrainResults(ctx, t, msg)
+		if err != nil {
+			svc.logger.ErrorContext(ctx, "failed to parse FL results", "error", err, "task_id", taskID)
+			t.Error = err.Error()
+			t.State = task.Failed
+			t.UpdatedAt = time.Now()
+			t.FinishTime = time.Now()
+			_ = svc.tasksDB.Update(ctx, t.ID, t)
+			return err
+		}
+
+		if err := svc.completeTrainTask(ctx, t, envlp, msg); err != nil {
+			return err
+		}
+
+		// Trigger aggregation check
+		if err := svc.tryAggregateAndAdvance(ctx, envlp.JobID, envlp.RoundID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to aggregate or advance round", "error", err, "job_id", envlp.JobID, "round_id", envlp.RoundID)
+			// Don't fail the task update if aggregation fails
+		}
+
+		return nil
+	}
+
+	// Handle standard tasks
 	t.Results = msg["results"]
 	t.State = task.Completed
 	t.UpdatedAt = time.Now()
@@ -1046,130 +1088,47 @@ func (svc *service) buildNextRoundEnv(
 		newEnv["FL_FORMAT"] = updateFormat
 	}
 
-		nextTask := task.Task{
-			Name:      cur.Name,
-			State:     task.Pending,
-			ImageURL:  cur.ImageURL,
-			File:      cur.File,
-			CLIArgs:   append([]string(nil), cur.CLIArgs...),
-			Inputs:    append([]uint64(nil), cur.Inputs...),
-			Env:       newEnv,
-			Daemon:    cur.Daemon,
-			PropletID: pinnedPropletID,
-
-			Mode: task.ModeTrain,
-			FL: &task.FLSpec{
-				JobID:         jobID,
-				RoundID:       nextRound,
-				GlobalVersion: aggEnv.GlobalVersion,
-				Algorithm:     cur.FL.Algorithm,
-				UpdateFormat:  updateFormat,
-				Hyperparams:   cur.FL.Hyperparams,
-				ModelRef:      cur.FL.ModelRef,
-			},
-
-			CreatedAt: time.Now(),
-		}
-
-		created, err := svc.CreateTask(ctx, nextTask)
-		if err != nil {
-			return err
-		}
-		if err := svc.StartTask(ctx, created.ID); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return newEnv
 }
 
-func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
-	taskID, ok := msg["task_id"].(string)
-	if !ok {
-		return errors.New("invalid task_id")
+func (svc *service) buildNextRoundTask(
+	cur task.Task,
+	pinnedPropletID string,
+	jobID string,
+	nextRound uint64,
+	aggEnv flpkg.UpdateEnvelope,
+	newEnv map[string]string,
+) task.Task {
+	updateFormat := ""
+	if cur.FL != nil {
+		updateFormat = cur.FL.UpdateFormat
 	}
-	if taskID == "" {
-		return errors.New("task id is empty")
-	}
-
-	propletID, ok := msg["proplet_id"].(string)
-	if !ok {
-		return errors.New("invalid proplet_id")
-	}
-
-	taskMetrics := TaskMetrics{
-		TaskID:    taskID,
-		PropletID: propletID,
+	if updateFormat == "" && aggEnv.Format != "" {
+		updateFormat = aggEnv.Format
 	}
 
-	if ts, ok := msg["timestamp"].(string); ok {
-		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-			taskMetrics.Timestamp = t
-		}
+	return task.Task{
+		Name:      cur.Name,
+		State:     task.Pending,
+		ImageURL:  cur.ImageURL,
+		File:      cur.File,
+		CLIArgs:   append([]string(nil), cur.CLIArgs...),
+		Inputs:    append([]uint64(nil), cur.Inputs...),
+		Env:       newEnv,
+		Daemon:    cur.Daemon,
+		PropletID: pinnedPropletID,
+		Mode:      task.ModeTrain,
+		FL: &task.FLSpec{
+			JobID:         jobID,
+			RoundID:       nextRound,
+			GlobalVersion: aggEnv.GlobalVersion,
+			Algorithm:     cur.FL.Algorithm,
+			UpdateFormat:  updateFormat,
+			Hyperparams:   cur.FL.Hyperparams,
+			ModelRef:      cur.FL.ModelRef,
+		},
+		CreatedAt: time.Now(),
 	}
-	if taskMetrics.Timestamp.IsZero() {
-		taskMetrics.Timestamp = time.Now()
-	}
-
-	if metricsData, ok := msg["metrics"].(map[string]any); ok {
-		taskMetrics.Metrics = svc.parseProcessMetrics(metricsData)
-	}
-
-	if aggData, ok := msg["aggregated"].(map[string]any); ok {
-		taskMetrics.Aggregated = svc.parseAggregatedMetrics(aggData)
-	}
-
-	key := fmt.Sprintf("%s:%d", taskID, taskMetrics.Timestamp.UnixNano())
-	if err := svc.metricsDB.Create(ctx, key, taskMetrics); err != nil {
-		svc.logger.WarnContext(ctx, "failed to store task metrics", "error", err, "task_id", taskID)
-
-		return err
-	}
-
-	return nil
-}
-
-func (svc *service) handlePropletMetrics(ctx context.Context, msg map[string]any) error {
-	propletID, ok := msg["proplet_id"].(string)
-	if !ok {
-		return errors.New("invalid proplet_id")
-	}
-	if propletID == "" {
-		return errors.New("proplet id is empty")
-	}
-	namespace, _ := msg["namespace"].(string)
-
-	propletMetrics := PropletMetrics{
-		PropletID: propletID,
-		Namespace: namespace,
-	}
-
-	if ts, ok := msg["timestamp"].(string); ok {
-		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-			propletMetrics.Timestamp = t
-		}
-	}
-	if propletMetrics.Timestamp.IsZero() {
-		propletMetrics.Timestamp = time.Now()
-	}
-
-	if cpuData, ok := msg["cpu_metrics"].(map[string]any); ok {
-		propletMetrics.CPU = svc.parseCPUMetrics(cpuData)
-	}
-
-	if memData, ok := msg["memory_metrics"].(map[string]any); ok {
-		propletMetrics.Memory = svc.parseMemoryMetrics(memData)
-	}
-
-	key := fmt.Sprintf("%s:%d", propletID, propletMetrics.Timestamp.UnixNano())
-	if err := svc.metricsDB.Create(ctx, key, propletMetrics); err != nil {
-		svc.logger.WarnContext(ctx, "failed to store proplet metrics", "error", err, "proplet_id", propletID)
-
-		return err
-	}
-
-	return nil
-}
 
 func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
@@ -1359,4 +1318,120 @@ func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetric
 	}
 
 	return metrics
+}
+
+// Helper functions for task management
+func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID string) error {
+	return svc.taskPropletDB.Create(ctx, taskID, propletID)
+}
+
+func (svc *service) injectFLEnv(ctx context.Context, t *task.Task) {
+	if t.FL == nil {
+		return
+	}
+	if t.Env == nil {
+		t.Env = make(map[string]string)
+	}
+	t.Env["FL_JOB_ID"] = t.FL.JobID
+	t.Env["FL_ROUND_ID"] = strconv.FormatUint(t.FL.RoundID, 10)
+	t.Env["FL_GLOBAL_VERSION"] = t.FL.GlobalVersion
+	if t.FL.UpdateFormat != "" {
+		t.Env["FL_FORMAT"] = t.FL.UpdateFormat
+	}
+	if t.FL.ModelRef != "" {
+		t.Env["FL_MODEL_REF"] = t.FL.ModelRef
+	}
+}
+
+func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) error {
+	t.UpdatedAt = time.Now()
+	return svc.tasksDB.Update(ctx, t.ID, *t)
+}
+
+func (svc *service) publishStart(ctx context.Context, t task.Task, propletID string) error {
+	payload := map[string]any{
+		"id":                 t.ID,
+		"name":               t.Name,
+		"state":              t.State,
+		"image_url":          t.ImageURL,
+		"file":               t.File,
+		"inputs":             t.Inputs,
+		"cli_args":           t.CLIArgs,
+		"daemon":             t.Daemon,
+		"env":                t.Env,
+		"monitoring_profile": t.MonitoringProfile,
+		"proplet_id":         propletID,
+	}
+	if t.FL != nil {
+		payload["mode"] = string(t.Mode)
+		flPayload := map[string]any{
+			"job_id":          t.FL.JobID,
+			"round_id":        t.FL.RoundID,
+			"global_version":  t.FL.GlobalVersion,
+			"min_participants": t.FL.MinParticipants,
+			"round_timeout_sec": t.FL.RoundTimeoutSec,
+			"algorithm":       t.FL.Algorithm,
+			"update_format":   t.FL.UpdateFormat,
+			"hyperparams":     t.FL.Hyperparams,
+			"model_ref":       t.FL.ModelRef,
+		}
+		payload["fl"] = flPayload
+	}
+
+	topic := svc.baseTopic + "/control/manager/start"
+	return svc.pubsub.Publish(ctx, topic, payload)
+}
+
+func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {
+	p.TaskCount = uint64(int64(p.TaskCount) + delta)
+	if p.TaskCount < 0 {
+		p.TaskCount = 0
+	}
+	return svc.propletsDB.Update(ctx, p.ID, p)
+}
+
+func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
+	t.State = task.Running
+	t.StartTime = time.Now()
+	t.UpdatedAt = time.Now()
+	return svc.tasksDB.Update(ctx, t.ID, *t)
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cpy := make(map[string]string, len(m))
+	for k, v := range m {
+		cpy[k] = v
+	}
+	return cpy
+}
+
+func (svc *service) tasksForRound(ctx context.Context, jobID string, roundID uint64) ([]task.Task, error) {
+	all, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result []task.Task
+	for i := range all {
+		t := all[i]
+		if svc.isRoundTrainTask(t, jobID, roundID) {
+			result = append(result, t)
+		}
+	}
+	return result, nil
+}
+
+func (svc *service) roundTasksExist(ctx context.Context, jobID string, roundID uint64) (bool, error) {
+	all, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return false, err
+	}
+	for i := range all {
+		if svc.isRoundTrainTask(all[i], jobID, roundID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -5,7 +5,7 @@ BUILD_DIR = build
 TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 VERSION ?= $(shell git describe --abbrev=0 --tags 2>/dev/null || echo 'v0.0.0')
 COMMIT ?= $(shell git rev-parse HEAD)
-EXAMPLES = addition compute hello-world
+EXAMPLES = addition compute hello-world fl-train
 SERVICES = manager cli proxy
 RUST_SERVICES = proplet
 DOCKERS = $(addprefix docker_,$(SERVICES))
