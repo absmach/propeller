@@ -397,8 +397,9 @@ impl PropletService {
                 daemon,
                 wasm_binary,
                 cli_args,
-                env,
+                env: env.clone(),
                 args: inputs,
+                mode: req.mode.clone(),
             };
 
             // Start monitoring setup (if enabled)
@@ -490,21 +491,55 @@ impl PropletService {
                 }
             };
 
-            let result_msg = ResultMessage {
-                task_id: task_id.clone(),
-                proplet_id,
-                results: result_str,
-                error,
-            };
+            // Handle FL tasks
+            if req.mode.as_deref() == Some("train") && req.fl.is_some() {
+                let fl_spec = req.fl.as_ref().unwrap();
+                let update_envelope = self.build_fl_update_envelope(
+                    &task_id,
+                    &proplet_id,
+                    &result_str,
+                    fl_spec,
+                    &env,
+                );
 
-            let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+                #[derive(serde::Serialize)]
+                struct FLResultMessage {
+                    task_id: String,
+                    results: serde_json::Value,
+                    error: Option<String>,
+                }
 
-            info!("Publishing result for task {}", task_id);
+                let fl_result = FLResultMessage {
+                    task_id: task_id.clone(),
+                    results: serde_json::to_value(&update_envelope).unwrap_or_default(),
+                    error,
+                };
 
-            if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
-                error!("Failed to publish result for task {}: {}", task_id, e);
+                let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+                info!("Publishing FL update for task {}", task_id);
+
+                if let Err(e) = pubsub.publish(&topic, &fl_result, qos).await {
+                    error!("Failed to publish FL result for task {}: {}", task_id, e);
+                } else {
+                    info!("Successfully published FL update for task {}", task_id);
+                }
             } else {
-                info!("Successfully published result for task {}", task_id);
+                let result_msg = ResultMessage {
+                    task_id: task_id.clone(),
+                    proplet_id,
+                    results: result_str,
+                    error,
+                };
+
+                let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+
+                info!("Publishing result for task {}", task_id);
+
+                if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
+                    error!("Failed to publish result for task {}: {}", task_id, e);
+                } else {
+                    info!("Successfully published result for task {}", task_id);
+                }
             }
 
             running_tasks.lock().await.remove(&task_id);
@@ -662,5 +697,41 @@ impl PropletService {
             .publish(&topic, &result_msg, self.config.qos())
             .await?;
         Ok(())
+    }
+
+    fn build_fl_update_envelope(
+        &self,
+        task_id: &str,
+        proplet_id: &str,
+        result_str: &str,
+        fl_spec: &crate::types::FLSpec,
+        env: &HashMap<String, String>,
+    ) -> serde_json::Value {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        let num_samples = env
+            .get("FL_NUM_SAMPLES")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1);
+
+        let update_format = fl_spec
+            .update_format
+            .clone()
+            .or_else(|| env.get("FL_FORMAT").cloned())
+            .unwrap_or_else(|| "f32-delta".to_string());
+
+        let update_b64 = STANDARD.encode(result_str.as_bytes());
+
+        serde_json::json!({
+            "task_id": task_id,
+            "job_id": fl_spec.job_id,
+            "round_id": fl_spec.round_id,
+            "global_version": fl_spec.global_version,
+            "proplet_id": proplet_id,
+            "num_samples": num_samples,
+            "update_b64": update_b64,
+            "format": update_format,
+            "metrics": {}
+        })
     }
 }
