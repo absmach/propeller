@@ -62,12 +62,31 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
+#define MAX_UPDATE_B64_LEN 2048  // For FL update payloads
+#define MAX_ERROR_MSG_LEN 256
+
+struct fl_spec {
+  char job_id[MAX_ID_LEN];
+  uint64_t round_id;
+  char global_version[MAX_ID_LEN];
+  uint64_t min_participants;
+  uint64_t round_timeout_sec;
+  uint64_t clients_per_round;
+  uint64_t total_rounds;
+  char algorithm[MAX_NAME_LEN];
+  char update_format[MAX_NAME_LEN];
+  char model_ref[MAX_URL_LEN];
+  uint64_t local_epochs;
+  uint64_t batch_size;
+  double learning_rate;
+};
 
 struct task {
   char id[MAX_ID_LEN];
   char name[MAX_NAME_LEN];
   char state[MAX_STATE_LEN];
   char image_url[MAX_URL_LEN];
+  char mode[MAX_NAME_LEN];  // "train" or "infer"
 
   char file[MAX_BASE64_LEN];
   size_t file_len;
@@ -81,6 +100,18 @@ struct task {
   char finish_time[MAX_TIMESTAMP_LEN];
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
+
+  // FL-specific fields
+  struct fl_spec fl;
+  bool is_fl_task;
+  
+  // FL environment variables (from env map in start command)
+  char fl_job_id[MAX_ID_LEN];
+  char fl_round_id_str[32];
+  char fl_global_version[MAX_ID_LEN];
+  char fl_global_update_b64[MAX_BASE64_LEN];
+  char fl_format[MAX_NAME_LEN];
+  char fl_num_samples_str[32];
 };
 
 static struct task g_current_task;
@@ -420,12 +451,16 @@ void handle_start_command(const char *payload) {
   }
 
   struct task t = {0};
+  t.is_fl_task = false;
 
   cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
   cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
   cJSON *image_url = cJSON_GetObjectItemCaseSensitive(json, "image_url");
   cJSON *file = cJSON_GetObjectItemCaseSensitive(json, "file");
   cJSON *inputs = cJSON_GetObjectItemCaseSensitive(json, "inputs");
+  cJSON *mode = cJSON_GetObjectItemCaseSensitive(json, "mode");
+  cJSON *fl_obj = cJSON_GetObjectItemCaseSensitive(json, "fl");
+  cJSON *env = cJSON_GetObjectItemCaseSensitive(json, "env");
 
   if (!cJSON_IsString(id) || !cJSON_IsString(name)) {
     LOG_ERR("Invalid or missing mandatory fields in JSON payload");
@@ -434,14 +469,23 @@ void handle_start_command(const char *payload) {
   }
 
   strncpy(t.id, id->valuestring, MAX_ID_LEN - 1);
+  t.id[MAX_ID_LEN - 1] = '\0';
   strncpy(t.name, name->valuestring, MAX_NAME_LEN - 1);
+  t.name[MAX_NAME_LEN - 1] = '\0';
+
+  if (cJSON_IsString(mode)) {
+    strncpy(t.mode, mode->valuestring, MAX_NAME_LEN - 1);
+    t.mode[MAX_NAME_LEN - 1] = '\0';
+  }
 
   if (cJSON_IsString(image_url)) {
     strncpy(t.image_url, image_url->valuestring, MAX_URL_LEN - 1);
+    t.image_url[MAX_URL_LEN - 1] = '\0';
   }
 
   if (cJSON_IsString(file)) {
     strncpy(t.file, file->valuestring, MAX_BASE64_LEN - 1);
+    t.file[MAX_BASE64_LEN - 1] = '\0';
   }
 
   if (cJSON_IsArray(inputs)) {
@@ -456,9 +500,125 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  LOG_INF("Starting task: ID=%s, Name=%s", t.id, t.name);
+  // Parse FL spec if present
+  if (fl_obj != NULL && cJSON_IsObject(fl_obj)) {
+    t.is_fl_task = true;
+    cJSON *job_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "job_id");
+    cJSON *round_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "round_id");
+    cJSON *global_version = cJSON_GetObjectItemCaseSensitive(fl_obj, "global_version");
+    cJSON *update_format = cJSON_GetObjectItemCaseSensitive(fl_obj, "update_format");
+    cJSON *min_participants = cJSON_GetObjectItemCaseSensitive(fl_obj, "min_participants");
+    cJSON *total_rounds = cJSON_GetObjectItemCaseSensitive(fl_obj, "total_rounds");
+    cJSON *local_epochs = cJSON_GetObjectItemCaseSensitive(fl_obj, "local_epochs");
+    cJSON *batch_size = cJSON_GetObjectItemCaseSensitive(fl_obj, "batch_size");
+    cJSON *learning_rate = cJSON_GetObjectItemCaseSensitive(fl_obj, "learning_rate");
+
+    if (cJSON_IsString(job_id)) {
+      strncpy(t.fl.job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(round_id)) {
+      t.fl.round_id = (uint64_t)round_id->valuedouble;
+      snprintf(t.fl_round_id_str, sizeof(t.fl_round_id_str), "%llu", (unsigned long long)t.fl.round_id);
+    }
+    if (cJSON_IsString(global_version)) {
+      strncpy(t.fl.global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsString(update_format)) {
+      strncpy(t.fl.update_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      strncpy(t.fl_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(min_participants)) {
+      t.fl.min_participants = (uint64_t)min_participants->valuedouble;
+    }
+    if (cJSON_IsNumber(total_rounds)) {
+      t.fl.total_rounds = (uint64_t)total_rounds->valuedouble;
+    }
+    if (cJSON_IsNumber(local_epochs)) {
+      t.fl.local_epochs = (uint64_t)local_epochs->valuedouble;
+    }
+    if (cJSON_IsNumber(batch_size)) {
+      t.fl.batch_size = (uint64_t)batch_size->valuedouble;
+    }
+    if (cJSON_IsNumber(learning_rate)) {
+      t.fl.learning_rate = learning_rate->valuedouble;
+    }
+  }
+
+  // Parse environment variables (FL_* vars)
+  if (env != NULL && cJSON_IsObject(env)) {
+    cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
+    cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
+    cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
+    cJSON *fl_global_update_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_UPDATE_B64");
+    cJSON *fl_format_env = cJSON_GetObjectItemCaseSensitive(env, "FL_FORMAT");
+    cJSON *fl_num_samples_env = cJSON_GetObjectItemCaseSensitive(env, "FL_NUM_SAMPLES");
+
+    if (cJSON_IsString(fl_job_id_env)) {
+      strncpy(t.fl_job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task) {
+        strncpy(t.fl.job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+        t.is_fl_task = true;
+      }
+    }
+    if (cJSON_IsString(fl_round_id_env)) {
+      strncpy(t.fl_round_id_str, fl_round_id_env->valuestring, sizeof(t.fl_round_id_str) - 1);
+      t.fl_round_id_str[sizeof(t.fl_round_id_str) - 1] = '\0';
+      t.fl.round_id = (uint64_t)strtoull(t.fl_round_id_str, NULL, 10);
+    }
+    if (cJSON_IsString(fl_global_version_env)) {
+      strncpy(t.fl_global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.global_version) == 0) {
+        strncpy(t.fl.global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      }
+    }
+    if (cJSON_IsString(fl_global_update_env)) {
+      strncpy(t.fl_global_update_b64, fl_global_update_env->valuestring, MAX_BASE64_LEN - 1);
+      t.fl_global_update_b64[MAX_BASE64_LEN - 1] = '\0';
+    }
+    if (cJSON_IsString(fl_format_env)) {
+      strncpy(t.fl_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.update_format) == 0) {
+        strncpy(t.fl.update_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
+        t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      }
+    }
+    if (cJSON_IsString(fl_num_samples_env)) {
+      strncpy(t.fl_num_samples_str, fl_num_samples_env->valuestring, sizeof(t.fl_num_samples_str) - 1);
+      t.fl_num_samples_str[sizeof(t.fl_num_samples_str) - 1] = '\0';
+    } else {
+      strncpy(t.fl_num_samples_str, "1", sizeof(t.fl_num_samples_str) - 1);
+      t.fl_num_samples_str[sizeof(t.fl_num_samples_str) - 1] = '\0';
+    }
+  }
+
+  LOG_INF("Starting task: ID=%s, Name=%s, Mode=%s", t.id, t.name, t.mode);
+  if (t.is_fl_task) {
+    LOG_INF("FL Task: job_id=%s, round_id=%llu, global_version=%s, format=%s",
+            t.fl.job_id, (unsigned long long)t.fl.round_id, 
+            t.fl.global_version, t.fl.update_format);
+  }
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
+
+  // Validate FL task has required fields
+  if (t.is_fl_task && strlen(t.fl.job_id) == 0) {
+    LOG_ERR("FL task missing required job_id field");
+    cJSON_Delete(json);
+    return;
+  }
 
   memcpy(&g_current_task, &t, sizeof(t));
 
@@ -714,10 +874,144 @@ void publish_registry_request(const char *domain_id, const char *channel_id,
 
 void publish_results(const char *domain_id, const char *channel_id,
                      const char *task_id, const char *results) {
-  char results_payload[256];
+  publish_results_with_error(domain_id, channel_id, task_id, results, NULL);
+}
 
-  snprintf(results_payload, sizeof(results_payload),
-           "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results);
+void publish_results_with_error(const char *domain_id, const char *channel_id,
+                                 const char *task_id, const char *results,
+                                 const char *error_msg) {
+  char results_payload[2048];  // Increased for FL envelope with larger payloads
+
+  // Check if this is an FL training task
+  if (g_current_task.is_fl_task && 
+      strcmp(g_current_task.mode, "train") == 0 &&
+      strlen(g_current_task.fl.job_id) > 0) {
+    // Validate FL fields
+    if (strlen(g_current_task.fl.job_id) == 0) {
+      LOG_ERR("FL task missing job_id, cannot publish update");
+      return;
+    }
+    if (strlen(g_current_task.fl.global_version) == 0) {
+      LOG_ERR("FL task missing global_version, cannot publish update");
+      return;
+    }
+
+    // Build FL update envelope
+    char update_b64[MAX_UPDATE_B64_LEN];
+    size_t encoded_len = 0;
+    
+    // Encode results as base64
+    size_t results_len = results ? strlen(results) : 0;
+    if (results_len == 0 && !error_msg) {
+      LOG_ERR("FL task has empty results and no error message");
+      return;
+    }
+
+    // Check update size limit (before encoding)
+    if (results_len > (MAX_UPDATE_B64_LEN * 3 / 4)) {
+      LOG_ERR("FL update payload too large: %zu bytes (max: %d)", 
+              results_len, (MAX_UPDATE_B64_LEN * 3 / 4));
+      error_msg = "Update payload exceeds size limit";
+      results_len = 0;
+    }
+
+    if (results_len > 0) {
+      int ret = base64_encode((uint8_t *)update_b64, sizeof(update_b64), &encoded_len,
+                             (const uint8_t *)results, results_len);
+      if (ret < 0) {
+        LOG_ERR("Failed to encode results as base64");
+        error_msg = "Failed to encode update as base64";
+        encoded_len = 0;
+      } else {
+        update_b64[encoded_len] = '\0';
+      }
+    } else {
+      encoded_len = 0;
+      update_b64[0] = '\0';
+    }
+
+    const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+    const char *format = (strlen(g_current_task.fl_format) > 0) ? 
+                        g_current_task.fl_format : "f32-delta";
+    uint64_t num_samples = strtoull(g_current_task.fl_num_samples_str, NULL, 10);
+    if (num_samples == 0) {
+      num_samples = 1;
+    }
+
+    // Build FL update envelope JSON matching Manager expectations
+    // Structure: {"task_id": "...", "results": {UpdateEnvelope}, "error": "..."}
+    // UpdateEnvelope: task_id, job_id, round_id, global_version, proplet_id, num_samples, update_b64, format, metrics
+    if (error_msg) {
+      // Publish error result
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"task_id\":\"%s\","
+        "\"results\":{"
+          "\"task_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
+          "\"proplet_id\":\"%s\","
+          "\"num_samples\":%llu,"
+          "\"update_b64\":\"\","
+          "\"format\":\"%s\","
+          "\"metrics\":{}"
+        "},"
+        "\"error\":\"%s\""
+        "}",
+        task_id,
+        task_id,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
+        pid,
+        (unsigned long long)num_samples,
+        format,
+        error_msg
+      );
+    } else {
+      // Publish successful update
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"task_id\":\"%s\","
+        "\"results\":{"
+          "\"task_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
+          "\"proplet_id\":\"%s\","
+          "\"num_samples\":%llu,"
+          "\"update_b64\":\"%s\","
+          "\"format\":\"%s\","
+          "\"metrics\":{}"
+        "}"
+        "}",
+        task_id,
+        task_id,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
+        pid,
+        (unsigned long long)num_samples,
+        update_b64,
+        format
+      );
+    }
+
+    LOG_INF("Publishing FL update envelope for task: %s (job=%s, round=%llu, error=%s)",
+            task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
+            error_msg ? error_msg : "none");
+  } else {
+    // Standard task result
+    if (error_msg) {
+      snprintf(results_payload, sizeof(results_payload),
+               "{\"task_id\":\"%s\",\"results\":\"%s\",\"error\":\"%s\"}", 
+               task_id, results ? results : "", error_msg);
+    } else {
+      snprintf(results_payload, sizeof(results_payload),
+               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results ? results : "");
+    }
+  }
 
   if (publish(domain_id, channel_id, RESULTS_TOPIC_TEMPLATE, results_payload) !=
       0) {
