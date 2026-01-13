@@ -9,6 +9,7 @@ import (
 	flpkg "github.com/absmach/propeller/pkg/fl"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
+	smqerrors "github.com/absmach/supermq/pkg/errors"
 )
 
 func TestAggregateJSONF64(t *testing.T) {
@@ -47,13 +48,15 @@ func TestAggregateJSONF64(t *testing.T) {
 			validate: func(t *testing.T, result flpkg.UpdateEnvelope) {
 				decoded, err := base64.StdEncoding.DecodeString(result.UpdateB64)
 				if err != nil {
-					t.Fatalf("Failed to decode result: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to decode base64 result"), err)
+					t.Fatalf("Failed to decode result: %v", wrappedErr)
 				}
 
 				var weights []float64
 				err = json.Unmarshal(decoded, &weights)
 				if err != nil {
-					t.Fatalf("Failed to unmarshal weights: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to unmarshal weights from JSON"), err)
+					t.Fatalf("Failed to unmarshal weights: %v", wrappedErr)
 				}
 
 				// Expected: (1*10 + 2*20)/30, (2*10 + 3*20)/30, (3*10 + 4*20)/30
@@ -104,13 +107,15 @@ func TestAggregateJSONF64(t *testing.T) {
 			validate: func(t *testing.T, result flpkg.UpdateEnvelope) {
 				decoded, err := base64.StdEncoding.DecodeString(result.UpdateB64)
 				if err != nil {
-					t.Fatalf("Failed to decode result: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to decode base64 result"), err)
+					t.Fatalf("Failed to decode result: %v", wrappedErr)
 				}
 
 				var weights []float64
 				err = json.Unmarshal(decoded, &weights)
 				if err != nil {
-					t.Fatalf("Failed to unmarshal weights: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to unmarshal weights from JSON"), err)
+					t.Fatalf("Failed to unmarshal weights: %v", wrappedErr)
 				}
 
 				// Expected: (1+3)/2, (2+4)/2 = 2.0, 3.0
@@ -138,13 +143,15 @@ func TestAggregateJSONF64(t *testing.T) {
 			validate: func(t *testing.T, result flpkg.UpdateEnvelope) {
 				decoded, err := base64.StdEncoding.DecodeString(result.UpdateB64)
 				if err != nil {
-					t.Fatalf("Failed to decode result: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to decode base64 result"), err)
+					t.Fatalf("Failed to decode result: %v", wrappedErr)
 				}
 
 				var weights []float64
 				err = json.Unmarshal(decoded, &weights)
 				if err != nil {
-					t.Fatalf("Failed to unmarshal weights: %v", err)
+					wrappedErr := smqerrors.Wrap(smqerrors.New("failed to unmarshal weights from JSON"), err)
+					t.Fatalf("Failed to unmarshal weights: %v", wrappedErr)
 				}
 
 				if len(weights) != 3 || weights[0] != 5.0 || weights[1] != 6.0 || weights[2] != 7.0 {
@@ -325,7 +332,8 @@ func TestAggregateConcat(t *testing.T) {
 
 	decoded, err := base64.StdEncoding.DecodeString(result.UpdateB64)
 	if err != nil {
-		t.Fatalf("Failed to decode result: %v", err)
+		wrappedErr := smqerrors.Wrap(smqerrors.New("failed to decode base64 result"), err)
+		t.Fatalf("Failed to decode result: %v", wrappedErr)
 	}
 
 	// Should contain both updates separated by delimiter
