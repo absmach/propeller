@@ -1,6 +1,10 @@
 //go:build wasm
 // +build wasm
 
+// Build tags are required to ensure this file only compiles when building for WASM target.
+// Without these tags, the file would be included in regular Go builds and fail to compile
+// due to missing WASM-specific functionality. These tags are used by the Go compiler
+// when building with: GOOS=wasip1 GOARCH=wasm go build -o example.wasm
 package main
 
 import (

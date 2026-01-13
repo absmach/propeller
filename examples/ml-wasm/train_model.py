@@ -1,3 +1,19 @@
+"""
+Train a simple linear regression model for the ML-WASM example.
+
+This script generates mymodel.pkl which contains a trained sklearn LinearRegression model.
+The model coefficients are then extracted and used in model_gen.go to create a pure Go
+implementation that can be compiled to WASM.
+
+The model learns: y = 2*x0 + 3*x1 (approximately, due to training data)
+
+Usage:
+    python3 train_model.py
+
+Output:
+    mymodel.pkl - Pickled sklearn model (used for coefficient extraction)
+"""
+
 from sklearn.linear_model import LinearRegression
 import numpy as np
 import os
