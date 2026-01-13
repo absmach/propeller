@@ -1,3 +1,13 @@
+// Package manager contains integration tests for the federated learning workflow.
+//
+// This test file verifies end-to-end FL functionality:
+//   - Task creation and assignment to multiple proplets
+//   - Update collection from different proplets
+//   - FedAvg aggregation correctness
+//   - Round progression logic
+//
+// This is a critical integration test that validates the complete FL pipeline
+// beyond unit tests. It ensures Manager, proplets, and aggregation work together correctly.
 package manager
 
 import (
