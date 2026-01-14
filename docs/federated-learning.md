@@ -1,427 +1,219 @@
 # Federated Learning in Propeller
 
-This document describes how Federated Machine Learning (FL) works in the Propeller codebase.
+> **⚠️ ARCHITECTURAL CHANGE**: FL is **NOT a core Propeller feature**. This document describes the **sample FML application** that demonstrates how to build federated learning on top of Propeller's generic orchestration capabilities.
 
 ## Overview
 
-Propeller implements a **Federated Averaging (FedAvg)** algorithm for distributed machine learning across edge devices. The system enables training ML models without exposing raw data - only model updates (weights/gradients) are shared between edge proplets and the central manager.
+Propeller is a **generic Wasm orchestrator** (orchestration + transport + execution). Federated Learning (FL) is implemented as a **sample FML application** with an external coordinator, demonstrating how to build FL workflows without coupling FL logic into the core Manager.
 
 ## Architecture
 
 ```
-┌─────────────┐
-│   Manager   │  ← Central orchestrator (aggregates updates, manages rounds)
-└──────┬──────┘
-       │ MQTT
-       │
-   ┌───┴───┬─────────┬─────────┐
-   │       │         │         │
-┌──▼──┐ ┌──▼──┐  ┌──▼──┐  ┌──▼──┐
-│ P1  │ │ P2  │  │ P3  │  │ ... │  ← Edge Proplets (train locally)
-└─────┘ └─────┘ └─────┘ └─────┘
+┌─────────────────┐
+│ FML Coordinator │  ← External service (owns FL rounds, aggregation, model versioning)
+└────────┬────────┘
+         │ MQTT
+         │
+┌────────▼────────┐
+│     Manager     │  ← Generic task launcher (workload-agnostic)
+└────────┬────────┘
+         │ MQTT
+         │
+   ┌─────┴─────┬─────────┬─────────┐
+   │          │         │         │
+┌──▼──┐  ┌───▼──┐  ┌───▼──┐  ┌───▼──┐
+│ P1  │  │  P2  │  │  P3  │  │ ... │  ← Edge Proplets (execute Wasm FL client)
+└─────┘  └──────┘  └──────┘  └─────┘
 ```
 
 **Key Components:**
-- **Manager**: Orchestrates FL rounds, aggregates updates, manages task lifecycle
-- **Proplets**:
-  - **Rust Proplet** (Wasmtime): Execute Wasm workloads, train locally, send updates
-  - **Embedded Proplet** (C/WAMR/Zephyr): Same FL support for microcontrollers
-- **Proxy**: Distributes model artifacts via OCI registry (chunked over MQTT)
-- **MQTT**: Communication channel for all coordination
 
-## FL Workflow
+- **Manager**: Generic task launcher + message forwarder (no FL logic)
+- **FML Coordinator** (sample app): Owns rounds, aggregation, model versioning
+- **Model Server** (sample app): Simple HTTP file server for model distribution
+- **Proplets**: Execute Wasm FL client workloads
+- **MQTT**: Communication channel
 
-### 1. Task Creation
+## Sample FML Application
 
-A federated learning task is created with the following configuration:
+See `examples/fl-demo/` for the complete sample implementation.
 
-```go
-task := Task{
-    Name:     "fl-training-job",
-    Kind:     TaskKindFederated,
-    Mode:     ModeTrain,  // or ModeInfer
-    ImageURL: "registry.example.com/fl-model:v1",
-    FL: &FLSpec{
-        JobID:          "job-uuid",
-        RoundID:        1,              // Starts at round 1
-        GlobalVersion:  "version-uuid",
-        TotalRounds:    3,              // Train for 3 rounds
-        ClientsPerRound: 2,            // Select 2 proplets per round
-        MinParticipants: 2,            // Need at least 2 updates to aggregate
-        RoundTimeoutSec: 300,          // 5 minute timeout per round
-        UpdateFormat:   "json-f64",    // Format: json-f64 or custom
-        ModelRef:       "registry.example.com/model:v1",
-        LocalEpochs:    1,             // Local training epochs
-        BatchSize:      32,
-        LearningRate:   0.01,
-    },
-}
-```
+### Manager Responsibilities (Generic)
 
-**Location**: `task/task.go`, `cli/fl.go`
+Manager is **workload-agnostic** and only:
 
-### 2. Round Initialization
+1. **Round Start Listener**: Subscribes to `fl/rounds/start`, launches tasks for participants
+2. **Update Forwarder**: Subscribes to `fl/rounds/+/updates/+`, forwards verbatim to `fml/updates`
 
-When a federated task is started:
+Manager does **NOT**:
+- Track FL rounds
+- Inject FL-specific env vars
+- Validate FL envelopes
+- Aggregate updates
+- Advance rounds
 
-1. **Manager** selects proplets using the scheduler (round-robin by default)
-2. **Manager** creates round 1 tasks for each selected proplet
-3. **Manager** injects FL environment variables into each task:
-   - `FL_JOB_ID`: Unique job identifier
-   - `FL_ROUND_ID`: Current round number (starts at 1)
-   - `FL_GLOBAL_VERSION`: Version of the global model
-   - `FL_GLOBAL_UPDATE_B64`: Base64-encoded global model weights (if available)
-   - `FL_FORMAT`: Update format (e.g., "json-f64")
-   - `FL_NUM_SAMPLES`: Number of training samples (for weighted averaging)
+### FML Coordinator Responsibilities
 
-**Location**: `manager/service.go::StartTask()`, `injectFLEnv()`
+The external coordinator (sample app) handles **all FL semantics**:
 
-### 3. Model Distribution
+1. Subscribes to `fl/rounds/start` to initialize round state
+2. Subscribes to `fml/updates` (forwarded by Manager)
+3. Tracks round progress in memory
+4. Aggregates updates using FedAvg (weighted by `num_samples`)
+5. Writes aggregated models to file system
+6. Publishes round completion to `fl/rounds/{round_id}/complete`
 
-If the model is referenced via `ImageURL` or `ModelRef`:
+## Workflow
 
-1. **Proplet** requests the model from Proxy via MQTT topic:
-   ```
-   m/{domain}/c/{channel}/registry/proplet
-   ```
+### 1. Round Start
 
-2. **Proxy** fetches the Wasm module from OCI registry
-
-3. **Proxy** chunks the binary (for large models) and streams via MQTT:
-   ```
-   m/{domain}/c/{channel}/registry/server
-   ```
-
-4. **Proplet** assembles chunks and stores the Wasm binary
-
-**Location**: `proxy/service.go`, `proplet/src/service.rs::handle_chunk()`
-
-### 4. Local Training on Proplets
-
-Each proplet executes the Wasm workload:
-
-1. **Proplet** receives start command via MQTT:
-   ```
-   m/{domain}/c/{channel}/control/manager/start
-   ```
-
-2. **Proplet** loads the Wasm module using Wasmtime runtime
-
-3. **Proplet** sets environment variables (including FL_* vars)
-
-4. **Proplet** calls the exported function (typically `train()` or `main()`)
-
-5. **Wasm Module** (e.g., `examples/fl-train/fl-train.go`):
-   - Reads `FL_GLOBAL_UPDATE_B64` to get current global model
-   - Trains locally on private data
-   - Produces model update (delta weights)
-   - Outputs update as JSON or binary
-
-6. **Proplet** captures the output and formats it as an `UpdateEnvelope`
-
-**Location**: 
-- Rust proplet: `proplet/src/service.rs::handle_start_command()`, `build_fl_update_envelope()`
-- Embedded proplet: `embed-proplet/src/mqtt_client.c::handle_start_command()`, `publish_results_with_error()`
-
-### 5. Update Publishing
-
-The proplet publishes the update envelope:
+External trigger (or coordinator) publishes to `fl/rounds/start`:
 
 ```json
 {
-  "task_id": "task-uuid",
-  "results": {
-    "job_id": "job-uuid",
-    "round_id": 1,
-    "global_version": "version-uuid",
-    "proplet_id": "proplet-1",
-    "num_samples": 100,
-    "update_b64": "base64-encoded-weights...",
-    "format": "json-f64"
-  }
+  "round_id": "r-0001",
+  "model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "task_wasm_image": "oci://example/fl-client-wasm:latest",
+  "participants": ["proplet-1", "proplet-2", "proplet-3"],
+  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+  "k_of_n": 3,
+  "timeout_s": 30
 }
 ```
 
-**MQTT Topic**: `m/{domain}/c/{channel}/control/proplet/results`
+### 2. Manager Launches Tasks
 
-**Location**: 
-- Rust proplet: `proplet/src/service.rs::build_fl_update_envelope()`
-- Embedded proplet: `embed-proplet/src/mqtt_client.c::publish_results_with_error()`
+Manager (generic handler):
+- Receives round start message
+- For each participant:
+  - Creates a standard Propeller task
+  - Pins task to specified proplet
+  - Sets env vars: `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS`
+  - Launches task
 
-### 6. Update Collection & Validation
+**No FL-specific validation or state tracking.**
 
-The Manager receives updates:
+### 3. Proplets Execute Wasm Client
 
-1. **Manager** subscribes to results topic: `m/{domain}/c/{channel}/control/proplet/results`
+Wasm client:
+- Reads `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS` from environment
+- Fetches model from `MODEL_URI` (HTTP)
+- Performs local training
+- Outputs JSON update
 
-2. **Manager** validates the update envelope:
-   - Checks `job_id` and `round_id` match the task
-   - Verifies `proplet_id` matches the expected proplet
-   - Ensures update format is valid
+### 4. Proplets Publish Updates
 
-3. **Manager** marks the task as completed and stores the update
+Proplets publish to: `fl/rounds/{round_id}/updates/{proplet_id}`
 
-**Location**: `manager/service.go::updateResultsHandler()`, `parseAndValidateTrainResults()`
-
-### 7. Aggregation Trigger
-
-After each update is received:
-
-1. **Manager** checks round progress: `roundProgress()`
-   - Counts expected proplets (tasks created for this round)
-   - Counts completed tasks (with valid updates)
-   - Collects all update envelopes
-
-2. **Manager** triggers aggregation when `completed >= expected`:
-   - Calls `tryAggregateAndAdvance()`
-   - Uses mutex to ensure aggregation happens only once per round
-
-**Location**: `manager/service.go::tryAggregateAndAdvance()`, `roundProgress()`
-
-### 8. FedAvg Aggregation
-
-The Manager aggregates updates using **Federated Averaging**:
-
-#### For `json-f64` format:
-
-```go
-// Weighted average: sum(update_i * num_samples_i) / total_samples
-for each update:
-    weights = decode_base64(update.update_b64)  // []float64
-    weight = update.num_samples / total_samples
-    aggregated[i] += weights[i] * weight
-
-aggregated[i] = aggregated[i] / total_samples
-```
-
-**Example:**
-- Proplet 1: `[1.0, 2.0, 3.0]` with 10 samples
-- Proplet 2: `[2.0, 3.0, 4.0]` with 20 samples
-- Total: 30 samples
-- Aggregated: `[(1*10 + 2*20)/30, (2*10 + 3*20)/30, (3*10 + 4*20)/30]`
-- Result: `[1.67, 2.67, 3.67]`
-
-#### For other formats:
-
-Updates are concatenated with a delimiter (for custom aggregation logic).
-
-**Location**: `manager/service.go::aggregateJSONF64()`, `aggregateConcat()`
-
-### 9. Round Progression
-
-After aggregation completes:
-
-1. **Manager** stores the aggregated envelope:
-   ```
-   Key: fl/{job_id}/{round_id}/aggregate
-   Value: UpdateEnvelope (with aggregated weights)
-   ```
-
-2. **Manager** publishes aggregated model (optional notification):
-   ```
-   Topic: m/{domain}/c/{channel}/control/manager/fl/aggregated
-   ```
-
-3. **Manager** creates next round tasks:
-   - Finds all tasks from current round
-   - Creates new tasks with `round_id = current_round + 1`
-   - Injects new global model via `FL_GLOBAL_UPDATE_B64`
-   - Starts the new round tasks
-
-4. **Process repeats** until `round_id > total_rounds`
-
-**Location**: `manager/service.go::startNextRound()`, `buildNextRoundTask()`
-
-### 10. Round Completion
-
-When all rounds complete:
-
-- Final aggregated model is stored
-- All tasks are marked as completed
-- FL job is finished
-
-## Data Structures
-
-### UpdateEnvelope
-
-```go
-type UpdateEnvelope struct {
-    TaskID        string         // Task that produced this update
-    JobID         string         // FL job identifier
-    RoundID       uint64         // Round number
-    GlobalVersion string         // Model version
-    PropletID     string         // Which proplet produced this
-    NumSamples    uint64         // Number of training samples (for weighting)
-    UpdateB64     string         // Base64-encoded model update
-    Format        string         // "json-f64", "f32-delta", etc.
-    Metrics       map[string]any // Optional metrics
+```json
+{
+  "round_id": "r-0001",
+  "proplet_id": "proplet-2",
+  "base_model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "num_samples": 512,
+  "metrics": {"loss": 0.73},
+  "update": {"w": [0.12, -0.05, 1.01], "b": 0.33}
 }
 ```
 
-**Location**: `pkg/fl/types.go`
+### 5. Manager Forwards Updates
 
-### FLSpec
+Manager (generic forwarder):
+- Receives update from `fl/rounds/+/updates/+`
+- Forwards **verbatim** to `fml/updates`
+- Adds optional timestamp metadata
 
-```go
-type FLSpec struct {
-    JobID          string         // Unique job ID
-    RoundID        uint64         // Current round
-    GlobalVersion  string         // Model version
-    MinParticipants uint64        // Min clients for aggregation
-    RoundTimeoutSec uint64         // Round timeout
-    ClientsPerRound uint64         // Clients per round
-    TotalRounds    uint64         // Total rounds to run
-    UpdateFormat   string         // Update format
-    ModelRef       string         // Model artifact reference
-    LocalEpochs    uint64         // Local training epochs
-    BatchSize      uint64         // Batch size
-    LearningRate   float64        // Learning rate
+**No inspection, validation, or aggregation.**
+
+### 6. Coordinator Aggregates
+
+Coordinator:
+- Receives updates from `fml/updates`
+- Tracks round state
+- When `k_of_n` updates received (or timeout):
+  - Aggregates using FedAvg (weighted by `num_samples`)
+  - Writes new model: `global_model_v{N+1}.json`
+  - Publishes completion: `fl/rounds/{round_id}/complete`
+
+## Model Format
+
+Simple JSON format (demo):
+
+```json
+{
+  "w": [0.10, -0.03, 1.00],
+  "b": 0.31,
+  "version": 1
 }
 ```
 
-**Location**: `task/task.go`
+Served by simple HTTP file server at `http://model-server:8080/models/global_model_v{N}.json`
 
 ## MQTT Topics
 
 | Topic Pattern | Direction | Purpose |
 |--------------|-----------|---------|
-| `m/{domain}/c/{channel}/control/manager/start` | Manager → Proplet | Start task (includes FL spec) |
-| `m/{domain}/c/{channel}/control/proplet/results` | Proplet → Manager | Send training results/updates |
-| `m/{domain}/c/{channel}/control/manager/fl/aggregated` | Manager → All | Publish aggregated model (optional) |
-| `m/{domain}/c/{channel}/registry/proplet` | Proplet → Proxy | Request model artifact |
-| `m/{domain}/c/{channel}/registry/server` | Proxy → Proplet | Stream model chunks |
-
-## Embedded Proplet Specific Notes
-
-The embedded proplet (C/WAMR/Zephyr) implements the same FL protocol as the Rust proplet, with some implementation differences:
-
-### Implementation Details
-
-1. **FL Task Detection**: 
-   - Parses `fl` object from start command JSON
-   - Also detects FL tasks via `FL_JOB_ID` environment variable
-   - Location: `embed-proplet/src/mqtt_client.c::handle_start_command()`
-
-2. **FL Field Parsing**:
-   - Parses all FL spec fields: `job_id`, `round_id`, `global_version`, `update_format`
-   - Also parses hyperparameters: `min_participants`, `total_rounds`, `local_epochs`, `batch_size`, `learning_rate`
-   - Environment variables override FL spec fields when present
-   - Location: `embed-proplet/src/mqtt_client.c::handle_start_command()`
-
-3. **Update Envelope Creation**:
-   - Matches Rust proplet structure exactly
-   - Includes all required fields: `task_id`, `job_id`, `round_id`, `global_version`, `proplet_id`, `num_samples`, `update_b64`, `format`, `metrics`
-   - Publishes to same topic: `m/{domain}/c/{channel}/control/proplet/results`
-   - Location: `embed-proplet/src/mqtt_client.c::publish_results_with_error()`
-
-4. **Error Handling**:
-   - All Wasm execution failures publish structured error envelopes
-   - Error messages included in `error` field of result message
-   - Validates update size limits (max: 1536 bytes before base64 encoding)
-   - Location: `embed-proplet/src/wasm_handler.c::execute_wasm_module()`
-
-5. **Validation**:
-   - Validates FL task has required `job_id` field
-   - Validates update payload size before encoding
-   - Ensures null-terminated strings for all parsed fields
-   - Location: `embed-proplet/src/mqtt_client.c::handle_start_command()`, `publish_results_with_error()`
-
-### Memory Constraints
-
-- **Update Size Limit**: 1536 bytes (before base64 encoding) - configurable via `MAX_UPDATE_B64_LEN`
-- **Base64 Buffer**: 2048 bytes for encoded updates
-- **Task Structure**: Fixed-size buffers for all FL fields (see `MAX_ID_LEN`, `MAX_NAME_LEN`, etc.)
-
-### Testing
-
-A host-build test is provided to verify envelope structure:
-- Location: `embed-proplet/test_fl_envelope.c`
-- Compile: `gcc -o test_fl_envelope test_fl_envelope.c -I../src -L. -lmqtt_client -lcjson -lm`
-- Run: `./test_fl_envelope`
-
-For full integration testing, use the Manager's FL integration test suite which exercises both Rust and embedded proplets.
-
-### Parity with Rust Proplet
-
-The embedded proplet maintains full parity with the Rust proplet:
-- ✅ Same UpdateEnvelope structure
-- ✅ Same MQTT topic naming
-- ✅ Same validation rules
-- ✅ Same error handling semantics
-- ✅ Same FL environment variable support
-
-## Key Algorithms
-
-### FedAvg (Federated Averaging)
-
-The aggregation algorithm:
-
-```
-1. Collect updates from N clients: {u₁, u₂, ..., uₙ}
-2. Each update has num_samples: {n₁, n₂, ..., nₙ}
-3. Total samples: N = Σnᵢ
-4. Weighted average: w_agg = Σ(uᵢ * nᵢ) / N
-```
-
-**Implementation**: `manager/service.go::aggregateJSONF64()`
-
-### Round Progress Tracking
-
-The manager tracks:
-- **Expected**: Number of proplets that should participate (tasks created)
-- **Completed**: Number of proplets that sent updates
-- **Updates**: Map of `proplet_id → UpdateEnvelope`
-
-Aggregation triggers when `completed >= expected` (or timeout).
-
-**Implementation**: `manager/service.go::roundProgress()`
-
-## Privacy & Security
-
-- **No Raw Data**: Only model updates (weights) are transmitted, never training data
-- **Secure Communication**: MQTT over SuperMQ with authentication
-- **Isolated Execution**: Wasm modules run in isolated runtime (Wasmtime)
-- **Update Validation**: Manager validates job_id, round_id, proplet_id to prevent attacks
-
-## Example Flow
-
-```
-1. User creates FL task via CLI:
-   $ propeller-cli fl create my-fl-job --mode train --rounds 3 --clients-per-round 2
-
-2. Manager creates round 1 tasks for 2 proplets
-
-3. Proplet 1 & 2 receive start commands, fetch model, train locally
-
-4. Proplet 1 sends update: [1.0, 2.0] with 10 samples
-   Proplet 2 sends update: [2.0, 3.0] with 20 samples
-
-5. Manager aggregates: [(1*10 + 2*20)/30, (2*10 + 3*20)/30] = [1.67, 2.67]
-
-6. Manager creates round 2 tasks with aggregated model [1.67, 2.67]
-
-7. Process repeats for rounds 2 and 3
-
-8. Final aggregated model is the result
-```
+| `fl/rounds/start` | External → Manager | Start FL round (generic task launch) |
+| `fl/rounds/{round_id}/updates/{proplet_id}` | Proplet → Manager | Send training updates |
+| `fml/updates` | Manager → Coordinator | Forwarded updates (verbatim) |
+| `fl/rounds/{round_id}/complete` | Coordinator → All | Round completion notification |
 
 ## Code Locations
 
-- **Task Definition**: `task/task.go`
-- **Manager Orchestration**: `manager/service.go`
-- **Rust Proplet Execution**: `proplet/src/service.rs`
-- **Embedded Proplet Execution**: `embed-proplet/src/mqtt_client.c`, `embed-proplet/src/wasm_handler.c`
-- **Aggregation Logic**: `manager/service.go::aggregateJSONF64()`
-- **Update Envelope**: `pkg/fl/types.go`
-- **CLI Commands**: `cli/fl.go`
-- **Example Wasm Module**: `examples/fl-train/fl-train.go`
+- **Sample FML Coordinator**: `examples/fl-demo/coordinator/`
+- **Sample Model Server**: `examples/fl-demo/model-server/`
+- **Sample FL Client Wasm**: `examples/fl-demo/client-wasm/`
+- **Manager Generic Handlers**: `manager/service.go::handleRoundStart()`, `handleUpdateForward()`
+- **Docker Compose**: `examples/fl-demo/compose.yaml`
 
-## Testing
+## Key Design Principles
 
-- **Unit Tests**: `manager/service_test.go` (FedAvg correctness)
-- **Integration Tests**: `manager/fl_integration_test.go` (end-to-end workflow)
-- **Embedded Proplet Test**: `embed-proplet/test_fl_envelope.c` (envelope structure validation)
+1. **Manager is workload-agnostic**: No FL-specific logic in Manager
+2. **Coordinator owns FL semantics**: All aggregation, round tracking, model versioning
+3. **Simple model distribution**: HTTP file server (no OCI, no chunking for demo)
+4. **Generic message forwarding**: Manager forwards updates verbatim
 
-Run tests: 
-- Manager: `make test` or `go test -v ./manager`
-- Embedded: `gcc -o test_fl_envelope embed-proplet/test_fl_envelope.c -Iembed-proplet/src -L. -lmqtt_client -lcjson -lm && ./test_fl_envelope`
+## Deprecated Components
+
+The following are **deprecated** and kept only for backward compatibility:
+
+- `task.FLSpec`: FL spec embedded in tasks
+- `task.TaskKindFederated`: Federated task kind
+- Manager FL aggregation functions (removed)
+- Manager FL env injection (removed)
+- Manager FL round management (removed)
+
+See `examples/fl-demo/` for the new architecture.
+
+## Running the Sample
+
+See `examples/fl-demo/README.md` for complete instructions.
+
+Quick start:
+
+```bash
+cd examples/fl-demo
+docker compose up -d
+
+# Trigger a round (using mosquitto_pub)
+mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
+  "round_id": "r-0001",
+  "model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "task_wasm_image": "oci://example/fl-client-wasm:latest",
+  "participants": ["proplet-1", "proplet-2", "proplet-3"],
+  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+  "k_of_n": 3,
+  "timeout_s": 30
+}'
+```
+
+## Limitations (Sample Application)
+
+- No secure aggregation
+- No differential privacy
+- No persistence (round state in memory)
+- Simple model format (JSON)
+- No large model support
+- No embedded FL state in task specs
+
+These are intentional limitations for the sample application. Production FL systems would implement these features in the external coordinator.
