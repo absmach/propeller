@@ -23,13 +23,14 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 
 ### 2. Model Server (`model-server/`)
 
-- Simple HTTP file server
-- Serves models from `/tmp/fl-models/`
-- Accessible at `http://model-server:8080/models/global_model_v{N}.json`
+- Lightweight MQTT-based model distribution
+- Publishes models to `fl/models/global_model_v{N}` topics
+- Subscribes to `fl/models/publish` to receive new models from coordinator
+- Stores models in `/tmp/fl-models/` for persistence
 
 ### 3. Client Wasm (`client-wasm/`)
 
-- Reads `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS` from environment
+- Reads `ROUND_ID`, `MODEL_URI` (MQTT topic), `HYPERPARAMS` from environment
 - Performs toy local training
 - Outputs JSON update in format:
   ```json
@@ -45,25 +46,27 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 ## Workflow
 
 1. **Round Start**: Coordinator (or external trigger) publishes to `fl/rounds/start`:
-   ```json
-   {
-     "round_id": "r-0001",
-     "model_uri": "http://model-server:8080/models/global_model_v0.json",
-     "task_wasm_image": "oci://example/fl-client-wasm:latest",
-     "participants": ["proplet-1", "proplet-2", "proplet-3"],
-     "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
-     "k_of_n": 3,
-     "timeout_s": 30
-   }
-   ```
+```json
+{
+  "round_id": "r-0001",
+  "model_uri": "fl/models/global_model_v0",
+  "task_wasm_image": "oci://example/fl-client-wasm:latest",
+  "participants": ["proplet-1", "proplet-2", "proplet-3"],
+  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+  "k_of_n": 3,
+  "timeout_s": 30
+}
+```
 
 2. **Manager**: Listens to `fl/rounds/start`, launches tasks for each participant (workload-agnostic)
 
-3. **Proplets**: Execute Wasm client, publish updates to `fl/rounds/{round_id}/updates/{proplet_id}`
+3. **Proplets**: Execute Wasm client, subscribe to model topic from `MODEL_URI`, publish updates to `fl/rounds/{round_id}/updates/{proplet_id}`
 
 4. **Manager**: Forwards updates verbatim from `fl/rounds/+/updates/+` to `fml/updates`
 
-5. **Coordinator**: Receives updates, aggregates when `k_of_n` reached, writes new model, publishes completion
+5. **Coordinator**: Receives updates, aggregates when `k_of_n` reached, writes new model, publishes to `fl/models/publish`
+
+6. **Model Server**: Receives model from coordinator, publishes to `fl/models/global_model_v{N}` topic
 
 ## Running the Demo
 
@@ -94,7 +97,7 @@ Publish a round start message to MQTT:
 # Using mosquitto_pub (if installed)
 mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
   "round_id": "r-0001",
-  "model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "model_uri": "fl/models/global_model_v0",
   "task_wasm_image": "oci://example/fl-client-wasm:latest",
   "participants": ["proplet-1", "proplet-2", "proplet-3"],
   "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
@@ -113,7 +116,7 @@ mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
 
 1. **Manager is workload-agnostic**: No FL-specific logic in Manager
 2. **Coordinator owns FL semantics**: All aggregation, round tracking, model versioning
-3. **Simple model distribution**: HTTP file server (no OCI, no chunking for demo)
+3. **Lightweight MQTT-based distribution**: Models distributed via MQTT topics (consistent with Propeller architecture)
 4. **Generic message forwarding**: Manager forwards updates verbatim
 
 ## Limitations (Demo Only)

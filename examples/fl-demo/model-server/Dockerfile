@@ -13,5 +13,4 @@ WORKDIR /root/
 
 COPY --from=builder /app/model-server .
 
-EXPOSE 8080
 CMD ["./model-server"]
