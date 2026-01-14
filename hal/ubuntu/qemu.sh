@@ -245,16 +245,18 @@ runcmd:
   # Install Rust toolchain (needed for building from source)
   - |
     echo "=== Installing Rust toolchain ==="
+    export HOME=/root
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    . /root/.cargo/env
-    echo '. /root/.cargo/env' >> /root/.bashrc
+    export PATH="/root/.cargo/bin:$PATH"
+    echo 'export PATH="/root/.cargo/bin:$PATH"' >> /root/.bashrc
     rustc --version
     cargo --version
   
   # Build and install Attestation Agent
   - |
     echo "=== Building Attestation Agent from source ==="
-    . /root/.cargo/env
+    export HOME=/root
+    export PATH="/root/.cargo/bin:$PATH"
     cd /tmp
     git clone --depth 1 https://github.com/confidential-containers/guest-components.git
     cd guest-components/attestation-agent
@@ -279,7 +281,8 @@ runcmd:
   # Build and install Proplet
   - |
     echo "=== Building Proplet from source ==="
-    . /root/.cargo/env
+    export HOME=/root
+    export PATH="/root/.cargo/bin:$PATH"
     cd /tmp
     git clone --depth 1 https://github.com/absmach/propeller.git
     cd propeller/proplet
