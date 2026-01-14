@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,24 +15,24 @@ import (
 )
 
 type RoundState struct {
-	RoundID      string
-	ModelURI     string
-	KOfN         int
-	TimeoutS     int
-	StartTime    time.Time
-	Updates      []Update
-	Completed    bool
-	mu           sync.Mutex
+	RoundID   string
+	ModelURI  string
+	KOfN      int
+	TimeoutS  int
+	StartTime time.Time
+	Updates   []Update
+	Completed bool
+	mu        sync.Mutex
 }
 
 type Update struct {
-	RoundID        string                 `json:"round_id"`
-	PropletID      string                 `json:"proplet_id"`
-	BaseModelURI   string                 `json:"base_model_uri"`
-	NumSamples     int                    `json:"num_samples"`
-	Metrics        map[string]interface{} `json:"metrics"`
-	Update         map[string]interface{} `json:"update"`
-	ForwardedAt    string                 `json:"forwarded_at,omitempty"`
+	RoundID      string                 `json:"round_id"`
+	PropletID    string                 `json:"proplet_id"`
+	BaseModelURI string                 `json:"base_model_uri"`
+	NumSamples   int                    `json:"num_samples"`
+	Metrics      map[string]interface{} `json:"metrics"`
+	Update       map[string]interface{} `json:"update"`
+	ForwardedAt  string                 `json:"forwarded_at,omitempty"`
 }
 
 type Model struct {
@@ -43,17 +42,22 @@ type Model struct {
 }
 
 var (
-	rounds = make(map[string]*RoundState)
-	roundsMu sync.RWMutex
+	rounds       = make(map[string]*RoundState)
+	roundsMu     sync.RWMutex
 	modelVersion = 0
-	modelMu sync.Mutex
-	mqttClient mqtt.Client
+	modelMu      sync.Mutex
+	mqttClient   mqtt.Client
 )
 
 func main() {
 	// MQTT connection options
+	broker := "tcp://localhost:1883"
+	if b := os.Getenv("MQTT_BROKER"); b != "" {
+		broker = b
+	}
+
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker("tcp://localhost:1883")
+	opts.AddBroker(broker)
 	opts.SetClientID("fml-coordinator")
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetry(true)
@@ -257,9 +261,14 @@ func aggregateAndAdvance(round *RoundState) {
 		Version: newVersion,
 	}
 
-	// Write model to file (simple file server will serve this)
-	modelFile := fmt.Sprintf("/tmp/fl-models/global_model_v%d.json", newVersion)
-	if err := os.MkdirAll("/tmp/fl-models", 0755); err != nil {
+	// Save model to file
+	modelsDir := "/tmp/fl-models"
+	if dir := os.Getenv("MODELS_DIR"); dir != "" {
+		modelsDir = dir
+	}
+
+	modelFile := fmt.Sprintf("%s/global_model_v%d.json", modelsDir, newVersion)
+	if err := os.MkdirAll(modelsDir, 0755); err != nil {
 		slog.Error("Failed to create models directory", "error", err)
 		return
 	}
@@ -277,12 +286,21 @@ func aggregateAndAdvance(round *RoundState) {
 
 	slog.Info("Aggregated model saved", "round_id", round.RoundID, "version", newVersion, "file", modelFile)
 
+	// Publish model to MQTT (model server will pick it up and republish)
+	if mqttClient != nil {
+		if token := mqttClient.Publish("fl/models/publish", 0, false, modelJSON); token.Wait() && token.Error() != nil {
+			slog.Warn("Failed to publish model to model server", "error", token.Error())
+		} else {
+			slog.Info("Published model to model server", "version", newVersion)
+		}
+	}
+
 	// Publish round completion
 	completionMsg := map[string]interface{}{
 		"round_id":      round.RoundID,
 		"model_version": newVersion,
-		"model_uri":     fmt.Sprintf("http://model-server:8080/models/global_model_v%d.json", newVersion),
-		"num_updates":    len(updates),
+		"model_topic":   fmt.Sprintf("fl/models/global_model_v%d", newVersion),
+		"num_updates":   len(updates),
 		"total_samples": totalSamples,
 		"completed_at":  time.Now().UTC().Format(time.RFC3339),
 	}

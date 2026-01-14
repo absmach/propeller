@@ -12,25 +12,20 @@ services:
     networks:
       - fl-demo
 
-  # Model Server
+  # Model Server (MQTT-based)
   model-server:
     build:
       context: ./model-server
       dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
+    depends_on:
+      - mqtt
     volumes:
       - fl-models:/tmp/fl-models
     environment:
-      - PORT=8080
       - MODELS_DIR=/tmp/fl-models
+      - MQTT_BROKER=tcp://mqtt:1883
     networks:
       - fl-demo
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/models/global_model_v0.json"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   # FML Coordinator
   coordinator:
@@ -42,6 +37,7 @@ services:
       - model-server
     environment:
       - MQTT_BROKER=tcp://mqtt:1883
+      - MODELS_DIR=/tmp/fl-models
     networks:
       - fl-demo
     volumes:

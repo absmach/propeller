@@ -50,17 +50,18 @@ func main() {
 
 	// Initialize model (in a real implementation, we'd fetch from modelURI)
 	// For this demo, we'll use a simple model structure
+	// Note: modelURI is now an MQTT topic like "fl/models/global_model_v0"
 	model := map[string]interface{}{
 		"w": []float64{0.0, 0.0, 0.0}, // weights
 		"b": 0.0,                      // bias
 	}
 
-	// If modelURI is provided, in a real implementation we'd fetch it
+	// If modelURI is provided, in a real implementation we'd subscribe to MQTT topic
 	// For this demo, we'll simulate loading a model
 	if modelURI != "" {
-		// In a real implementation: fetch model from modelURI via HTTP
+		// In a real implementation: subscribe to MQTT topic from modelURI
 		// For now, we'll use a simple initialization
-		// model = fetchModel(modelURI)
+		// model = fetchModelFromMQTT(modelURI)
 	}
 
 	// Simulate local training

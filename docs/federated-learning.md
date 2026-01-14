@@ -30,7 +30,7 @@ Propeller is a **generic Wasm orchestrator** (orchestration + transport + execut
 
 - **Manager**: Generic task launcher + message forwarder (no FL logic)
 - **FML Coordinator** (sample app): Owns rounds, aggregation, model versioning
-- **Model Server** (sample app): Simple HTTP file server for model distribution
+- **Model Server** (sample app): Lightweight MQTT-based model distribution
 - **Proplets**: Execute Wasm FL client workloads
 - **MQTT**: Communication channel
 
@@ -72,7 +72,7 @@ External trigger (or coordinator) publishes to `fl/rounds/start`:
 ```json
 {
   "round_id": "r-0001",
-  "model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "model_uri": "fl/models/global_model_v0",
   "task_wasm_image": "oci://example/fl-client-wasm:latest",
   "participants": ["proplet-1", "proplet-2", "proplet-3"],
   "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
@@ -96,8 +96,8 @@ Manager (generic handler):
 ### 3. Proplets Execute Wasm Client
 
 Wasm client:
-- Reads `ROUND_ID`, `MODEL_URI`, `HYPERPARAMS` from environment
-- Fetches model from `MODEL_URI` (HTTP)
+- Reads `ROUND_ID`, `MODEL_URI` (MQTT topic), `HYPERPARAMS` from environment
+- Subscribes to model from `MODEL_URI` MQTT topic
 - Performs local training
 - Outputs JSON update
 
@@ -109,7 +109,7 @@ Proplets publish to: `fl/rounds/{round_id}/updates/{proplet_id}`
 {
   "round_id": "r-0001",
   "proplet_id": "proplet-2",
-  "base_model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "base_model_uri": "fl/models/global_model_v0",
   "num_samples": 512,
   "metrics": {"loss": 0.73},
   "update": {"w": [0.12, -0.05, 1.01], "b": 0.33}
@@ -147,7 +147,7 @@ Simple JSON format (demo):
 }
 ```
 
-Served by simple HTTP file server at `http://model-server:8080/models/global_model_v{N}.json`
+Distributed via MQTT topic `fl/models/global_model_v{N}` (lightweight, consistent with Propeller architecture)
 
 ## MQTT Topics
 
@@ -156,6 +156,8 @@ Served by simple HTTP file server at `http://model-server:8080/models/global_mod
 | `fl/rounds/start` | External → Manager | Start FL round (generic task launch) |
 | `fl/rounds/{round_id}/updates/{proplet_id}` | Proplet → Manager | Send training updates |
 | `fml/updates` | Manager → Coordinator | Forwarded updates (verbatim) |
+| `fl/models/publish` | Coordinator → Model Server | Publish new aggregated model |
+| `fl/models/global_model_v{N}` | Model Server → All | Model distribution (retained messages) |
 | `fl/rounds/{round_id}/complete` | Coordinator → All | Round completion notification |
 
 ## Code Locations
@@ -170,7 +172,7 @@ Served by simple HTTP file server at `http://model-server:8080/models/global_mod
 
 1. **Manager is workload-agnostic**: No FL-specific logic in Manager
 2. **Coordinator owns FL semantics**: All aggregation, round tracking, model versioning
-3. **Simple model distribution**: HTTP file server (no OCI, no chunking for demo)
+3. **Lightweight MQTT-based distribution**: Models distributed via MQTT (consistent with Propeller architecture)
 4. **Generic message forwarding**: Manager forwards updates verbatim
 
 ## Deprecated Components
@@ -198,7 +200,7 @@ docker compose up -d
 # Trigger a round (using mosquitto_pub)
 mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
   "round_id": "r-0001",
-  "model_uri": "http://model-server:8080/models/global_model_v0.json",
+  "model_uri": "fl/models/global_model_v0",
   "task_wasm_image": "oci://example/fl-client-wasm:latest",
   "participants": ["proplet-1", "proplet-2", "proplet-3"],
   "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
