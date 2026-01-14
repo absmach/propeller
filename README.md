@@ -21,6 +21,31 @@
 
 ![Propeller Orchestration Diagram](docs/architecture.svg)
 
+## 🚀 Quick Start with CVM
+
+Deploy Propeller's **Proplet** worker on a Confidential VM using QEMU:
+
+```bash
+# Set configuration
+export PROPLET_DOMAIN_ID="your-domain-id"
+export PROPLET_CLIENT_ID="your-client-id"
+export PROPLET_CLIENT_KEY="your-client-key"
+export PROPLET_CHANNEL_ID="your-channel-id"
+export PROPLET_MQTT_ADDRESS="tcp://mqtt.example.com:1883"
+
+# Build and run CVM
+cd hal/ubuntu
+sudo ./qemu.sh
+```
+
+The script automatically:
+- ✅ Downloads Ubuntu cloud image
+- ✅ Builds and installs **Proplet**, **Attestation Agent**, and **Wasmtime**
+- ✅ Configures systemd services
+- ✅ Supports Intel TDX and AMD SEV
+
+📚 **[CVM Setup Guide](hal/ubuntu/README.md)** - Complete QEMU/CVM deployment instructions
+
 ## 📖 Documentation
 
 For setup instructions, API references, and usage examples, see the documentation:
