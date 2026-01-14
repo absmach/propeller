@@ -376,7 +376,7 @@ if [ "$TDX_AVAILABLE" = true ]; then
   QEMU_OPTS="$QEMU_OPTS -object memory-backend-memfd,id=ram1,size=$RAM,share=true,prealloc=false"
   QEMU_OPTS="$QEMU_OPTS -m $RAM"
   QEMU_OPTS="$QEMU_OPTS -cpu host,pmu=off"
-  QEMU_OPTS="$QEMU_OPTS -object {\\\"qom-type\\\":\\\"tdx-guest\\\",\\\"id\\\":\\\"tdx0\\\",\\\"quote-generation-socket\\\":{\\\"type\\\":\\\"vsock\\\",\\\"cid\\\":\\\"2\\\",\\\"port\\\":\\\"4050\\\"}}"
+  QEMU_OPTS="$QEMU_OPTS -object {\"qom-type\":\"tdx-guest\",\"id\":\"tdx0\",\"quote-generation-socket\":{\"type\":\"vsock\",\"cid\":\"2\",\"port\":\"4050\"}}"
   QEMU_OPTS="$QEMU_OPTS -machine q35,confidential-guest-support=tdx0,memory-backend=ram1,kernel-irqchip=split,hpet=off"
   QEMU_OPTS="$QEMU_OPTS -bios /usr/share/ovmf/OVMF.fd"
   QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile="
