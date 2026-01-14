@@ -54,24 +54,24 @@ sudo ENABLE_CVM=none ./qemu.sh
 
 ### Required Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `PROPLET_DOMAIN_ID` | SuperMQ domain identifier | `my-domain-123` |
-| `PROPLET_CLIENT_ID` | Unique client identifier | `proplet-worker-01` |
-| `PROPLET_CLIENT_KEY` | Authentication key | `secret-key-here` |
-| `PROPLET_CHANNEL_ID` | Communication channel ID | `channel-456` |
+| Variable             | Description               | Example               |
+|----------------------|---------------------------|-----------------------|
+| `PROPLET_DOMAIN_ID`  | SuperMQ domain identifier | `my-domain-123`       |
+| `PROPLET_CLIENT_ID`  | Unique client identifier  | `proplet-worker-01`   |
+| `PROPLET_CLIENT_KEY` | Authentication key        | `secret-key-here`     |
+| `PROPLET_CHANNEL_ID` | Communication channel ID  | `channel-456`         |
 
 ### Optional Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PROPLET_MQTT_ADDRESS` | MQTT broker address | `tcp://localhost:1883` |
-| `KBS_URL` | Key Broker Service URL | `https://kbs.example.com` |
-| `KBS_PORT` | KBS port | `8080` |
-| `ENABLE_CVM` | CVM mode (auto/tdx/sev/none) | `auto` |
-| `RAM` | VM memory | `8192M` |
-| `CPU` | CPU cores | `4` |
-| `DISK_SIZE` | Disk size | `40G` |
+| Variable               | Description                  | Default                   |
+|------------------------|------------------------------|---------------------------|
+| `PROPLET_MQTT_ADDRESS` | MQTT broker address          | `tcp://localhost:1883`    |
+| `KBS_URL`              | Key Broker Service URL       | `https://kbs.example.com` |
+| `KBS_PORT`             | KBS port                     | `8080`                    |
+| `ENABLE_CVM`           | CVM mode (auto/tdx/sev/none) | `auto`                    |
+| `RAM`                  | VM memory                    | `8192M`                   |
+| `CPU`                  | CPU cores                    | `4`                       |
+| `DISK_SIZE`            | Disk size                    | `40G`                     |
 
 ## What the Script Does
 
@@ -206,17 +206,17 @@ The VM includes:
 ┌─────────────────────────────────────────────┐
 │           Propeller CVM (Ubuntu)            │
 │                                             │
-│  ┌──────────────┐      ┌────────────────┐  │
-│  │ Attestation  │      │    Wasmtime    │  │
-│  │    Agent     │      │   (Runtime)    │  │
-│  │ (port 50002) │      └────────────────┘  │
-│  └──────────────┘               ▲          │
-│         │                       │          │
-│         │                       │          │
-│  ┌──────▼───────────────────────┴────────┐ │
-│  │           Proplet                     │ │
-│  │  (WebAssembly Orchestrator)          │ │
-│  └───────────────────────────────────────┘ │
+│  ┌──────────────┐      ┌────────────────┐   │
+│  │ Attestation  │      │    Wasmtime    │   │
+│  │    Agent     │      │   (Runtime)    │   │
+│  │ (port 50002) │      └────────────────┘   │
+│  └──────────────┘               ▲           │
+│         │                       │           │
+│         │                       │           │
+│  ┌──────▼───────────────────────┴────────┐  │
+│  │           Proplet                     │  │
+│  │  (WebAssembly Orchestrator)           │  │
+│  └───────────────────────────────────────┘  │
 │                    │                        │
 └────────────────────┼────────────────────────┘
                      │ MQTT
