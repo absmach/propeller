@@ -112,6 +112,12 @@ struct task {
   char fl_global_update_b64[MAX_BASE64_LEN];
   char fl_format[MAX_NAME_LEN];
   char fl_num_samples_str[32];
+  
+  // New FML architecture environment variables
+  char round_id[MAX_ID_LEN];        // ROUND_ID (e.g., "r-0001")
+  char model_uri[MAX_URL_LEN];      // MODEL_URI (MQTT topic, e.g., "fl/models/global_model_v0")
+  char hyperparams[512];            // HYPERPARAMS (JSON string)
+  bool is_fml_task;                 // True if ROUND_ID is set
 };
 
 static struct task g_current_task;
@@ -219,8 +225,17 @@ static void mqtt_event_handler(struct mqtt_client *client,
     LOG_INF("Payload: %s", payload);
 
     const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
+    char topic_str[256];
+    snprintf(topic_str, sizeof(topic_str), "%.*s", (int)rtopic->size, rtopic->utf8);
+    topic_str[sizeof(topic_str) - 1] = '\0';
 
-    if (rtopic->size == strlen(start_topic) &&
+    // Check if this is a model topic (FML architecture) - check before standard topics
+    if (g_current_task.is_fml_task && strlen(g_current_task.model_uri) > 0 &&
+        strcmp(topic_str, g_current_task.model_uri) == 0) {
+      LOG_INF("Received model from topic: %s (payload: %d bytes)", topic_str, (int)pub->message.payload.len);
+      // Model received as retained message - Wasm module can use MODEL_URI to know which model to use
+      // In a full implementation, we'd parse and cache the model JSON here
+    } else if (rtopic->size == strlen(start_topic) &&
         memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
       handle_start_command(payload);
     } else if (rtopic->size == strlen(stop_topic) &&
@@ -280,6 +295,26 @@ static void prepare_publish_param(struct mqtt_publish_param *param,
   param->message_id = sys_rand32_get() & 0xFFFF;
   param->dup_flag = 0;
   param->retain_flag = 0;
+}
+
+// Publish directly to a topic (for FML updates that don't use domain/channel template)
+static int publish_direct(const char *topic, const char *payload) {
+  if (!mqtt_connected) {
+    LOG_ERR("MQTT client is not connected. Publish aborted.");
+    return -ENOTCONN;
+  }
+
+  struct mqtt_publish_param param;
+  prepare_publish_param(&param, topic, payload);
+
+  int ret = mqtt_publish(&client_ctx, &param);
+  if (ret != 0) {
+    LOG_ERR("Failed to publish to topic %s. Error: %d", topic, ret);
+    return ret;
+  }
+
+  LOG_INF("Published to topic: %s", topic);
+  return 0;
 }
 
 int publish(const char *domain_id, const char *channel_id,
@@ -552,8 +587,31 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  // Parse environment variables (FL_* vars)
+  // Parse environment variables (new FML architecture: ROUND_ID, MODEL_URI, HYPERPARAMS)
   if (env != NULL && cJSON_IsObject(env)) {
+    cJSON *round_id_env = cJSON_GetObjectItemCaseSensitive(env, "ROUND_ID");
+    cJSON *model_uri_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_URI");
+    cJSON *hyperparams_env = cJSON_GetObjectItemCaseSensitive(env, "HYPERPARAMS");
+    
+    if (cJSON_IsString(round_id_env) && round_id_env->valuestring) {
+      strncpy(t.round_id, round_id_env->valuestring, sizeof(t.round_id) - 1);
+      t.round_id[sizeof(t.round_id) - 1] = '\0';
+      t.is_fml_task = true;
+      LOG_INF("FML task detected: ROUND_ID=%s", t.round_id);
+    }
+    
+    if (cJSON_IsString(model_uri_env) && model_uri_env->valuestring) {
+      strncpy(t.model_uri, model_uri_env->valuestring, sizeof(t.model_uri) - 1);
+      t.model_uri[sizeof(t.model_uri) - 1] = '\0';
+      LOG_INF("FML model URI: %s", t.model_uri);
+    }
+    
+    if (cJSON_IsString(hyperparams_env) && hyperparams_env->valuestring) {
+      strncpy(t.hyperparams, hyperparams_env->valuestring, sizeof(t.hyperparams) - 1);
+      t.hyperparams[sizeof(t.hyperparams) - 1] = '\0';
+    }
+    
+    // Legacy FL_* vars (for backward compatibility)
     cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
     cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
     cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
@@ -605,16 +663,43 @@ void handle_start_command(const char *payload) {
   }
 
   LOG_INF("Starting task: ID=%s, Name=%s, Mode=%s", t.id, t.name, t.mode);
-  if (t.is_fl_task) {
-    LOG_INF("FL Task: job_id=%s, round_id=%llu, global_version=%s, format=%s",
+  if (t.is_fml_task) {
+    LOG_INF("FML Task: round_id=%s, model_uri=%s", t.round_id, t.model_uri);
+    // Subscribe to model topic if provided (to receive model as retained message)
+    if (strlen(t.model_uri) > 0) {
+      struct mqtt_topic model_topic = {
+        .topic = {.utf8 = (char *)t.model_uri, .size = strlen(t.model_uri)},
+        .qos = MQTT_QOS_1_AT_LEAST_ONCE,
+      };
+      struct mqtt_subscription_list sub_list = {
+        .list = &model_topic,
+        .list_count = 1,
+        .message_id = sys_rand32_get() & 0xFFFF,
+      };
+      int ret = mqtt_subscribe(&client_ctx, &sub_list);
+      if (ret == 0) {
+        LOG_INF("Subscribed to model topic: %s", t.model_uri);
+      } else {
+        LOG_ERR("Failed to subscribe to model topic: %s (error: %d)", t.model_uri, ret);
+      }
+    }
+  } else if (t.is_fl_task) {
+    LOG_INF("FL Task (legacy): job_id=%s, round_id=%llu, global_version=%s, format=%s",
             t.fl.job_id, (unsigned long long)t.fl.round_id, 
             t.fl.global_version, t.fl.update_format);
   }
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
-  // Validate FL task has required fields
-  if (t.is_fl_task && strlen(t.fl.job_id) == 0) {
+  // Validate FML task has required fields
+  if (t.is_fml_task && strlen(t.round_id) == 0) {
+    LOG_ERR("FML task missing required ROUND_ID field");
+    cJSON_Delete(json);
+    return;
+  }
+  
+  // Validate legacy FL task has required fields
+  if (t.is_fl_task && !t.is_fml_task && strlen(t.fl.job_id) == 0) {
     LOG_ERR("FL task missing required job_id field");
     cJSON_Delete(json);
     return;
@@ -659,6 +744,8 @@ void handle_stop_command(const char *payload) {
 
   struct task t;
   memset(&t, 0, sizeof(t));
+  t.is_fml_task = false;
+  t.is_fl_task = false;
 
   cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "id");
   cJSON *name = cJSON_GetObjectItemCaseSensitive(json, "name");
@@ -881,8 +968,94 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
                                  const char *task_id, const char *results,
                                  const char *error_msg) {
   char results_payload[2048];  // Increased for FL envelope with larger payloads
+  const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
 
-  // Check if this is an FL training task
+  // Check if this is a new FML task (ROUND_ID-based)
+  if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
+    // Parse Wasm output as JSON update (new format)
+    cJSON *update_json = NULL;
+    if (results && strlen(results) > 0) {
+      update_json = cJSON_Parse(results);
+    }
+    
+    // Build FML update payload
+    char update_topic[256];
+    snprintf(update_topic, sizeof(update_topic), "fl/rounds/%s/updates/%s",
+             g_current_task.round_id, pid);
+    
+    if (error_msg) {
+      // Publish error update
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"round_id\":\"%s\","
+        "\"proplet_id\":\"%s\","
+        "\"base_model_uri\":\"%s\","
+        "\"num_samples\":0,"
+        "\"metrics\":{},"
+        "\"update\":{},"
+        "\"error\":\"%s\""
+        "}",
+        g_current_task.round_id,
+        pid,
+        g_current_task.model_uri,
+        error_msg
+      );
+    } else if (update_json) {
+      // Wasm output is already in the correct JSON format
+      // Just ensure it has required fields
+      cJSON *round_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "round_id");
+      cJSON *proplet_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "proplet_id");
+      cJSON *base_model_uri_obj = cJSON_GetObjectItemCaseSensitive(update_json, "base_model_uri");
+      
+      if (!round_id_obj) {
+        cJSON_AddStringToObject(update_json, "round_id", g_current_task.round_id);
+      }
+      if (!proplet_id_obj) {
+        cJSON_AddStringToObject(update_json, "proplet_id", pid);
+      }
+      if (!base_model_uri_obj && strlen(g_current_task.model_uri) > 0) {
+        cJSON_AddStringToObject(update_json, "base_model_uri", g_current_task.model_uri);
+      }
+      
+      char *json_str = cJSON_PrintUnformatted(update_json);
+      if (json_str) {
+        strncpy(results_payload, json_str, sizeof(results_payload) - 1);
+        results_payload[sizeof(results_payload) - 1] = '\0';
+        cJSON_free(json_str);
+      } else {
+        // Fallback if JSON printing fails
+        snprintf(results_payload, sizeof(results_payload),
+          "{\"round_id\":\"%s\",\"proplet_id\":\"%s\",\"base_model_uri\":\"%s\",\"num_samples\":0,\"metrics\":{},\"update\":{}}",
+          g_current_task.round_id, pid, g_current_task.model_uri);
+      }
+      cJSON_Delete(update_json);
+    } else {
+      // No valid JSON output, create minimal update
+      snprintf(results_payload, sizeof(results_payload),
+        "{"
+        "\"round_id\":\"%s\","
+        "\"proplet_id\":\"%s\","
+        "\"base_model_uri\":\"%s\","
+        "\"num_samples\":0,"
+        "\"metrics\":{},"
+        "\"update\":{}"
+        "}",
+        g_current_task.round_id,
+        pid,
+        g_current_task.model_uri
+      );
+    }
+    
+    // Publish to FML update topic (not standard results topic)
+    if (publish_direct(update_topic, results_payload) != 0) {
+      LOG_ERR("Failed to publish FML update to %s", update_topic);
+    } else {
+      LOG_INF("Published FML update to %s", update_topic);
+    }
+    return;
+  }
+  
+  // Legacy FL task handling (for backward compatibility)
   if (g_current_task.is_fl_task && 
       strcmp(g_current_task.mode, "train") == 0 &&
       strlen(g_current_task.fl.job_id) > 0) {

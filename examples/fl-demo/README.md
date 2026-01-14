@@ -33,6 +33,7 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 - Reads `ROUND_ID`, `MODEL_URI` (MQTT topic), `HYPERPARAMS` from environment
 - Performs toy local training
 - Outputs JSON update in format:
+- **Works with both Rust proplet (Wasmtime) and embedded proplet (WAMR/Zephyr)**
   ```json
   {
     "round_id": "r-0001",
