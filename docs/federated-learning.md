@@ -32,6 +32,8 @@ Propeller is a **generic Wasm orchestrator** (orchestration + transport + execut
 - **FML Coordinator** (sample app): Owns rounds, aggregation, model versioning
 - **Model Server** (sample app): Lightweight MQTT-based model distribution
 - **Proplets**: Execute Wasm FL client workloads
+  - **Rust Proplet** (Wasmtime): Full FML support
+  - **Embedded Proplet** (C/WAMR/Zephyr): Full FML support for microcontrollers
 - **MQTT**: Communication channel
 
 ## Sample FML Application
@@ -95,11 +97,16 @@ Manager (generic handler):
 
 ### 3. Proplets Execute Wasm Client
 
-Wasm client:
+Wasm client (works on both Rust and embedded proplets):
 - Reads `ROUND_ID`, `MODEL_URI` (MQTT topic), `HYPERPARAMS` from environment
-- Subscribes to model from `MODEL_URI` MQTT topic
+- Subscribes to model from `MODEL_URI` MQTT topic (receives retained message)
 - Performs local training
 - Outputs JSON update
+
+**Embedded Proplet Specific:**
+- Automatically subscribes to model topic when `MODEL_URI` is provided
+- Publishes updates directly to `fl/rounds/{round_id}/updates/{proplet_id}`
+- Parses Wasm output as JSON update envelope
 
 ### 4. Proplets Publish Updates
 
