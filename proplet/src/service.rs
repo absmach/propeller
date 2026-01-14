@@ -494,7 +494,8 @@ impl PropletService {
             // Handle FL tasks
             if req.mode.as_deref() == Some("train") && req.fl.is_some() {
                 let fl_spec = req.fl.as_ref().unwrap();
-                let update_envelope = self.build_fl_update_envelope(
+                // Build FL update envelope (using standalone function to avoid borrowing self in spawn)
+                let update_envelope = build_fl_update_envelope(
                     &task_id,
                     &proplet_id,
                     &result_str,
@@ -707,31 +708,43 @@ impl PropletService {
         fl_spec: &crate::types::FLSpec,
         env: &HashMap<String, String>,
     ) -> serde_json::Value {
-        use base64::{engine::general_purpose::STANDARD, Engine};
-
-        let num_samples = env
-            .get("FL_NUM_SAMPLES")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(1);
-
-        let update_format = fl_spec
-            .update_format
-            .clone()
-            .or_else(|| env.get("FL_FORMAT").cloned())
-            .unwrap_or_else(|| "f32-delta".to_string());
-
-        let update_b64 = STANDARD.encode(result_str.as_bytes());
-
-        serde_json::json!({
-            "task_id": task_id,
-            "job_id": fl_spec.job_id,
-            "round_id": fl_spec.round_id,
-            "global_version": fl_spec.global_version,
-            "proplet_id": proplet_id,
-            "num_samples": num_samples,
-            "update_b64": update_b64,
-            "format": update_format,
-            "metrics": {}
-        })
+        build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
     }
+}
+
+fn build_fl_update_envelope(
+    task_id: &str,
+    proplet_id: &str,
+    result_str: &str,
+    fl_spec: &crate::types::FLSpec,
+    env: &HashMap<String, String>,
+) -> serde_json::Value {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    let num_samples = env
+        .get("FL_NUM_SAMPLES")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1);
+
+    let update_format = if !fl_spec.update_format.is_empty() {
+        fl_spec.update_format.clone()
+    } else {
+        env.get("FL_FORMAT")
+            .cloned()
+            .unwrap_or_else(|| "f32-delta".to_string())
+    };
+
+    let update_b64 = STANDARD.encode(result_str.as_bytes());
+
+    serde_json::json!({
+        "task_id": task_id,
+        "job_id": fl_spec.job_id,
+        "round_id": fl_spec.round_id,
+        "global_version": fl_spec.global_version,
+        "proplet_id": proplet_id,
+        "num_samples": num_samples,
+        "update_b64": update_b64,
+        "format": update_format,
+        "metrics": {}
+    })
 }

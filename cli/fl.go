@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/absmach/propeller/pkg/sdk"
+	"github.com/absmach/propeller/task"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -94,12 +95,12 @@ var flCmd = []cobra.Command{
 			}
 
 			status := map[string]interface{}{
-				"task_id":    t.ID,
-				"name":       t.Name,
-				"state":      t.State.String(),
-				"mode":       t.Mode,
-				"job_id":     t.FL.JobID,
-				"round_id":   t.FL.RoundID,
+				"task_id":     t.ID,
+				"name":        t.Name,
+				"state":       task.State(t.State).String(),
+				"mode":        t.Mode,
+				"job_id":      t.FL.JobID,
+				"round_id":    t.FL.RoundID,
 				"total_rounds": t.FL.TotalRounds,
 			}
 
