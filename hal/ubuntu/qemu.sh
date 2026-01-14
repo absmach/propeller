@@ -224,7 +224,25 @@ runcmd:
   - mkdir -p /var/lib/proplet
   - mkdir -p /run/attestation-agent
   
-  # Install Rust toolchain
+  # Install Wasmtime
+  - |
+    echo "=== Installing Wasmtime ==="
+    WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | jq -r .tag_name)
+    echo "Downloading Wasmtime ${WASMTIME_VERSION}..."
+    curl -L "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
+    tar -xf /tmp/wasmtime.tar.xz -C /tmp
+    mv /tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/
+    chmod +x /usr/local/bin/wasmtime
+    rm -rf /tmp/wasmtime*
+    if [ -f /usr/local/bin/wasmtime ]; then
+      echo "✓ Wasmtime installed successfully"
+      /usr/local/bin/wasmtime --version
+    else
+      echo "✗ ERROR: Wasmtime installation failed"
+      exit 1
+    fi
+  
+  # Install Rust toolchain (needed for building from source)
   - |
     echo "=== Installing Rust toolchain ==="
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
@@ -233,51 +251,104 @@ runcmd:
     rustc --version
     cargo --version
   
-  # Install Wasmtime
-  - |
-    echo "=== Installing Wasmtime ==="
-    WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | jq -r .tag_name)
-    curl -L "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
-    tar -xf /tmp/wasmtime.tar.xz -C /tmp
-    mv /tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/
-    chmod +x /usr/local/bin/wasmtime
-    wasmtime --version
-    rm -rf /tmp/wasmtime*
-  
   # Build and install Attestation Agent
   - |
-    echo "=== Building and installing Attestation Agent ==="
+    echo "=== Building Attestation Agent from source ==="
     source /root/.cargo/env
     cd /tmp
-    git clone https://github.com/confidential-containers/guest-components.git
+    git clone --depth 1 https://github.com/confidential-containers/guest-components.git
     cd guest-components/attestation-agent
-    cargo build --release
-    cp target/release/attestation-agent /usr/local/bin/
-    chmod +x /usr/local/bin/attestation-agent
+    echo "Building attestation-agent (this may take several minutes)..."
+    if cargo build --release 2>&1 | tee /tmp/aa-build.log; then
+      if [ -f target/release/attestation-agent ]; then
+        cp target/release/attestation-agent /usr/local/bin/
+        chmod +x /usr/local/bin/attestation-agent
+        echo "✓ Attestation Agent built and installed successfully"
+      else
+        echo "✗ ERROR: Build succeeded but binary not found"
+        exit 1
+      fi
+    else
+      echo "✗ ERROR: Attestation Agent build failed"
+      cat /tmp/aa-build.log
+      exit 1
+    fi
     cd /
     rm -rf /tmp/guest-components
-    attestation-agent --version || echo "Attestation Agent installed"
   
   # Build and install Proplet
   - |
-    echo "=== Building and installing Proplet ==="
+    echo "=== Building Proplet from source ==="
     source /root/.cargo/env
     cd /tmp
-    git clone https://github.com/absmach/propeller.git
+    git clone --depth 1 https://github.com/absmach/propeller.git
     cd propeller/proplet
-    cargo build --release
-    cp target/release/proplet /usr/local/bin/
-    chmod +x /usr/local/bin/proplet
+    echo "Building proplet (this may take several minutes)..."
+    if cargo build --release 2>&1 | tee /tmp/proplet-build.log; then
+      if [ -f target/release/proplet ]; then
+        cp target/release/proplet /usr/local/bin/
+        chmod +x /usr/local/bin/proplet
+        echo "✓ Proplet built and installed successfully"
+      else
+        echo "✗ ERROR: Build succeeded but binary not found"
+        exit 1
+      fi
+    else
+      echo "✗ ERROR: Proplet build failed"
+      cat /tmp/proplet-build.log
+      exit 1
+    fi
     cd /
     rm -rf /tmp/propeller
-    proplet --version || echo "Proplet installed"
   
-  # Enable and start services
-  - systemctl daemon-reload
-  - systemctl enable attestation-agent.service
-  - systemctl enable proplet.service
-  - systemctl start attestation-agent.service
-  - systemctl start proplet.service
+  # Verify binaries exist before enabling services
+  - |
+    echo "=== Verifying installations ==="
+    ERRORS=0
+    
+    if [ ! -f /usr/local/bin/wasmtime ]; then
+      echo "✗ ERROR: wasmtime binary not found"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ wasmtime: $(/usr/local/bin/wasmtime --version)"
+    fi
+    
+    if [ ! -f /usr/local/bin/attestation-agent ]; then
+      echo "✗ ERROR: attestation-agent binary not found"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ attestation-agent: installed"
+    fi
+    
+    if [ ! -f /usr/local/bin/proplet ]; then
+      echo "✗ ERROR: proplet binary not found"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ proplet: installed"
+    fi
+    
+    if [ $ERRORS -gt 0 ]; then
+      echo "✗ Installation verification failed with $ERRORS error(s)"
+      echo "Services will NOT be started"
+      exit 1
+    fi
+    
+    echo "✓ All binaries verified successfully"
+  
+  # Enable and start services only if binaries exist
+  - |
+    echo "=== Enabling and starting services ==="
+    systemctl daemon-reload
+    systemctl enable attestation-agent.service
+    systemctl enable proplet.service
+    systemctl start attestation-agent.service
+    sleep 2
+    systemctl start proplet.service
+    sleep 2
+    
+    echo "=== Service status ==="
+    systemctl status attestation-agent.service --no-pager || true
+    systemctl status proplet.service --no-pager || true
 
 final_message: |
   ===================================================================
