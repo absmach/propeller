@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # MQTT Broker (using Eclipse Mosquitto for demo)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - fl-demo
+
+  # Model Server
+  model-server:
+    build:
+      context: ./model-server
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - fl-models:/tmp/fl-models
+    environment:
+      - PORT=8080
+      - MODELS_DIR=/tmp/fl-models
+    networks:
+      - fl-demo
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/models/global_model_v0.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # FML Coordinator
+  coordinator:
+    build:
+      context: ./coordinator
+      dockerfile: Dockerfile
+    depends_on:
+      - mqtt
+      - model-server
+    environment:
+      - MQTT_BROKER=tcp://mqtt:1883
+    networks:
+      - fl-demo
+    volumes:
+      - fl-models:/tmp/fl-models
+
+  # Propeller Manager
+  manager:
+    image: ghcr.io/absmach/propeller/manager:latest
+    depends_on:
+      - mqtt
+    environment:
+      - MANAGER_DOMAIN_ID=demo
+      - MANAGER_CHANNEL_ID=fl
+      - MANAGER_CLIENT_ID=manager
+      - MANAGER_CLIENT_KEY=manager-key
+    networks:
+      - fl-demo
+    # Note: In production, you'd configure proper storage backends
+
+  # Propeller Proplet (example worker)
+  proplet-1:
+    image: ghcr.io/absmach/propeller/proplet:latest
+    depends_on:
+      - mqtt
+      - manager
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-1
+      - PROPLET_CLIENT_KEY=proplet-1-key
+    networks:
+      - fl-demo
+
+  proplet-2:
+    image: ghcr.io/absmach/propeller/proplet:latest
+    depends_on:
+      - mqtt
+      - manager
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-2
+      - PROPLET_CLIENT_KEY=proplet-2-key
+    networks:
+      - fl-demo
+
+  proplet-3:
+    image: ghcr.io/absmach/propeller/proplet:latest
+    depends_on:
+      - mqtt
+      - manager
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-3
+      - PROPLET_CLIENT_KEY=proplet-3-key
+    networks:
+      - fl-demo
+
+volumes:
+  fl-models:
+
+networks:
+  fl-demo:
+    driver: bridge
