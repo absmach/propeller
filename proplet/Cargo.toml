@@ -23,3 +23,27 @@ url = "2.5"
 sysinfo = "0.32"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+
+attestation-agent = { git = "https://github.com/confidential-containers/guest-components", features = ["all-attesters"], optional = true }
+kbs_protocol = { git = "https://github.com/confidential-containers/guest-components", package = "kbs_protocol", optional = true }
+kbc = { git = "https://github.com/confidential-containers/guest-components", package = "kbc", optional = true }
+image-rs = { git = "https://github.com/confidential-containers/guest-components", package = "image-rs", optional = true }
+crypto = { git = "https://github.com/confidential-containers/guest-components", package = "crypto", optional = true }
+resource_uri = { git = "https://github.com/confidential-containers/guest-components", package = "resource_uri", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+lru = { version = "0.12", optional = true }
+zeroize = { version = "1.8", features = ["derive"], optional = true }
+
+[features]
+default = []
+cdh = [
+    "attestation-agent",
+    "kbs_protocol",
+    "kbc",
+    "image-rs",
+    "crypto",
+    "resource_uri",
+    "aes-gcm",
+    "lru",
+    "zeroize",
+]

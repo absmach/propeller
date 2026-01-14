@@ -12,6 +12,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
+#[cfg(feature = "cdh")]
+use crate::cdh::{CdhHub, ConfidentialDataHub};
+
 #[derive(Debug)]
 struct ChunkAssemblyState {
     chunks: BTreeMap<usize, Vec<u8>>,
@@ -54,13 +57,45 @@ pub struct PropletService {
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
     monitor: Arc<SystemMonitor>,
     metrics_collector: Arc<Mutex<MetricsCollector>>,
+    #[cfg(feature = "cdh")]
+    cdh_hub: Option<Arc<CdhHub>>,
 }
 
 impl PropletService {
-    pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
+    pub async fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
         let proplet = Proplet::new(config.instance_id.clone(), "proplet".to_string());
         let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
         let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
+
+        #[cfg(feature = "cdh")]
+        let cdh_hub = if config.cdh_enabled.unwrap_or(false) {
+            info!("CDH enabled, initializing CdhHub");
+            match crate::cdh::CdhConfig::from_proplet_config(&config) {
+                Ok(cdh_config) => {
+                    match crate::cdh::CdhHubBuilder::new()
+                        .with_config(cdh_config)
+                        .build()
+                        .await
+                    {
+                        Ok(hub) => {
+                            info!("CdhHub initialized successfully");
+                            Some(Arc::new(hub))
+                        }
+                        Err(e) => {
+                            warn!("Failed to initialize CdhHub: {}, continuing without CDH", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to load CDH config: {}, continuing without CDH", e);
+                    None
+                }
+            }
+        } else {
+            info!("CDH disabled");
+            None
+        };
 
         let service = Self {
             config,
@@ -71,6 +106,8 @@ impl PropletService {
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
             monitor,
             metrics_collector,
+            #[cfg(feature = "cdh")]
+            cdh_hub,
         };
 
         service.start_chunk_expiry_task();
@@ -337,17 +374,77 @@ impl PropletService {
                 }
             }
         } else if !req.image_url.is_empty() {
-            info!("Requesting binary from registry: {}", req.image_url);
-            self.request_binary_from_registry(&req.image_url).await?;
+            #[cfg(feature = "cdh")]
+            if self.cdh_hub.is_some() && req.encrypted {
+                info!("Processing encrypted image with CDH: {}", req.image_url);
 
-            match self.wait_for_binary(&req.image_url).await {
-                Ok(binary) => binary,
-                Err(e) => {
-                    error!("Failed to get binary for task {}: {}", req.id, e);
-                    self.running_tasks.lock().await.remove(&req.id);
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
-                    return Err(e);
+                let cdh_hub = self.cdh_hub.as_ref().unwrap().clone();
+
+                let temp_dir = std::env::temp_dir();
+                let output_path = temp_dir.join(format!("task-{}.wasm", req.id));
+
+                match cdh_hub
+                    .pull_encrypted_image(&req.image_url, &output_path)
+                    .await
+                {
+                    Ok(digest) => {
+                        info!("Successfully pulled encrypted image, digest: {}", digest);
+
+                        match tokio::fs::read(&output_path).await {
+                            Ok(binary) => {
+                                info!("Read decrypted wasm binary, size: {} bytes", binary.len());
+                                tokio::fs::remove_file(&output_path).await.ok();
+                                binary
+                            }
+                            Err(e) => {
+                                error!("Failed to read decrypted wasm binary: {}", e);
+                                self.running_tasks.lock().await.remove(&req.id);
+                                self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                                    .await?;
+                                return Err(e.into());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to pull encrypted image: {}", e);
+                        self.running_tasks.lock().await.remove(&req.id);
+                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                            .await?;
+                        return Err(e.into());
+                    }
+                }
+            } else {
+                info!("Requesting binary from registry: {}", req.image_url);
+                info!("cdh_hub.is_some() = {}", self.cdh_hub.is_some());
+                info!("req.encrypted = {}", req.encrypted);
+                self.request_binary_from_registry(&req.image_url).await?;
+
+                match self.wait_for_binary(&req.image_url).await {
+                    Ok(binary) => binary,
+                    Err(e) => {
+                        error!("Failed to get binary for task {}: {}", req.id, e);
+                        self.running_tasks.lock().await.remove(&req.id);
+                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                            .await?;
+                        return Err(e);
+                    }
+                }
+            }
+
+            #[cfg(not(feature = "cdh"))]
+            {
+                info!("Requesting binary from registry: {}", req.image_url);
+                self.request_binary_from_registry(&req.image_url).await?;
+
+                match self.wait_for_binary(&req.image_url).await {
+                    Ok(binary) => binary,
+                    Err(e) => {
+                        error!("Failed to get binary for task {}: {}", req.id, e);
+                        self.running_tasks.lock().await.remove(&req.id);
+                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                            .await?;
+                        return Err(e);
+                    }
                 }
             }
         } else {

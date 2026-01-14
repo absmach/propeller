@@ -165,6 +165,13 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 	if t.File != nil {
 		dbT.File = t.File
 	}
+	if t.ImageURL != "" {
+		dbT.ImageURL = t.ImageURL
+	}
+	if t.Env != nil {
+		dbT.Env = t.Env
+	}
+	dbT.Encrypted = t.Encrypted
 
 	if err := svc.tasksDB.Update(ctx, dbT.ID, dbT); err != nil {
 		return task.Task{}, err
@@ -193,6 +200,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		"daemon":             t.Daemon,
 		"env":                t.Env,
 		"monitoring_profile": t.MonitoringProfile,
+		"encrypted":          t.Encrypted,
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"

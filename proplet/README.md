@@ -57,7 +57,7 @@ export PROPLET_CLIENT_ID=your-client-id
 export PROPLET_CLIENT_KEY=your-client-key
 
 # Optional: External WebAssembly runtime
-export PROPLET_EXTERNAL_WASM_RUNTIME=/path/to/external/runtime
+export PROPLET_EXTERNAL_WASM_RUNTIME=/usr/bin/wasmtime
 
 # Optional: Kubernetes namespace
 export PROPLET_MANAGER_K8S_NAMESPACE=default
