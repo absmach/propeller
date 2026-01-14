@@ -101,11 +101,9 @@ struct task {
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
 
-  // FL-specific fields
   struct fl_spec fl;
   bool is_fl_task;
   
-  // FL environment variables (from env map in start command)
   char fl_job_id[MAX_ID_LEN];
   char fl_round_id_str[32];
   char fl_global_version[MAX_ID_LEN];
@@ -113,11 +111,10 @@ struct task {
   char fl_format[MAX_NAME_LEN];
   char fl_num_samples_str[32];
   
-  // New FML architecture environment variables
-  char round_id[MAX_ID_LEN];        // ROUND_ID (e.g., "r-0001")
-  char model_uri[MAX_URL_LEN];      // MODEL_URI (MQTT topic, e.g., "fl/models/global_model_v0")
-  char hyperparams[512];            // HYPERPARAMS (JSON string)
-  bool is_fml_task;                 // True if ROUND_ID is set
+  char round_id[MAX_ID_LEN];
+  char model_uri[MAX_URL_LEN];
+  char hyperparams[512];
+  bool is_fml_task;
 };
 
 static struct task g_current_task;
@@ -229,12 +226,9 @@ static void mqtt_event_handler(struct mqtt_client *client,
     snprintf(topic_str, sizeof(topic_str), "%.*s", (int)rtopic->size, rtopic->utf8);
     topic_str[sizeof(topic_str) - 1] = '\0';
 
-    // Check if this is a model topic (FML architecture) - check before standard topics
     if (g_current_task.is_fml_task && strlen(g_current_task.model_uri) > 0 &&
         strcmp(topic_str, g_current_task.model_uri) == 0) {
       LOG_INF("Received model from topic: %s (payload: %d bytes)", topic_str, (int)pub->message.payload.len);
-      // Model received as retained message - Wasm module can use MODEL_URI to know which model to use
-      // In a full implementation, we'd parse and cache the model JSON here
     } else if (rtopic->size == strlen(start_topic) &&
         memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
       handle_start_command(payload);
@@ -297,7 +291,6 @@ static void prepare_publish_param(struct mqtt_publish_param *param,
   param->retain_flag = 0;
 }
 
-// Publish directly to a topic (for FML updates that don't use domain/channel template)
 static int publish_direct(const char *topic, const char *payload) {
   if (!mqtt_connected) {
     LOG_ERR("MQTT client is not connected. Publish aborted.");
@@ -535,7 +528,6 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  // Parse FL spec if present
   if (fl_obj != NULL && cJSON_IsObject(fl_obj)) {
     t.is_fl_task = true;
     cJSON *job_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "job_id");
@@ -587,7 +579,6 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  // Parse environment variables (new FML architecture: ROUND_ID, MODEL_URI, HYPERPARAMS)
   if (env != NULL && cJSON_IsObject(env)) {
     cJSON *round_id_env = cJSON_GetObjectItemCaseSensitive(env, "ROUND_ID");
     cJSON *model_uri_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_URI");
@@ -611,7 +602,6 @@ void handle_start_command(const char *payload) {
       t.hyperparams[sizeof(t.hyperparams) - 1] = '\0';
     }
     
-    // Legacy FL_* vars (for backward compatibility)
     cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
     cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
     cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
@@ -665,7 +655,6 @@ void handle_start_command(const char *payload) {
   LOG_INF("Starting task: ID=%s, Name=%s, Mode=%s", t.id, t.name, t.mode);
   if (t.is_fml_task) {
     LOG_INF("FML Task: round_id=%s, model_uri=%s", t.round_id, t.model_uri);
-    // Subscribe to model topic if provided (to receive model as retained message)
     if (strlen(t.model_uri) > 0) {
       struct mqtt_topic model_topic = {
         .topic = {.utf8 = (char *)t.model_uri, .size = strlen(t.model_uri)},
@@ -691,14 +680,12 @@ void handle_start_command(const char *payload) {
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
-  // Validate FML task has required fields
   if (t.is_fml_task && strlen(t.round_id) == 0) {
     LOG_ERR("FML task missing required ROUND_ID field");
     cJSON_Delete(json);
     return;
   }
   
-  // Validate legacy FL task has required fields
   if (t.is_fl_task && !t.is_fml_task && strlen(t.fl.job_id) == 0) {
     LOG_ERR("FL task missing required job_id field");
     cJSON_Delete(json);
@@ -967,24 +954,20 @@ void publish_results(const char *domain_id, const char *channel_id,
 void publish_results_with_error(const char *domain_id, const char *channel_id,
                                  const char *task_id, const char *results,
                                  const char *error_msg) {
-  char results_payload[2048];  // Increased for FL envelope with larger payloads
+  char results_payload[2048]
   const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
 
-  // Check if this is a new FML task (ROUND_ID-based)
   if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
-    // Parse Wasm output as JSON update (new format)
     cJSON *update_json = NULL;
     if (results && strlen(results) > 0) {
       update_json = cJSON_Parse(results);
     }
     
-    // Build FML update payload
     char update_topic[256];
     snprintf(update_topic, sizeof(update_topic), "fl/rounds/%s/updates/%s",
              g_current_task.round_id, pid);
     
     if (error_msg) {
-      // Publish error update
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"round_id\":\"%s\","
@@ -1001,8 +984,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         error_msg
       );
     } else if (update_json) {
-      // Wasm output is already in the correct JSON format
-      // Just ensure it has required fields
       cJSON *round_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "round_id");
       cJSON *proplet_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "proplet_id");
       cJSON *base_model_uri_obj = cJSON_GetObjectItemCaseSensitive(update_json, "base_model_uri");
@@ -1023,14 +1004,12 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         results_payload[sizeof(results_payload) - 1] = '\0';
         cJSON_free(json_str);
       } else {
-        // Fallback if JSON printing fails
         snprintf(results_payload, sizeof(results_payload),
           "{\"round_id\":\"%s\",\"proplet_id\":\"%s\",\"base_model_uri\":\"%s\",\"num_samples\":0,\"metrics\":{},\"update\":{}}",
           g_current_task.round_id, pid, g_current_task.model_uri);
       }
       cJSON_Delete(update_json);
     } else {
-      // No valid JSON output, create minimal update
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"round_id\":\"%s\","
@@ -1046,7 +1025,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       );
     }
     
-    // Publish to FML update topic (not standard results topic)
     if (publish_direct(update_topic, results_payload) != 0) {
       LOG_ERR("Failed to publish FML update to %s", update_topic);
     } else {
@@ -1054,12 +1032,10 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
     }
     return;
   }
-  
-  // Legacy FL task handling (for backward compatibility)
+
   if (g_current_task.is_fl_task && 
       strcmp(g_current_task.mode, "train") == 0 &&
       strlen(g_current_task.fl.job_id) > 0) {
-    // Validate FL fields
     if (strlen(g_current_task.fl.job_id) == 0) {
       LOG_ERR("FL task missing job_id, cannot publish update");
       return;
@@ -1069,18 +1045,15 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       return;
     }
 
-    // Build FL update envelope
     char update_b64[MAX_UPDATE_B64_LEN];
     size_t encoded_len = 0;
     
-    // Encode results as base64
     size_t results_len = results ? strlen(results) : 0;
     if (results_len == 0 && !error_msg) {
       LOG_ERR("FL task has empty results and no error message");
       return;
     }
 
-    // Check update size limit (before encoding)
     if (results_len > (MAX_UPDATE_B64_LEN * 3 / 4)) {
       LOG_ERR("FL update payload too large: %zu bytes (max: %d)", 
               results_len, (MAX_UPDATE_B64_LEN * 3 / 4));
@@ -1111,11 +1084,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       num_samples = 1;
     }
 
-    // Build FL update envelope JSON matching Manager expectations
-    // Structure: {"task_id": "...", "results": {UpdateEnvelope}, "error": "..."}
-    // UpdateEnvelope: task_id, job_id, round_id, global_version, proplet_id, num_samples, update_b64, format, metrics
     if (error_msg) {
-      // Publish error result
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"task_id\":\"%s\","
@@ -1143,7 +1112,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         error_msg
       );
     } else {
-      // Publish successful update
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"task_id\":\"%s\","
@@ -1175,7 +1143,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
             task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
             error_msg ? error_msg : "none");
   } else {
-    // Standard task result
     if (error_msg) {
       snprintf(results_payload, sizeof(results_payload),
                "{\"task_id\":\"%s\",\"results\":\"%s\",\"error\":\"%s\"}", 
