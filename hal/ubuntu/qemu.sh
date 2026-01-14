@@ -260,14 +260,19 @@ runcmd:
     cd /tmp
     git clone --depth 1 https://github.com/confidential-containers/guest-components.git
     cd guest-components/attestation-agent
-    echo "Building attestation-agent (this may take several minutes)..."
-    if cargo build --release 2>&1 | tee /tmp/aa-build.log; then
-      if [ -f target/release/attestation-agent ]; then
-        cp target/release/attestation-agent /usr/local/bin/
-        chmod +x /usr/local/bin/attestation-agent
-        echo "✓ Attestation Agent built and installed successfully"
+    echo "Building attestation-agent with all attesters (this may take several minutes)..."
+    if make ATTESTER=all-attesters 2>&1 | tee /tmp/aa-build.log; then
+      if make install 2>&1 | tee -a /tmp/aa-build.log; then
+        if [ -f /usr/local/bin/attestation-agent ]; then
+          echo "✓ Attestation Agent built and installed successfully"
+          /usr/local/bin/attestation-agent --help | head -5
+        else
+          echo "✗ ERROR: Installation succeeded but binary not found in /usr/local/bin/"
+          exit 1
+        fi
       else
-        echo "✗ ERROR: Build succeeded but binary not found"
+        echo "✗ ERROR: Attestation Agent installation failed"
+        cat /tmp/aa-build.log
         exit 1
       fi
     else
