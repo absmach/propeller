@@ -113,8 +113,11 @@ ssh_pwauth: true
 packages:
   # Build essentials
   - build-essential
+  - gcc
+  - make
   - pkg-config
   - libssl-dev
+  - openssl
   - curl
   - git
   - wget
@@ -130,6 +133,8 @@ packages:
   # TPM and attestation dependencies
   - libtss2-dev
   - tpm2-tools
+  # Debug tools
+  - rustup
 
 write_files:
   - path: /etc/default/proplet
