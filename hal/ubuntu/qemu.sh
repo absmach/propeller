@@ -201,6 +201,7 @@ write_files:
       AA_TOKEN_PATH=/run/attestation-agent/token
       AA_CA_CERT_PATH=/etc/attestation-agent/certs/ca.pem
       AA_TLS_INSECURE=false
+      AA_ATTESTER_TYPE=tdx-attester
     permissions: '0644'
 
   - path: /etc/systemd/system/attestation-agent.service
