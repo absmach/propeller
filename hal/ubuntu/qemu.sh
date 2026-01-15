@@ -441,15 +441,12 @@ final_message: |
     sudo journalctl -u attestation-agent -f
     sudo journalctl -u proplet -f
     
-  NOTE: System will reboot to activate Intel TDX kernel
+  IMPORTANT: Intel TDX kernel installed but requires reboot
+  To activate TDX attestation:
+    1. Exit QEMU (Ctrl+A, then X)
+    2. Run: sudo ./qemu.sh run
+    3. Verify TDX: ls /dev/tdx_guest
   ===================================================================
-
-# Reboot to activate the Intel TDX kernel
-power_state:
-  delay: now
-  mode: reboot
-  message: Rebooting to activate Intel TDX kernel
-  condition: true
 EOF
 
   # Substitute configuration values in user-data
