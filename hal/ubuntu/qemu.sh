@@ -323,12 +323,12 @@ runcmd:
     cd /tmp
     git clone --depth 1 https://github.com/confidential-containers/guest-components.git
     cd guest-components/attestation-agent
-    echo "Building attestation-agent with all attesters (this may take several minutes)..."
-    if make ATTESTER=all-attesters 2>&1 | tee /tmp/aa-build.log; then
+    echo "Building attestation-agent (gRPC version) with all attesters (this may take several minutes)..."
+    if make ATTESTER=all-attesters ttrpc=false 2>&1 | tee /tmp/aa-build.log; then
       if make install 2>&1 | tee -a /tmp/aa-build.log; then
         if [ -f /usr/local/bin/attestation-agent ]; then
-          echo "✓ Attestation Agent built and installed successfully"
-          /usr/local/bin/attestation-agent --help | head -5
+          echo "✓ Attestation Agent (gRPC) built and installed successfully"
+          /usr/local/bin/attestation-agent --help | head -10
         else
           echo "✗ ERROR: Installation succeeded but binary not found in /usr/local/bin/"
           exit 1
