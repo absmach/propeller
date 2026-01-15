@@ -73,6 +73,7 @@ services:
       - PROPLET_CLIENT_ID=proplet-1
       - PROPLET_CLIENT_KEY=proplet-1-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo
     healthcheck:
@@ -91,6 +92,7 @@ services:
       - PROPLET_CLIENT_ID=proplet-2
       - PROPLET_CLIENT_KEY=proplet-2-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo
     healthcheck:
@@ -109,6 +111,7 @@ services:
       - PROPLET_CLIENT_ID=proplet-3
       - PROPLET_CLIENT_KEY=proplet-3-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo
     healthcheck:
