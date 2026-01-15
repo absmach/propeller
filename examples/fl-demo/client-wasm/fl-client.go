@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -89,11 +88,11 @@ func main() {
 
 	// Create update in new format
 	update := map[string]interface{}{
-		"round_id":      roundID,
+		"round_id":       roundID,
 		"base_model_uri": modelURI,
-		"num_samples":   numSamples,
+		"num_samples":    numSamples,
 		"metrics": map[string]interface{}{
-			"loss": rand.Float64() * 0.5 + 0.5, // simulated loss
+			"loss": rand.Float64()*0.5 + 0.5, // simulated loss
 		},
 		"update": model,
 	}
