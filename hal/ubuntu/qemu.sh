@@ -191,28 +191,12 @@ write_files:
       channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
     permissions: '0644'
 
-  - path: /etc/attestation-agent/attestation-agent.conf
-    content: |
-      # Attestation Agent Configuration (TOML format)
-      # This configuration disables TPM-dependent features
-      # The attester type (TDX, SEV, etc.) will be auto-detected
-      
-      [token_configs]
-      # KBS token configuration can be added here if needed
-      # [token_configs.kbs]
-      # url = "https://kbs.example.com:8080"
-      
-      [eventlog_config]
-      # Disable eventlog as it requires TPM
-      init_pcr = 17
-      enable_eventlog = false
-    permissions: '0644'
-
   - path: /etc/default/attestation-agent
     content: |
       # Attestation Agent Environment Variables
-      AA_LOG_LEVEL=info
+      # The attester type (TDX, SEV, etc.) will be auto-detected
       AA_ATTESTATION_SOCK=127.0.0.1:50002
+      RUST_LOG=info
     permissions: '0644'
 
   - path: /etc/systemd/system/attestation-agent.service
@@ -226,10 +210,8 @@ write_files:
       [Service]
       Type=simple
       EnvironmentFile=/etc/default/attestation-agent
-      Environment=RUST_LOG=attestation_agent
       ExecStartPre=/bin/mkdir -p /run/attestation-agent
-      ExecStartPre=/bin/mkdir -p /etc/attestation-agent/certs
-      ExecStart=/usr/local/bin/attestation-agent --config-file /etc/attestation-agent/attestation-agent.conf --attestation_sock ${AA_ATTESTATION_SOCK}
+      ExecStart=/usr/local/bin/attestation-agent --attestation_sock ${AA_ATTESTATION_SOCK}
       Restart=on-failure
       RestartSec=5s
       StandardOutput=journal
