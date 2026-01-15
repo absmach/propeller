@@ -193,18 +193,18 @@ write_files:
 
   - path: /etc/attestation-agent/attestation-agent.conf
     content: |
-      # Attestation Agent Configuration
-      # This config uses offline_fs_kbc which doesn't require TPM
-      # For TDX attestation, the attester will be auto-detected
-      aa_kbc_params = "offline_fs_kbc::null"
+      # Attestation Agent Configuration (TOML format)
+      # This configuration disables TPM-dependent features
+      # The attester type (TDX, SEV, etc.) will be auto-detected
       
       [token_configs]
-      # KBS token configuration (optional)
+      # KBS token configuration can be added here if needed
       # [token_configs.kbs]
-      # url = "KBS_URL_PLACEHOLDER:KBS_PORT_PLACEHOLDER"
+      # url = "https://kbs.example.com:8080"
       
       [eventlog_config]
       # Disable eventlog as it requires TPM
+      init_pcr = 17
       enable_eventlog = false
     permissions: '0644'
 
@@ -229,7 +229,7 @@ write_files:
       Environment=RUST_LOG=attestation_agent
       ExecStartPre=/bin/mkdir -p /run/attestation-agent
       ExecStartPre=/bin/mkdir -p /etc/attestation-agent/certs
-      ExecStart=/usr/local/bin/attestation-agent --config /etc/attestation-agent/attestation-agent.conf --attestation_sock ${AA_ATTESTATION_SOCK}
+      ExecStart=/usr/local/bin/attestation-agent --config-file /etc/attestation-agent/attestation-agent.conf --attestation_sock ${AA_ATTESTATION_SOCK}
       Restart=on-failure
       RestartSec=5s
       StandardOutput=journal
