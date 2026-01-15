@@ -61,7 +61,9 @@ services:
 
   # Propeller Proplet (example worker)
   proplet-1:
-    image: ghcr.io/absmach/propeller/proplet:latest
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
       - mqtt
       - manager
@@ -77,7 +79,9 @@ services:
       disable: true
 
   proplet-2:
-    image: ghcr.io/absmach/propeller/proplet:latest
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
       - mqtt
       - manager
@@ -93,7 +97,9 @@ services:
       disable: true
 
   proplet-3:
-    image: ghcr.io/absmach/propeller/proplet:latest
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
       - mqtt
       - manager

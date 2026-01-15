@@ -19,7 +19,7 @@ def main():
     wasm_path = Path(WASM_FILE)
     if not wasm_path.exists():
         print(f"Error: WASM file not found: {WASM_FILE}")
-        print(f"Please build it first: cd client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go")
+        print(f"Please build it first: cd client-wasm && tinygo build -target wasi -o fl-client.wasm fl-client.go")
         sys.exit(1)
     
     print(f"Reading WASM file: {wasm_path}")

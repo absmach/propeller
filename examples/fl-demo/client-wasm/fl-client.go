@@ -16,6 +16,11 @@ import (
 	"time"
 )
 
+//go:wasmexport run
+func run() {
+	main()
+}
+
 func main() {
 	// Read environment variables (set by Manager from round start message)
 	roundID := os.Getenv("ROUND_ID")
