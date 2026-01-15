@@ -270,9 +270,15 @@ runcmd:
   - |
     echo "=== Installing TDX kernel modules ==="
     # The standard Ubuntu 24.04 kernel already includes TDX support
-    # We just need to install linux-modules-extra which contains tdx-guest.ko
+    # We need to install linux-modules-extra for the current kernel
+    KERNEL_VERSION=$(uname -r)
+    echo "Current kernel: $KERNEL_VERSION"
+    
     apt-get update
-    apt-get install -y linux-modules-extra-generic
+    apt-get install -y "linux-modules-extra-${KERNEL_VERSION}" || {
+      echo "Failed to install modules-extra for current kernel, trying generic"
+      apt-get install -y linux-modules-extra-generic
+    }
     
     # Configure tdx_guest module to load at boot
     mkdir -p /etc/modules-load.d
