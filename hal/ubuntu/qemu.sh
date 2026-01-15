@@ -5,6 +5,19 @@
 
 set -e
 
+# Parse command line arguments
+TARGET="${1:-all}"
+
+if [[ "$TARGET" != "build" && "$TARGET" != "run" && "$TARGET" != "all" ]]; then
+  echo "Usage: $0 [build|run|all]"
+  echo ""
+  echo "Targets:"
+  echo "  build  - Build the CVM image and cloud-init configuration"
+  echo "  run    - Boot the CVM (requires existing image)"
+  echo "  all    - Build and run (default)"
+  exit 1
+fi
+
 # Configuration
 BASE_IMAGE_URL="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 BASE_IMAGE="ubuntu-base.qcow2"
@@ -34,46 +47,52 @@ KBS_URL="${KBS_URL:-https://kbs.example.com}"
 KBS_PORT="${KBS_PORT:-8080}"
 
 # Check prerequisites
-if ! command -v wget &> /dev/null; then
-  echo "wget is not installed. Please install it and try again."
-  exit 1
-fi
+check_prerequisites() {
+  if ! command -v wget &> /dev/null; then
+    echo "wget is not installed. Please install it and try again."
+    exit 1
+  fi
 
-if ! command -v cloud-localds &> /dev/null; then
-  echo "cloud-localds is not installed. Please install cloud-image-utils and try again."
-  exit 1
-fi
+  if ! command -v cloud-localds &> /dev/null; then
+    echo "cloud-localds is not installed. Please install cloud-image-utils and try again."
+    exit 1
+  fi
 
-if ! command -v qemu-system-x86_64 &> /dev/null; then
-  echo "qemu-system-x86_64 is not installed. Please install it and try again."
-  exit 1
-fi
+  if ! command -v qemu-system-x86_64 &> /dev/null; then
+    echo "qemu-system-x86_64 is not installed. Please install it and try again."
+    exit 1
+  fi
 
-if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root" 1>&2
-   exit 1
-fi
+  if [[ $EUID -ne 0 ]]; then
+     echo "This script must be run as root" 1>&2
+     exit 1
+  fi
+}
 
-# Download base image if not present
-if [ ! -f $BASE_IMAGE ]; then
-  echo "Downloading base Ubuntu image..."
-  wget -q $BASE_IMAGE_URL -O $BASE_IMAGE
-fi
+# Build CVM image and cloud-init configuration
+build_cvm() {
+  echo "=== Building CVM Image ==="
+  
+  # Download base image if not present
+  if [ ! -f $BASE_IMAGE ]; then
+    echo "Downloading base Ubuntu image..."
+    wget -q $BASE_IMAGE_URL -O $BASE_IMAGE
+  fi
 
-echo "Creating custom QEMU image..."
-qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 $CUSTOM_IMAGE $DISK_SIZE
+  echo "Creating custom QEMU image..."
+  qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 $CUSTOM_IMAGE $DISK_SIZE
 
-# Create a writable copy of OVMF_VARS for this VM instance
-if [ ! -f $OVMF_VARS_COPY ]; then
-  echo "Creating OVMF vars copy..."
-  cp $OVMF_VARS $OVMF_VARS_COPY
-fi
+  # Create a writable copy of OVMF_VARS for this VM instance
+  if [ ! -f $OVMF_VARS_COPY ]; then
+    echo "Creating OVMF vars copy..."
+    cp $OVMF_VARS $OVMF_VARS_COPY
+  fi
 
-# Generate instance ID
-INSTANCE_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
+  # Generate instance ID
+  INSTANCE_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
 
-# Create cloud-init user-data with embedded configuration
-cat <<'EOF' > $USER_DATA
+  # Create cloud-init user-data with embedded configuration
+  cat <<'EOF' > $USER_DATA
 #cloud-config
 # Propeller CVM Cloud-Init Configuration
 # Installs Proplet, Attestation Agent, and Wasmtime
@@ -417,26 +436,34 @@ final_message: |
   ===================================================================
 EOF
 
-# Substitute configuration values in user-data
-sed -i "s|INSTANCE_ID_PLACEHOLDER|${INSTANCE_ID}|g" $USER_DATA
-sed -i "s|DOMAIN_ID_PLACEHOLDER|${PROPLET_DOMAIN_ID}|g" $USER_DATA
-sed -i "s|CLIENT_ID_PLACEHOLDER|${PROPLET_CLIENT_ID}|g" $USER_DATA
-sed -i "s|CLIENT_KEY_PLACEHOLDER|${PROPLET_CLIENT_KEY}|g" $USER_DATA
-sed -i "s|CHANNEL_ID_PLACEHOLDER|${PROPLET_CHANNEL_ID}|g" $USER_DATA
-sed -i "s|MQTT_ADDRESS_PLACEHOLDER|${PROPLET_MQTT_ADDRESS}|g" $USER_DATA
-sed -i "s|KBS_URL_PLACEHOLDER|${KBS_URL}|g" $USER_DATA
-sed -i "s|KBS_PORT_PLACEHOLDER|${KBS_PORT}|g" $USER_DATA
+  # Substitute configuration values in user-data
+  sed -i "s|INSTANCE_ID_PLACEHOLDER|${INSTANCE_ID}|g" $USER_DATA
+  sed -i "s|DOMAIN_ID_PLACEHOLDER|${PROPLET_DOMAIN_ID}|g" $USER_DATA
+  sed -i "s|CLIENT_ID_PLACEHOLDER|${PROPLET_CLIENT_ID}|g" $USER_DATA
+  sed -i "s|CLIENT_KEY_PLACEHOLDER|${PROPLET_CLIENT_KEY}|g" $USER_DATA
+  sed -i "s|CHANNEL_ID_PLACEHOLDER|${PROPLET_CHANNEL_ID}|g" $USER_DATA
+  sed -i "s|MQTT_ADDRESS_PLACEHOLDER|${PROPLET_MQTT_ADDRESS}|g" $USER_DATA
+  sed -i "s|KBS_URL_PLACEHOLDER|${KBS_URL}|g" $USER_DATA
+  sed -i "s|KBS_PORT_PLACEHOLDER|${KBS_PORT}|g" $USER_DATA
 
-# Create meta-data
-cat <<EOF > $META_DATA
+  # Create meta-data
+  cat <<EOF > $META_DATA
 instance-id: iid-${VM_NAME}
 local-hostname: $VM_NAME
 EOF
 
-echo "Creating cloud-init seed image..."
-cloud-localds $SEED_IMAGE $USER_DATA $META_DATA
+  echo "Creating cloud-init seed image..."
+  cloud-localds $SEED_IMAGE $USER_DATA $META_DATA
+  
+  echo ""
+  echo "✓ CVM image build complete!"
+  echo "  Image: $CUSTOM_IMAGE"
+  echo "  Seed: $SEED_IMAGE"
+  echo ""
+}
 
-# Detect CVM support
+# Detect CVM support and build QEMU command
+detect_cvm_support() {
 TDX_AVAILABLE=false
 SEV_AVAILABLE=false
 
@@ -471,61 +498,99 @@ elif [ "$ENABLE_CVM" = "none" ]; then
   SEV_AVAILABLE=false
   echo "CVM disabled via ENABLE_CVM=none"
 fi
+}
 
-# Build QEMU command
-QEMU_CMD="$QEMU_BINARY"
-QEMU_OPTS="-name $VM_NAME"
-QEMU_OPTS="$QEMU_OPTS -m $RAM"
-QEMU_OPTS="$QEMU_OPTS -smp $CPU"
-QEMU_OPTS="$QEMU_OPTS -enable-kvm"
-QEMU_OPTS="$QEMU_OPTS -boot d"
-QEMU_OPTS="$QEMU_OPTS -netdev user,id=vmnic,hostfwd=tcp::2222-:22,hostfwd=tcp::50002-:50002"
-QEMU_OPTS="$QEMU_OPTS -nographic"
-QEMU_OPTS="$QEMU_OPTS -no-reboot"
-QEMU_OPTS="$QEMU_OPTS -drive file=$SEED_IMAGE,media=cdrom"
-QEMU_OPTS="$QEMU_OPTS -drive file=$CUSTOM_IMAGE,if=none,id=disk0,format=qcow2"
-QEMU_OPTS="$QEMU_OPTS -device virtio-scsi-pci,id=scsi,disable-legacy=on"
-QEMU_OPTS="$QEMU_OPTS -device scsi-hd,drive=disk0"
+# Run the CVM
+run_cvm() {
+  echo "=== Running CVM ==="
+  
+  # Check if required files exist
+  if [ ! -f "$CUSTOM_IMAGE" ]; then
+    echo "Error: CVM image not found: $CUSTOM_IMAGE"
+    echo "Please run '$0 build' first to create the image."
+    exit 1
+  fi
+  
+  if [ ! -f "$SEED_IMAGE" ]; then
+    echo "Error: Cloud-init seed image not found: $SEED_IMAGE"
+    echo "Please run '$0 build' first to create the seed image."
+    exit 1
+  fi
+  
+  # Detect CVM support
+  detect_cvm_support
 
-if [ "$TDX_AVAILABLE" = true ]; then
-  echo "Starting QEMU VM with Intel TDX (Confidential VM)..."
-  QEMU_OPTS=$(echo "$QEMU_OPTS" | sed "s/-name $VM_NAME/-name $VM_NAME,process=$VM_NAME,debug-threads=on/")
-  QEMU_OPTS=$(echo "$QEMU_OPTS" | sed "s/-m $RAM//")
-  QEMU_OPTS="$QEMU_OPTS -object memory-backend-memfd,id=ram1,size=$RAM,share=true,prealloc=false"
+  # Build QEMU command
+  QEMU_CMD="$QEMU_BINARY"
+  QEMU_OPTS="-name $VM_NAME"
   QEMU_OPTS="$QEMU_OPTS -m $RAM"
-  QEMU_OPTS="$QEMU_OPTS -cpu host,pmu=off"
-  QEMU_OPTS="$QEMU_OPTS -object {\"qom-type\":\"tdx-guest\",\"id\":\"tdx0\",\"quote-generation-socket\":{\"type\":\"vsock\",\"cid\":\"2\",\"port\":\"4050\"}}"
-  QEMU_OPTS="$QEMU_OPTS -machine q35,confidential-guest-support=tdx0,memory-backend=ram1,kernel-irqchip=split,hpet=off"
-  QEMU_OPTS="$QEMU_OPTS -bios /usr/share/ovmf/OVMF.fd"
-  QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile="
-  QEMU_OPTS="$QEMU_OPTS -nodefaults"
+  QEMU_OPTS="$QEMU_OPTS -smp $CPU"
+  QEMU_OPTS="$QEMU_OPTS -enable-kvm"
+  QEMU_OPTS="$QEMU_OPTS -boot d"
+  QEMU_OPTS="$QEMU_OPTS -netdev user,id=vmnic,hostfwd=tcp::2222-:22,hostfwd=tcp::50002-:50002"
   QEMU_OPTS="$QEMU_OPTS -nographic"
-  QEMU_OPTS="$QEMU_OPTS -serial mon:stdio"
-  QEMU_OPTS="$QEMU_OPTS -monitor pty"
-elif [ "$SEV_AVAILABLE" = true ]; then
-  echo "Starting QEMU VM with AMD SEV (Confidential VM)..."
-  QEMU_OPTS="$QEMU_OPTS -machine q35"
-  QEMU_OPTS="$QEMU_OPTS -cpu EPYC"
-  QEMU_OPTS="$QEMU_OPTS -object sev-guest,id=sev0,cbitpos=47,reduced-phys-bits=1"
-  QEMU_OPTS="$QEMU_OPTS -machine memory-encryption=sev0"
-  QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=0,file=$OVMF_CODE,readonly=on"
-  QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=1,file=$OVMF_VARS_COPY"
-  QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,netdev=vmnic,romfile="
-else
-  echo "Starting QEMU VM in regular mode (no CVM)..."
-  QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=0,file=$OVMF_CODE,readonly=on"
-  QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=1,file=$OVMF_VARS_COPY"
-  QEMU_OPTS="$QEMU_OPTS -cpu host"
-  QEMU_OPTS="$QEMU_OPTS -machine q35"
-  QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,netdev=vmnic,romfile="
-fi
+  QEMU_OPTS="$QEMU_OPTS -no-reboot"
+  QEMU_OPTS="$QEMU_OPTS -drive file=$SEED_IMAGE,media=cdrom"
+  QEMU_OPTS="$QEMU_OPTS -drive file=$CUSTOM_IMAGE,if=none,id=disk0,format=qcow2"
+  QEMU_OPTS="$QEMU_OPTS -device virtio-scsi-pci,id=scsi,disable-legacy=on"
+  QEMU_OPTS="$QEMU_OPTS -device scsi-hd,drive=disk0"
 
-# Execute QEMU
-echo "Full QEMU command:"
-echo "$QEMU_CMD $QEMU_OPTS"
-echo ""
-echo "VM will be accessible via:"
-echo "  SSH: ssh -p 2222 propeller@localhost"
-echo "  Attestation Agent: localhost:50002"
-echo ""
-$QEMU_CMD $QEMU_OPTS
+  if [ "$TDX_AVAILABLE" = true ]; then
+    echo "Starting QEMU VM with Intel TDX (Confidential VM)..."
+    QEMU_OPTS=$(echo "$QEMU_OPTS" | sed "s/-name $VM_NAME/-name $VM_NAME,process=$VM_NAME,debug-threads=on/")
+    QEMU_OPTS=$(echo "$QEMU_OPTS" | sed "s/-m $RAM//")
+    QEMU_OPTS="$QEMU_OPTS -object memory-backend-memfd,id=ram1,size=$RAM,share=true,prealloc=false"
+    QEMU_OPTS="$QEMU_OPTS -m $RAM"
+    QEMU_OPTS="$QEMU_OPTS -cpu host,pmu=off"
+    QEMU_OPTS="$QEMU_OPTS -object {\"qom-type\":\"tdx-guest\",\"id\":\"tdx0\",\"quote-generation-socket\":{\"type\":\"vsock\",\"cid\":\"2\",\"port\":\"4050\"}}"
+    QEMU_OPTS="$QEMU_OPTS -machine q35,confidential-guest-support=tdx0,memory-backend=ram1,kernel-irqchip=split,hpet=off"
+    QEMU_OPTS="$QEMU_OPTS -bios /usr/share/ovmf/OVMF.fd"
+    QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile="
+    QEMU_OPTS="$QEMU_OPTS -nodefaults"
+    QEMU_OPTS="$QEMU_OPTS -nographic"
+    QEMU_OPTS="$QEMU_OPTS -serial mon:stdio"
+    QEMU_OPTS="$QEMU_OPTS -monitor pty"
+  elif [ "$SEV_AVAILABLE" = true ]; then
+    echo "Starting QEMU VM with AMD SEV (Confidential VM)..."
+    QEMU_OPTS="$QEMU_OPTS -machine q35"
+    QEMU_OPTS="$QEMU_OPTS -cpu EPYC"
+    QEMU_OPTS="$QEMU_OPTS -object sev-guest,id=sev0,cbitpos=47,reduced-phys-bits=1"
+    QEMU_OPTS="$QEMU_OPTS -machine memory-encryption=sev0"
+    QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=0,file=$OVMF_CODE,readonly=on"
+    QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=1,file=$OVMF_VARS_COPY"
+    QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,netdev=vmnic,romfile="
+  else
+    echo "Starting QEMU VM in regular mode (no CVM)..."
+    QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=0,file=$OVMF_CODE,readonly=on"
+    QEMU_OPTS="$QEMU_OPTS -drive if=pflash,format=raw,unit=1,file=$OVMF_VARS_COPY"
+    QEMU_OPTS="$QEMU_OPTS -cpu host"
+    QEMU_OPTS="$QEMU_OPTS -machine q35"
+    QEMU_OPTS="$QEMU_OPTS -device virtio-net-pci,netdev=vmnic,romfile="
+  fi
+
+  # Execute QEMU
+  echo "Full QEMU command:"
+  echo "$QEMU_CMD $QEMU_OPTS"
+  echo ""
+  echo "VM will be accessible via:"
+  echo "  SSH: ssh -p 2222 propeller@localhost"
+  echo "  Attestation Agent: localhost:50002"
+  echo ""
+  $QEMU_CMD $QEMU_OPTS
+}
+
+# Main execution
+check_prerequisites
+
+case "$TARGET" in
+  build)
+    build_cvm
+    ;;
+  run)
+    run_cvm
+    ;;
+  all)
+    build_cvm
+    run_cvm
+    ;;
+esac

@@ -19,6 +19,21 @@ sudo apt-get install -y \
 
 ### Basic Usage
 
+The script supports three targets:
+
+```bash
+# Build and run (default)
+sudo ./qemu.sh all
+
+# Build only - creates the CVM image and cloud-init configuration
+sudo ./qemu.sh build
+
+# Run only - boots an existing CVM image
+sudo ./qemu.sh run
+```
+
+**Example workflow:**
+
 ```bash
 # Set required configuration
 export PROPLET_DOMAIN_ID="your-domain-id"
@@ -28,8 +43,11 @@ export PROPLET_CHANNEL_ID="your-channel-id"
 export PROPLET_MQTT_ADDRESS="tcp://mqtt.example.com:1883"
 export KBS_URL="https://kbs.example.com"
 
-# Run the script
-sudo ./qemu.sh
+# Build the CVM image (only needs to be done once)
+sudo ./qemu.sh build
+
+# Run the CVM (can be done multiple times)
+sudo ./qemu.sh run
 ```
 
 ### CVM Modes
@@ -49,6 +67,7 @@ sudo ENABLE_CVM=sev ./qemu.sh
 # Disable CVM (regular VM)
 sudo ENABLE_CVM=none ./qemu.sh
 ```
+
 
 ## Configuration
 
@@ -75,16 +94,31 @@ sudo ENABLE_CVM=none ./qemu.sh
 
 ## What the Script Does
 
+### Build Phase (`./qemu.sh build`)
+
 1. **Downloads Ubuntu Cloud Image**: Fetches the latest Ubuntu Noble cloud image
 2. **Creates Custom Image**: Creates a QCOW2 image with specified disk size
-3. **Generates Cloud-Init**: Embeds configuration and creates seed image
-4. **Builds Components**: Installs and compiles:
-   - Rust toolchain
-   - Wasmtime runtime
-   - Attestation Agent
-   - Proplet
-5. **Configures Services**: Sets up systemd services for AA and Proplet
-6. **Boots VM**: Launches QEMU with appropriate CVM settings
+3. **Generates Cloud-Init Configuration**: Creates user-data and meta-data files with:
+   - User credentials
+   - Package installation list
+   - Service configurations
+   - Build scripts for components
+4. **Creates Seed Image**: Packages cloud-init configs into an ISO image
+
+The cloud-init configuration will install and build (on first boot):
+- Rust toolchain
+- Wasmtime runtime
+- Attestation Agent
+- Proplet
+- Systemd services for AA and Proplet
+
+### Run Phase (`./qemu.sh run`)
+
+1. **Detects CVM Support**: Checks for Intel TDX or AMD SEV capabilities
+2. **Builds QEMU Command**: Constructs appropriate QEMU arguments based on CVM mode
+3. **Boots VM**: Launches QEMU with the configured settings
+4. **First Boot**: Cloud-init runs and builds all components (takes ~10-15 minutes)
+5. **Subsequent Boots**: Services start immediately with pre-built binaries
 
 ## VM Access
 
