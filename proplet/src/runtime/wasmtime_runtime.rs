@@ -17,12 +17,10 @@ pub struct WasmtimeRuntime {
 
 impl WasmtimeRuntime {
     pub fn new() -> Result<Self> {
-        // Configure engine for optimal performance
         let mut config = Config::new();
         config.wasm_reference_types(true);
         config.wasm_bulk_memory(true);
         config.wasm_simd(true);
-        // Enable epoch-based interruption for terminating infinite loops
         config.epoch_interruption(true);
 
         let engine = Engine::new(&config)?;
@@ -63,7 +61,6 @@ impl Runtime for WasmtimeRuntime {
             .instantiate(&mut store, &module)
             .context("Failed to instantiate Wasmtime module")?;
 
-        // Set epoch deadline for interruption (allow stop_app to terminate infinite loops)
         store.set_epoch_deadline(1);
 
         if config.daemon {
@@ -73,15 +70,8 @@ impl Runtime for WasmtimeRuntime {
             let task_id = config.id.clone();
 
             let handle = tokio::spawn(async move {
-                // In daemon mode, we might want to execute after some delay or condition
-                // For now, just log that it's running
                 info!("Daemon task {} is running", task_id);
 
-                // TODO: Implement actual daemon execution logic
-                // This would typically involve calling the function periodically
-                // or keeping it alive for repeated invocations
-
-                // For now, simulate by waiting and then cleaning up
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 info!("Daemon task {} completed", task_id);
             });
@@ -107,8 +97,6 @@ impl Runtime for WasmtimeRuntime {
 
             let handle = tokio::task::spawn(async move {
                 let result = tokio::task::spawn_blocking(move || {
-                    // Initialize the WASM runtime by calling _initialize if it exists
-                    // This is the WASI reactor initialization function
                     if let Some(init_func) = instance.get_func(&mut store, "_initialize") {
                         info!("Found _initialize function, initializing WASM runtime for task: {}", task_id);
                         init_func.call(&mut store, &[], &mut [])
@@ -169,7 +157,6 @@ impl Runtime for WasmtimeRuntime {
                         })
                         .collect();
 
-                    // Increment epoch before calling to ensure interruption works
                     engine.increment_epoch();
 
                     func.call(&mut store, &wasm_args, &mut results)
@@ -207,10 +194,8 @@ impl Runtime for WasmtimeRuntime {
                 })
                 .await;
 
-                // Clean up task from registry
                 tasks.lock().await.remove(&task_id_for_cleanup);
 
-                // Send result back through channel
                 let final_result = match result {
                     Ok(Ok(data)) => Ok(data),
                     Ok(Err(e)) => Err(e),
@@ -220,13 +205,11 @@ impl Runtime for WasmtimeRuntime {
                 let _ = result_tx.send(final_result);
             });
 
-            // Register task handle immediately so stop_app can abort it
             {
                 let mut tasks_map = self.tasks.lock().await;
                 tasks_map.insert(config.id.clone(), handle);
             }
 
-            // For synchronous tasks, we still need to wait and return the result
             match result_rx.await {
                 Ok(result) => result,
                 Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
