@@ -71,16 +71,32 @@ impl Runtime for HostRuntime {
 
         let mut cmd = Command::new(&self.runtime_path);
 
+        // Add wasmtime CLI arguments
+        cmd.arg("run");
+
+        // If a specific function is requested (and not _start), use --invoke
+        // For WASI command modules, _start is the default entry point
+        if !config.function_name.is_empty() 
+            && config.function_name != "_start" 
+            && !config.function_name.starts_with("fl-round-") {
+            // This is a specific function name, use --invoke
+            cmd.arg("--invoke").arg(&config.function_name);
+        }
+
+        // Add any additional CLI args from config
         for arg in &config.cli_args {
             cmd.arg(arg);
         }
 
+        // Add the WASM file
         cmd.arg(&temp_file);
 
+        // Add function arguments (if any)
         for arg in &config.args {
             cmd.arg(arg.to_string());
         }
 
+        // Set environment variables
         cmd.envs(&config.env);
 
         cmd.stdout(Stdio::piped())
