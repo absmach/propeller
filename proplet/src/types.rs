@@ -58,6 +58,8 @@ pub struct StartRequest {
     pub env: Option<HashMap<String, String>>,
     #[serde(rename = "monitoringProfile", default)]
     pub monitoring_profile: Option<MonitoringProfile>,
+    #[serde(default)]
+    pub encrypted: bool,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -267,6 +269,7 @@ mod tests {
             daemon: false,
             env: Some(HashMap::new()),
             monitoring_profile: None,
+            encrypted: false,
         };
 
         assert!(req.validate().is_ok());
@@ -285,6 +288,7 @@ mod tests {
             daemon: true,
             env: None,
             monitoring_profile: None,
+            encrypted: false,
         };
 
         assert!(req.validate().is_ok());
@@ -295,14 +299,15 @@ mod tests {
         let req = StartRequest {
             id: String::new(),
             cli_args: vec![],
-            name: "test".to_string(),
+            name: String::new(),
             state: 0,
-            file: "data".to_string(),
+            file: String::new(),
             image_url: String::new(),
             inputs: vec![],
             daemon: false,
             env: None,
             monitoring_profile: None,
+            encrypted: false,
         };
 
         let result = req.validate();
@@ -323,6 +328,7 @@ mod tests {
             daemon: false,
             env: None,
             monitoring_profile: None,
+            encrypted: false,
         };
 
         let result = req.validate();
@@ -343,6 +349,7 @@ mod tests {
             daemon: false,
             env: None,
             monitoring_profile: None,
+            encrypted: false,
         };
 
         let result = req.validate();
@@ -364,7 +371,8 @@ mod tests {
             "inputs": null,
             "daemon": false,
             "env": null,
-            "state": 1
+            "state": 1,
+            "encrypted": false
         });
 
         let req: StartRequest = serde_json::from_value(json_data).unwrap();
@@ -378,6 +386,7 @@ mod tests {
         assert!(!req.daemon);
         assert!(req.env.is_none());
         assert_eq!(req.state, 1);
+        assert!(!req.encrypted);
     }
 
     #[test]
@@ -394,7 +403,8 @@ mod tests {
                 "KEY1": "value1",
                 "KEY2": "value2"
             },
-            "state": 2
+            "state": 2,
+            "encrypted": true
         });
 
         let req: StartRequest = serde_json::from_value(json_data).unwrap();
@@ -404,6 +414,7 @@ mod tests {
         assert_eq!(req.inputs, vec![10, 20, 30]);
         assert!(req.daemon);
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
+        assert!(req.encrypted);
     }
 
     #[test]
@@ -542,11 +553,13 @@ mod tests {
             "name": "func",
             "file": null,
             "image_url": "url",
-            "state": 0
+            "state": 0,
+            "encrypted": false
         });
 
         let req: StartRequest = serde_json::from_value(json_data).unwrap();
         assert!(req.file.is_empty());
+        assert!(!req.encrypted);
     }
 
     #[test]
@@ -558,12 +571,14 @@ mod tests {
             "file": "data",
             "image_url": "",
             "inputs": null,
-            "state": 0
+            "state": 0,
+            "encrypted": false
         });
 
         let req: StartRequest = serde_json::from_value(json_data).unwrap();
         assert!(req.cli_args.is_empty());
         assert!(req.inputs.is_empty());
+        assert!(!req.encrypted);
     }
 
     #[test]
@@ -583,6 +598,7 @@ mod tests {
             daemon: false,
             env: Some(env.clone()),
             monitoring_profile: None,
+            encrypted: false,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);

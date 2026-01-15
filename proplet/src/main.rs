@@ -6,6 +6,9 @@ mod runtime;
 mod service;
 mod types;
 
+#[cfg(feature = "cdh")]
+mod cdh;
+
 use crate::config::PropletConfig;
 use crate::mqtt::{process_mqtt_events, MqttConfig, PubSub};
 use crate::runtime::host::HostRuntime;
@@ -78,7 +81,7 @@ async fn main() -> Result<()> {
         Arc::new(WasmtimeRuntime::new()?)
     };
 
-    let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
+    let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime).await);
 
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()

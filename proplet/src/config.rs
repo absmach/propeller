@@ -39,6 +39,7 @@ pub struct PropletConfig {
     pub k8s_namespace: Option<String>,
     pub external_wasm_runtime: Option<String>,
     pub enable_monitoring: bool,
+    pub cdh_enabled: Option<bool>,
 }
 
 impl Default for PropletConfig {
@@ -62,6 +63,7 @@ impl Default for PropletConfig {
             k8s_namespace: None,
             external_wasm_runtime: None,
             enable_monitoring: true,
+            cdh_enabled: None,
         }
     }
 }
@@ -213,6 +215,10 @@ impl PropletConfig {
 
         if let Ok(val) = env::var("PROPLET_ENABLE_MONITORING") {
             config.enable_monitoring = val.to_lowercase() == "true" || val == "1";
+        }
+
+        if let Ok(val) = env::var("PROPLET_CDH_ENABLED") {
+            config.cdh_enabled = Some(val.to_lowercase() == "true" || val == "1");
         }
 
         config

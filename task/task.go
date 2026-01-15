@@ -43,6 +43,7 @@ type Task struct {
 	Inputs            []uint64                   `json:"inputs,omitempty"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Daemon            bool                       `json:"daemon"`
+	Encrypted         bool                       `json:"encrypted"`
 	PropletID         string                     `json:"proplet_id,omitempty"`
 	Results           any                        `json:"results,omitempty"`
 	Error             string                     `json:"error,omitempty"`
