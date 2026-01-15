@@ -266,16 +266,27 @@ runcmd:
   - systemctl restart sshd
   - sleep 2
   
-  # Install TDX-capable kernel from Ubuntu's intel-tdx PPA
+  # Install TDX kernel modules (standard Ubuntu 24.04 kernel includes TDX support)
   - |
-    add-apt-repository -y ppa:kobuk-team/intel-tdx || echo "PPA add failed, trying canonical tdx"
-    apt-get update || true
-    apt-get install -y linux-image-generic linux-modules-extra-generic || echo "Kernel install failed"
-    # Try to load TDX guest module
-    modprobe tdx_guest 2>/dev/null || echo "tdx_guest module not yet available (may need reboot)"
-    # Add to modules to load at boot
+    echo "=== Installing TDX kernel modules ==="
+    # The standard Ubuntu 24.04 kernel already includes TDX support
+    # We just need to install linux-modules-extra which contains tdx-guest.ko
+    apt-get update
+    apt-get install -y linux-modules-extra-generic
+    
+    # Configure tdx_guest module to load at boot
     mkdir -p /etc/modules-load.d
     echo "tdx_guest" > /etc/modules-load.d/tdx.conf
+    
+    # Load the module now
+    modprobe tdx_guest 2>/dev/null && echo "✓ tdx_guest module loaded successfully" || echo "tdx_guest module will load on next boot"
+    
+    # Verify the device exists
+    if [ -e /dev/tdx_guest ]; then
+      echo "✓ /dev/tdx_guest device created"
+    else
+      echo "Note: /dev/tdx_guest will be available after module loads"
+    fi
   
   # Create directories
   - mkdir -p /etc/attestation-agent/certs
