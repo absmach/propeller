@@ -197,7 +197,7 @@ write_files:
       AA_LOG_LEVEL=info
       KBS_URL=KBS_URL_PLACEHOLDER
       KBS_PORT=KBS_PORT_PLACEHOLDER
-      AA_ENDPOINT=127.0.0.1:50002
+      AA_ATTESTATION_SOCK=127.0.0.1:50002
       AA_TOKEN_PATH=/run/attestation-agent/token
       AA_CA_CERT_PATH=/etc/attestation-agent/certs/ca.pem
       AA_TLS_INSECURE=false
@@ -214,10 +214,10 @@ write_files:
       [Service]
       Type=simple
       EnvironmentFile=/etc/default/attestation-agent
+      Environment=RUST_LOG=attestation_agent
       ExecStartPre=/bin/mkdir -p /run/attestation-agent
       ExecStartPre=/bin/mkdir -p /etc/attestation-agent/certs
-      ExecStartPre=/bin/mkdir -p /run/confidential-containers/attestation-agent
-      ExecStart=/usr/local/bin/attestation-agent
+      ExecStart=/usr/local/bin/attestation-agent --attestation_sock ${AA_ATTESTATION_SOCK}
       Restart=on-failure
       RestartSec=5s
       StandardOutput=journal
@@ -227,7 +227,7 @@ write_files:
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/run/attestation-agent /etc/attestation-agent /run/confidential-containers/attestation-agent
+      ReadWritePaths=/run/attestation-agent /etc/attestation-agent
       
       [Install]
       WantedBy=multi-user.target
