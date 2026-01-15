@@ -128,6 +128,43 @@ write_files:
       PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
       PROPLET_LIVELINESS_INTERVAL=10
       PROPLET_MANAGER_K8S_NAMESPACE=default
+      PROPLET_CONFIG_FILE=/etc/proplet/config.toml
+      PROPLET_CONFIG_SECTION=proplet1
+    permissions: '0644'
+
+  - path: /etc/proplet/config.toml
+    content: |
+      # SuperMQ Configuration
+
+      [manager]
+      domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+      client_id = "cdaccb11-7209-4fb9-8df1-3c52e9d64284"
+      client_key = "507d687d-51f8-4c71-8599-4273a5d75429"
+      channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+      [proplet1]
+      domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+      client_id = "0deb859f-973d-4e2e-93cf-ec756f4fc3c8"
+      client_key = "17c03d05-b55d-4a05-88ec-cadecb2130c4"
+      channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+      [proplet2]
+      domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+      client_id = "3dfb6fa7-8e8f-4a2b-a462-8afc59898686"
+      client_key = "06244015-8286-4dd6-89bd-e2ba7d7a9637"
+      channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+      [proplet3]
+      domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+      client_id = "f869bde7-8b1a-483e-9837-b621309af55a"
+      client_key = "316ba339-76f5-4149-acd7-8d6f3f7c9276"
+      channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+      [proxy]
+      domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+      client_id = "0deb859f-973d-4e2e-93cf-ec756f4fc3c8"
+      client_key = "17c03d05-b55d-4a05-88ec-cadecb2130c4"
+      channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
     permissions: '0644'
 
   - path: /etc/default/attestation-agent
@@ -223,6 +260,7 @@ runcmd:
   # Create directories
   - mkdir -p /etc/attestation-agent/certs
   - mkdir -p /var/lib/proplet
+  - mkdir -p /etc/proplet
   - mkdir -p /run/attestation-agent
   
   # Install Wasmtime
