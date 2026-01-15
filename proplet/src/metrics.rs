@@ -93,7 +93,6 @@ impl MetricsCollector {
 
         let contents = fs::read_to_string("/proc/self/stat")?;
 
-        // Find the closing parenthesis of the command name
         let close_paren = contents.rfind(')').ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -106,14 +105,11 @@ impl MetricsCollector {
         let fields: Vec<&str> = contents[close_paren + 2..].split_whitespace().collect();
 
         if fields.len() >= 14 {
-            // Fields 11 and 12 (0-indexed after comm) are utime and stime (in clock ticks)
             let utime: u64 = fields[11].parse().unwrap_or(0);
             let stime: u64 = fields[12].parse().unwrap_or(0);
 
-            // Get the actual clock ticks per second from the system
             let hz = Self::get_clock_ticks_per_second().unwrap_or(100.0);
 
-            // Convert clock ticks to seconds using the queried HZ value
             let user_seconds = utime as f64 / hz;
             let system_seconds = stime as f64 / hz;
 
@@ -126,14 +122,12 @@ impl MetricsCollector {
     fn collect_memory_metrics(&mut self) -> MemoryMetrics {
         let mut mem_metrics = MemoryMetrics::default();
 
-        // Get process memory from sysinfo
         if let Ok(pid) = sysinfo::get_current_pid() {
             if let Some(process) = self.system.process(pid) {
                 mem_metrics.rss_bytes = process.memory();
             }
         }
 
-        // Try to read cgroup memory limits (container environment)
         #[cfg(target_os = "linux")]
         {
             if let Ok((usage, limit)) = Self::read_cgroup_memory() {
@@ -151,7 +145,6 @@ impl MetricsCollector {
     fn read_cgroup_memory() -> Result<(u64, u64), std::io::Error> {
         use std::fs;
 
-        // Try cgroup v2 first
         if let Ok(usage_str) = fs::read_to_string("/sys/fs/cgroup/memory.current") {
             let usage = usage_str.trim().parse().unwrap_or(0);
             let limit = if let Ok(limit_str) = fs::read_to_string("/sys/fs/cgroup/memory.max") {
@@ -167,7 +160,6 @@ impl MetricsCollector {
             return Ok((usage, limit));
         }
 
-        // Fall back to cgroup v1
         if let Ok(usage_str) = fs::read_to_string("/sys/fs/cgroup/memory/memory.usage_in_bytes") {
             let usage = usage_str.trim().parse().unwrap_or(0);
             let limit = if let Ok(limit_str) =

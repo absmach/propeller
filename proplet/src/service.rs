@@ -120,7 +120,6 @@ impl PropletService {
             service.start_liveliness_updates().await;
         });
 
-        // Start proplet metrics updates if enabled
         if self.config.enable_monitoring && self.config.metrics_interval > 0 {
             let service = self.clone();
             tokio::spawn(async move {
@@ -402,7 +401,6 @@ impl PropletService {
                 mode: req.mode.clone(),
             };
 
-            // Start monitoring setup (if enabled)
             if export_metrics {
                 if let Err(e) = monitor
                     .start_monitoring(&task_id, monitoring_profile.clone())
@@ -412,7 +410,6 @@ impl PropletService {
                 }
             }
 
-            // Spawn the monitoring attachment in a separate task to run concurrently
             let monitor_handle = if export_metrics {
                 let monitor_clone = monitor.clone();
                 let runtime_clone = runtime.clone();
@@ -491,10 +488,8 @@ impl PropletService {
                 }
             };
 
-            // Handle FL tasks
             if req.mode.as_deref() == Some("train") && req.fl.is_some() {
                 let fl_spec = req.fl.as_ref().unwrap();
-                // Build FL update envelope (using standalone function to avoid borrowing self in spawn)
                 let update_envelope = build_fl_update_envelope(
                     &task_id,
                     &proplet_id,
