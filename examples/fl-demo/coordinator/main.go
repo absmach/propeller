@@ -205,10 +205,8 @@ func aggregateAndAdvance(round *RoundState) {
 	if len(updates) > 0 && updates[0].Update != nil {
 		if w, ok := updates[0].Update["w"].([]interface{}); ok {
 			aggregatedW = make([]float64, len(w))
-			for i, v := range w {
-				if f, ok := v.(float64); ok {
-					aggregatedW[i] = 0
-				}
+			for i := range w {
+				aggregatedW[i] = 0
 			}
 		}
 	}

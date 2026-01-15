@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -70,7 +69,6 @@ func main() {
 	slog.Info("Model server connected to MQTT broker", "broker", broker)
 
 	// Publish default model if it exists (after client is connected)
-	defaultModelPath := filepath.Join(modelsDir, "global_model_v0.json")
 	if data, err := os.ReadFile(defaultModelPath); err == nil {
 		var defaultModel Model
 		if err := json.Unmarshal(data, &defaultModel); err == nil {
