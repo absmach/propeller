@@ -266,14 +266,22 @@ runcmd:
   - systemctl restart sshd
   - sleep 2
   
-  # Install TDX/SEV kernel support
+  # Install Intel TDX kernel support
   - |
-    add-apt-repository -y ppa:kobuk-team/intel-tdx || echo "PPA add failed, trying canonical tdx"
-    apt-get update || true
-    apt-get install -y linux-image-generic linux-modules-extra-generic || echo "Kernel install failed"
-    modprobe tdx_guest 2>/dev/null || echo "tdx_guest module not yet available (may need reboot)"
+    echo "=== Installing Intel TDX kernel ==="
+    # Install Intel-optimized kernel which includes TDX guest driver
+    apt-get update
+    apt-get install -y linux-image-intel linux-headers-intel linux-tools-intel || {
+      echo "Intel kernel not available, trying generic with extra modules"
+      apt-get install -y linux-image-generic linux-modules-extra-generic
+    }
+    
+    # The tdx_guest module will be available after reboot with Intel kernel
+    # For now, configure it to load on boot
     mkdir -p /etc/modules-load.d
     echo "tdx_guest" > /etc/modules-load.d/tdx.conf
+    
+    echo "TDX kernel installed. The tdx_guest module will be available after reboot."
   
   # Create directories
   - mkdir -p /etc/attestation-agent/certs
@@ -432,7 +440,16 @@ final_message: |
   View logs:
     sudo journalctl -u attestation-agent -f
     sudo journalctl -u proplet -f
+    
+  NOTE: System will reboot to activate Intel TDX kernel
   ===================================================================
+
+# Reboot to activate the Intel TDX kernel
+power_state:
+  delay: now
+  mode: reboot
+  message: Rebooting to activate Intel TDX kernel
+  condition: true
 EOF
 
   # Substitute configuration values in user-data
