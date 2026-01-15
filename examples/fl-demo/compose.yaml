@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MQTT Broker (using Eclipse Mosquitto for demo)
   mqtt:
@@ -48,11 +46,15 @@ services:
     image: ghcr.io/absmach/propeller/manager:latest
     depends_on:
       - mqtt
+    ports:
+      - "7070:7070"
     environment:
       - MANAGER_DOMAIN_ID=demo
       - MANAGER_CHANNEL_ID=fl
       - MANAGER_CLIENT_ID=manager
       - MANAGER_CLIENT_KEY=manager-key
+      - MANAGER_MQTT_ADDRESS=tcp://mqtt:1883
+      - MANAGER_HTTP_HOST=0.0.0.0
     networks:
       - fl-demo
     # Note: In production, you'd configure proper storage backends
@@ -68,8 +70,11 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-1
       - PROPLET_CLIENT_KEY=proplet-1-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
     networks:
       - fl-demo
+    healthcheck:
+      disable: true
 
   proplet-2:
     image: ghcr.io/absmach/propeller/proplet:latest
@@ -81,8 +86,11 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-2
       - PROPLET_CLIENT_KEY=proplet-2-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
     networks:
       - fl-demo
+    healthcheck:
+      disable: true
 
   proplet-3:
     image: ghcr.io/absmach/propeller/proplet:latest
@@ -94,8 +102,11 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-3
       - PROPLET_CLIENT_KEY=proplet-3-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
     networks:
       - fl-demo
+    healthcheck:
+      disable: true
 
 volumes:
   fl-models:
