@@ -266,22 +266,16 @@ runcmd:
   - systemctl restart sshd
   - sleep 2
   
-  # Install Intel TDX kernel support
+  # Install TDX-capable kernel from Ubuntu's intel-tdx PPA
   - |
-    echo "=== Installing Intel TDX kernel ==="
-    # Install Intel-optimized kernel which includes TDX guest driver
-    apt-get update
-    apt-get install -y linux-image-intel linux-headers-intel linux-tools-intel || {
-      echo "Intel kernel not available, trying generic with extra modules"
-      apt-get install -y linux-image-generic linux-modules-extra-generic
-    }
-    
-    # The tdx_guest module will be available after reboot with Intel kernel
-    # For now, configure it to load on boot
+    add-apt-repository -y ppa:kobuk-team/intel-tdx || echo "PPA add failed, trying canonical tdx"
+    apt-get update || true
+    apt-get install -y linux-image-generic linux-modules-extra-generic || echo "Kernel install failed"
+    # Try to load TDX guest module
+    modprobe tdx_guest 2>/dev/null || echo "tdx_guest module not yet available (may need reboot)"
+    # Add to modules to load at boot
     mkdir -p /etc/modules-load.d
     echo "tdx_guest" > /etc/modules-load.d/tdx.conf
-    
-    echo "TDX kernel installed. The tdx_guest module will be available after reboot."
   
   # Create directories
   - mkdir -p /etc/attestation-agent/certs
