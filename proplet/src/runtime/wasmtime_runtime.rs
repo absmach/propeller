@@ -106,12 +106,45 @@ impl Runtime for WasmtimeRuntime {
                         info!("No _initialize function found, skipping initialization for task: {}", task_id);
                     }
 
-                    let func = instance
-                        .get_func(&mut store, &function_name)
-                        .context(format!(
-                            "Function '{function_name}' not found in module exports"
+                    // #region agent log
+                    let exports: Vec<String> = instance
+                        .exports(&mut store)
+                        .map(|export| export.name().to_string())
+                        .collect();
+                    info!(
+                        "WASM module exports for task {}: requested='{}', available={:?}",
+                        task_id, function_name, exports
+                    );
+                    // #endregion agent log
 
-                        ))?;
+                    // Try to get the requested function, with fallbacks
+                    let func = if let Some(f) = instance.get_func(&mut store, &function_name) {
+                        info!("Found requested function '{}' in module exports", function_name);
+                        f
+                    } else {
+                        // Try common fallback function names
+                        let fallbacks = vec!["main", "run", "_start"];
+                        let mut found_func = None;
+                        let mut tried_fallbacks = Vec::new();
+                        
+                        for fallback in &fallbacks {
+                            tried_fallbacks.push(*fallback);
+                            if let Some(f) = instance.get_func(&mut store, fallback) {
+                                info!("Function '{}' not found, using fallback '{}'", function_name, fallback);
+                                found_func = Some(f);
+                                break;
+                            }
+                        }
+                        
+                        found_func.ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Function '{}' not found, and fallbacks {:?} also not found in module exports. Available function exports: {:?}",
+                                function_name,
+                                tried_fallbacks,
+                                exports
+                            )
+                        })?
+                    };
 
                     let func_ty = func.ty(&store);
 
