@@ -155,6 +155,7 @@ write_files:
       EnvironmentFile=/etc/default/attestation-agent
       ExecStartPre=/bin/mkdir -p /run/attestation-agent
       ExecStartPre=/bin/mkdir -p /etc/attestation-agent/certs
+      ExecStartPre=/bin/mkdir -p /run/confidential-containers/attestation-agent
       ExecStart=/usr/local/bin/attestation-agent
       Restart=on-failure
       RestartSec=5s
@@ -165,7 +166,7 @@ write_files:
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/run/attestation-agent /etc/attestation-agent
+      ReadWritePaths=/run/attestation-agent /etc/attestation-agent /run/confidential-containers/attestation-agent
       
       [Install]
       WantedBy=multi-user.target
