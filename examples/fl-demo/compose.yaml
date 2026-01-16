@@ -42,8 +42,13 @@ services:
       - fl-models:/tmp/fl-models
 
   # Propeller Manager
+  # UPDATED: Builds from local source code to include FL logic
   manager:
-    image: ghcr.io/absmach/propeller/manager:latest
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        SVC: manager
     depends_on:
       - mqtt
     ports:
@@ -57,7 +62,6 @@ services:
       - MANAGER_HTTP_HOST=0.0.0.0
     networks:
       - fl-demo
-    # Note: In production, you'd configure proper storage backends
 
   # Propeller Proplet (example worker)
   proplet-1:
