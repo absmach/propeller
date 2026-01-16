@@ -154,14 +154,37 @@ func handleUpdate(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	roundsMu.RLock()
+	// UPDATED LOGIC: Use Lock (not RLock) to allow lazy initialization
+	roundsMu.Lock()
 	round, exists := rounds[roundID]
-	roundsMu.RUnlock()
 
 	if !exists {
-		slog.Warn("Received update for unknown round, ignoring", "round_id", roundID)
-		return
+		// Lazy Initialize the round if it doesn't exist
+		// This handles cases where tasks are started manually via HTTP (like the test script)
+		// without a preceding MQTT Round Start message.
+		slog.Info("Received update for unknown round, lazy initializing", "round_id", roundID)
+
+		// Use BaseModelURI from update if available, otherwise default
+		modelURI := update.BaseModelURI
+		if modelURI == "" {
+			modelURI = "fl/models/global_model_v0"
+		}
+
+		// Default settings for the demo
+		round = &RoundState{
+			RoundID:   roundID,
+			ModelURI:  modelURI,
+			KOfN:      3, // Default aggregation threshold
+			TimeoutS:  60,
+			StartTime: time.Now(),
+			Updates:   make([]Update, 0),
+			Completed: false,
+		}
+		rounds[roundID] = round
 	}
+
+	// We release the global map lock now that we have the specific round pointer
+	roundsMu.Unlock()
 
 	round.mu.Lock()
 	defer round.mu.Unlock()
