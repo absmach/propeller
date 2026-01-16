@@ -21,7 +21,7 @@
 
 ![Propeller Orchestration Diagram](docs/architecture.svg)
 
-## 📖 Documentation
+##  Documentation
 
 For setup instructions, API references, and usage examples, see the documentation:
 🔗 [Documentation Link](https://docs.propeller.absmach.eu/)
