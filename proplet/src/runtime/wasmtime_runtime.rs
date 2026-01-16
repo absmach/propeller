@@ -49,7 +49,16 @@ impl Runtime for WasmtimeRuntime {
 
         info!("Module compiled successfully for task: {}", config.id);
 
-        let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
+        // Build WASI context with environment variables
+        let mut wasi_builder = WasiCtxBuilder::new();
+        wasi_builder.inherit_stdio();
+        
+        // Inject environment variables into WASI context
+        for (key, value) in &config.env {
+            wasi_builder.env(key, value);
+        }
+        
+        let wasi = wasi_builder.build_p1();
 
         let mut store = Store::new(&self.engine, wasi);
 
