@@ -496,6 +496,32 @@ impl PropletService {
                 }
             };
 
+            // Check if this is an FL task via ROUND_ID environment variable
+            // This handles cases where tasks are created manually (e.g., via test scripts)
+            // without the full FL metadata structure
+            if let Some(round_id) = env.get("ROUND_ID") {
+                // Parse the result as JSON (fl-client.go outputs JSON)
+                if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
+                    let fl_topic = format!("fl/rounds/{}/updates/{}", round_id, proplet_id);
+                    info!(
+                        "Detected FL task via ROUND_ID env. Publishing update to coordinator topic: {}",
+                        fl_topic
+                    );
+
+                    if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
+                        error!("Failed to publish FL update to {}: {}", fl_topic, e);
+                    } else {
+                        info!("Successfully published FL update to coordinator: {}", fl_topic);
+                    }
+                } else if error.is_none() {
+                    // Only warn if task didn't fail - failed tasks might not have valid JSON
+                    warn!(
+                        "Task {} output was not valid JSON, skipping FL update publish to coordinator",
+                        task_id
+                    );
+                }
+            }
+
             if req.mode.as_deref() == Some("train") && req.fl.is_some() {
                 let fl_spec = req.fl.as_ref().unwrap();
                 let update_envelope = build_fl_update_envelope(
