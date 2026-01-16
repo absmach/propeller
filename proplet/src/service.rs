@@ -317,6 +317,10 @@ impl PropletService {
 
         {
             let mut tasks = self.running_tasks.lock().await;
+            if tasks.contains_key(&req.id) {
+                warn!("Task {} is already running, ignoring duplicate start command", req.id);
+                return Ok(());
+            }
             tasks.insert(req.id.clone(), TaskState::Running);
         }
 
