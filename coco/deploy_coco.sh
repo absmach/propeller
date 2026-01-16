@@ -9,16 +9,16 @@ ROOT_DIR=$(dirname "$SCRIPT_DIR")
 K8S_DIR="$SCRIPT_DIR"
 
 # Configuration
-IMAGE_NAME="proplet"
+IMAGE_NAME="ghcr.io/absmach/propeller/proplet"
 IMAGE_TAG="latest"
 RUNTIME_CLASS=${RUNTIME_CLASS:-kata}
 
 echo "=== Proplet CoCo Deployment ==="
 
-# 1. Build the Proplet container image
+# 1. Build the Proplet container image using Makefile
 echo "Building Proplet container image..."
 cd "$ROOT_DIR"
-docker build -f docker/Dockerfile.proplet -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+make docker_proplet
 
 # 2. (Optional) Load into Kind if using Kind
 if kind get clusters &> /dev/null; then

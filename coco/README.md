@@ -75,10 +75,12 @@ Use the helper script to build and deploy:
 Or manually:
 
 ```bash
-# 1. Build image
-docker build -f ../docker/Dockerfile.proplet -t proplet:latest ..
+# 1. Build image (from repository root)
+cd ..
+make docker_proplet
 
-# 2. Apply manifests
+# 2. Apply manifests (from coco directory)
+cd coco
 kubectl apply -f proplet-config.yaml
 kubectl apply -f proplet.yaml
 ```
