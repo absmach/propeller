@@ -75,16 +75,13 @@ build_cvm() {
   
   # Download base image if not present
   if [ ! -f $BASE_IMAGE ]; then
-    echo "Downloading base Ubuntu image..."
     wget -q $BASE_IMAGE_URL -O $BASE_IMAGE
   fi
 
-  echo "Creating custom QEMU image..."
   qemu-img create -f qcow2 -b $BASE_IMAGE -F qcow2 $CUSTOM_IMAGE $DISK_SIZE
 
   # Create a writable copy of OVMF_VARS for this VM instance
   if [ ! -f $OVMF_VARS_COPY ]; then
-    echo "Creating OVMF vars copy..."
     cp $OVMF_VARS $OVMF_VARS_COPY
   fi
 
@@ -452,11 +449,6 @@ final_message: |
     sudo journalctl -u attestation-agent -f
     sudo journalctl -u proplet -f
     
-  IMPORTANT: Intel TDX kernel installed but requires reboot
-  To activate TDX attestation:
-    1. Exit QEMU (Ctrl+A, then X)
-    2. Run: sudo ./qemu.sh run
-    3. Verify TDX: ls /dev/tdx_guest
   ===================================================================
 EOF
 
@@ -476,14 +468,9 @@ instance-id: iid-${VM_NAME}
 local-hostname: $VM_NAME
 EOF
 
-  echo "Creating cloud-init seed image..."
   cloud-localds $SEED_IMAGE $USER_DATA $META_DATA
   
-  echo ""
   echo "✓ CVM image build complete!"
-  echo "  Image: $CUSTOM_IMAGE"
-  echo "  Seed: $SEED_IMAGE"
-  echo ""
 }
 
 # Detect CVM support and build QEMU command
@@ -494,17 +481,14 @@ SEV_AVAILABLE=false
 if [ "$ENABLE_CVM" = "auto" ] || [ "$ENABLE_CVM" = "tdx" ]; then
   if dmesg | grep -q "virt/tdx: module initialized"; then
     TDX_AVAILABLE=true
-    echo "TDX host support detected"
   elif grep -q tdx /proc/cpuinfo; then
     TDX_AVAILABLE=true
-    echo "TDX CPU support detected"
   fi
 fi
 
 if [ "$ENABLE_CVM" = "auto" ] || [ "$ENABLE_CVM" = "sev" ]; then
   if grep -q sev /proc/cpuinfo; then
     SEV_AVAILABLE=true
-    echo "SEV CPU support detected"
   fi
 fi
 
@@ -512,15 +496,12 @@ fi
 if [ "$ENABLE_CVM" = "tdx" ]; then
   TDX_AVAILABLE=true
   SEV_AVAILABLE=false
-  echo "TDX mode forced via ENABLE_CVM=tdx"
 elif [ "$ENABLE_CVM" = "sev" ]; then
   TDX_AVAILABLE=false
   SEV_AVAILABLE=true
-  echo "SEV mode forced via ENABLE_CVM=sev"
 elif [ "$ENABLE_CVM" = "none" ]; then
   TDX_AVAILABLE=false
   SEV_AVAILABLE=false
-  echo "CVM disabled via ENABLE_CVM=none"
 fi
 }
 
@@ -593,9 +574,6 @@ run_cvm() {
   fi
 
   # Execute QEMU
-  echo "Full QEMU command:"
-  echo "$QEMU_CMD $QEMU_OPTS"
-  echo ""
   echo "VM will be accessible via:"
   echo "  SSH: ssh -p 2222 propeller@localhost"
   echo "  Attestation Agent: localhost:50002"

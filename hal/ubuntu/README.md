@@ -19,11 +19,17 @@ sudo apt-get install -y \
 
 ### Basic Usage
 
+First, make the script executable:
+
+```bash
+chmod +x qemu.sh
+```
+
 The script supports three targets:
 
 ```bash
 # Build and run (default)
-sudo ./qemu.sh all
+sudo ./qemu.sh
 
 # Build only - creates the CVM image and cloud-init configuration
 sudo ./qemu.sh build
