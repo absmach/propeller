@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct HostRuntime {
     runtime_path: String,
@@ -88,15 +88,29 @@ impl Runtime for HostRuntime {
             cmd.arg(arg);
         }
 
+        // Pass environment variables to the WASI guest via --env flags.
+        // NOTE: These must be passed BEFORE the wasm file argument.
+        if !config.env.is_empty() {
+            info!("Setting {} environment variables for task {}", config.env.len(), config.id);
+            for (key, value) in &config.env {
+                debug!("  {}={}", key, value);
+                cmd.arg("--env");
+                cmd.arg(format!("{}={}", key, value));
+            }
+        } else {
+            warn!("No environment variables provided for task {}", config.id);
+        }
+
         // Add the WASM file
         cmd.arg(&temp_file);
 
-        // Add function arguments (if any)
+        // Add function arguments (if any). These are passed to the module itself.
         for arg in &config.args {
             cmd.arg(arg.to_string());
         }
 
-        // Set environment variables
+        // Also set environment variables for the host process (wasmtime itself)
+        // This is less critical for the guest but good for consistency.
         cmd.envs(&config.env);
 
         cmd.stdout(Stdio::piped())
