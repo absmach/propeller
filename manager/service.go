@@ -486,89 +486,97 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 // It launches tasks for each participant without any FL-specific validation or state tracking.
 func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
-		roundID, ok := msg["round_id"].(string)
-		if !ok || roundID == "" {
-			return errors.New("missing or invalid round_id")
-		}
-
-		modelURI, ok := msg["model_uri"].(string)
-		if !ok || modelURI == "" {
-			return errors.New("missing or invalid model_uri")
-		}
-
-		taskWasmImage, ok := msg["task_wasm_image"].(string)
-		if !ok || taskWasmImage == "" {
-			return errors.New("missing or invalid task_wasm_image")
-		}
-
-		participantsRaw, ok := msg["participants"].([]any)
-		if !ok || len(participantsRaw) == 0 {
-			return errors.New("missing or invalid participants")
-		}
-
-		hyperparams, _ := msg["hyperparams"].(map[string]any)
-
-		// Convert participants to string slice
-		participants := make([]string, 0, len(participantsRaw))
-		for _, p := range participantsRaw {
-			if pid, ok := p.(string); ok && pid != "" {
-				participants = append(participants, pid)
-			}
-		}
-
-		if len(participants) == 0 {
-			return errors.New("no valid participants")
-		}
-
-		// Launch a task for each participant
-		for _, propletID := range participants {
-			// Verify proplet exists and is alive
-			p, err := svc.GetProplet(ctx, propletID)
-			if err != nil {
-				svc.logger.WarnContext(ctx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
-				continue
-			}
-			if !p.Alive {
-				svc.logger.WarnContext(ctx, "skipping participant: proplet not alive", "proplet_id", propletID)
-				continue
+		// Run in a goroutine to avoid blocking the MQTT client listener
+		go func() {
+			roundID, ok := msg["round_id"].(string)
+			if !ok || roundID == "" {
+				svc.logger.ErrorContext(ctx, "missing or invalid round_id")
+				return
 			}
 
-			// Create generic task
-			t := task.Task{
-				Name:     fmt.Sprintf("fl-round-%s-%s", roundID, propletID),
-				Kind:     task.TaskKindStandard,
-				State:    task.Pending,
-				ImageURL: taskWasmImage,
-				Env: map[string]string{
-					"ROUND_ID":   roundID,
-					"MODEL_URI":  modelURI,
-				},
-				PropletID: propletID,
-				CreatedAt: time.Now(),
+			modelURI, ok := msg["model_uri"].(string)
+			if !ok || modelURI == "" {
+				svc.logger.ErrorContext(ctx, "missing or invalid model_uri")
+				return
 			}
 
-			// Add hyperparams to env if provided
-			if hyperparams != nil {
-				hyperparamsJSON, err := json.Marshal(hyperparams)
-				if err == nil {
-					t.Env["HYPERPARAMS"] = string(hyperparamsJSON)
+			taskWasmImage, ok := msg["task_wasm_image"].(string)
+			if !ok || taskWasmImage == "" {
+				svc.logger.ErrorContext(ctx, "missing or invalid task_wasm_image")
+				return
+			}
+
+			participantsRaw, ok := msg["participants"].([]any)
+			if !ok || len(participantsRaw) == 0 {
+				svc.logger.ErrorContext(ctx, "missing or invalid participants")
+				return
+			}
+
+			hyperparams, _ := msg["hyperparams"].(map[string]any)
+
+			// Convert participants to string slice
+			participants := make([]string, 0, len(participantsRaw))
+			for _, p := range participantsRaw {
+				if pid, ok := p.(string); ok && pid != "" {
+					participants = append(participants, pid)
 				}
 			}
 
-			// Create and start task
-			created, err := svc.CreateTask(ctx, t)
-			if err != nil {
-				svc.logger.ErrorContext(ctx, "failed to create task for participant", "proplet_id", propletID, "error", err)
-				continue
+			if len(participants) == 0 {
+				svc.logger.ErrorContext(ctx, "no valid participants")
+				return
 			}
 
-			if err := svc.StartTask(ctx, created.ID); err != nil {
-				svc.logger.ErrorContext(ctx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
-				continue
-			}
+			// Launch a task for each participant
+			for _, propletID := range participants {
+				// Verify proplet exists and is alive
+				p, err := svc.GetProplet(ctx, propletID)
+				if err != nil {
+					svc.logger.WarnContext(ctx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
+					continue
+				}
+				if !p.Alive {
+					svc.logger.WarnContext(ctx, "skipping participant: proplet not alive", "proplet_id", propletID)
+					continue
+				}
 
-			svc.logger.InfoContext(ctx, "launched task for FL round participant", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
-		}
+				// Create generic task
+				t := task.Task{
+					Name:     fmt.Sprintf("fl-round-%s-%s", roundID, propletID),
+					Kind:     task.TaskKindStandard,
+					State:    task.Pending,
+					ImageURL: taskWasmImage,
+					Env: map[string]string{
+						"ROUND_ID":  roundID,
+						"MODEL_URI": modelURI,
+					},
+					PropletID: propletID,
+					CreatedAt: time.Now(),
+				}
+
+				// Add hyperparams to env if provided
+				if hyperparams != nil {
+					hyperparamsJSON, err := json.Marshal(hyperparams)
+					if err == nil {
+						t.Env["HYPERPARAMS"] = string(hyperparamsJSON)
+					}
+				}
+
+				// Create and start task
+				created, err := svc.CreateTask(ctx, t)
+				if err != nil {
+					svc.logger.ErrorContext(ctx, "failed to create task for participant", "proplet_id", propletID, "error", err)
+					continue
+				}
+
+				if err := svc.StartTask(ctx, created.ID); err != nil {
+					svc.logger.ErrorContext(ctx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
+					continue
+				}
+
+				svc.logger.InfoContext(ctx, "launched task for FL round participant", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
+			}
+		}()
 
 		return nil
 	}
@@ -578,32 +586,36 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 // Manager does not inspect, validate, decode, or aggregate updates.
 func (svc *service) handleUpdateForward(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
-		// Extract round_id and proplet_id from topic: fl/rounds/{round_id}/updates/{proplet_id}
-		parts := strings.Split(topic, "/")
-		if len(parts) != 5 || parts[0] != "fl" || parts[1] != "rounds" || parts[3] != "updates" {
-			svc.logger.WarnContext(ctx, "unexpected FL update topic format", "topic", topic)
-			return nil
-		}
+		// Run in a goroutine to avoid blocking the MQTT client listener
+		go func() {
+			// Extract round_id and proplet_id from topic: fl/rounds/{round_id}/updates/{proplet_id}
+			parts := strings.Split(topic, "/")
+			if len(parts) != 5 || parts[0] != "fl" || parts[1] != "rounds" || parts[3] != "updates" {
+				svc.logger.WarnContext(ctx, "unexpected FL update topic format", "topic", topic)
+				return
+			}
 
-		roundID := parts[2]
-		propletID := parts[4]
+			roundID := parts[2]
+			propletID := parts[4]
 
-		// Add metadata (optional timestamp)
-		forwardMsg := make(map[string]any)
-		for k, v := range msg {
-			forwardMsg[k] = v
-		}
-		forwardMsg["round_id"] = roundID
-		forwardMsg["proplet_id"] = propletID
-		forwardMsg["forwarded_at"] = time.Now().UTC().Format(time.RFC3339)
+			// Add metadata (optional timestamp)
+			forwardMsg := make(map[string]any)
+			for k, v := range msg {
+				forwardMsg[k] = v
+			}
+			forwardMsg["round_id"] = roundID
+			forwardMsg["proplet_id"] = propletID
+			forwardMsg["forwarded_at"] = time.Now().UTC().Format(time.RFC3339)
 
-		// Forward verbatim to FML coordinator
-		if err := svc.pubsub.Publish(ctx, "fml/updates", forwardMsg); err != nil {
-			svc.logger.ErrorContext(ctx, "failed to forward FL update", "round_id", roundID, "proplet_id", propletID, "error", err)
-			return err
-		}
+			// Forward verbatim to FML coordinator
+			if err := svc.pubsub.Publish(ctx, "fml/updates", forwardMsg); err != nil {
+				svc.logger.ErrorContext(ctx, "failed to forward FL update", "round_id", roundID, "proplet_id", propletID, "error", err)
+				return
+			}
 
-		svc.logger.InfoContext(ctx, "forwarded FL update to coordinator", "round_id", roundID, "proplet_id", propletID)
+			svc.logger.InfoContext(ctx, "forwarded FL update to coordinator", "round_id", roundID, "proplet_id", propletID)
+		}()
+
 		return nil
 	}
 }
@@ -803,7 +815,6 @@ func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID stri
 	return svc.taskPropletDB.Create(ctx, taskID, propletID)
 }
 
-
 func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 	return svc.tasksDB.Update(ctx, t.ID, *t)
@@ -853,4 +864,3 @@ func copyStringMap(m map[string]string) map[string]string {
 	}
 	return cpy
 }
-
