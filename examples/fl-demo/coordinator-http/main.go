@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -48,18 +49,28 @@ type TaskResponse struct {
 	Task Task `json:"task"`
 }
 
+type ExperimentConfig struct {
+	ExperimentID string                 `json:"experiment_id"`
+	RoundID      string                 `json:"round_id"`
+	ModelRef     string                 `json:"model_ref"`
+	Participants []string               `json:"participants"`
+	Hyperparams  map[string]interface{} `json:"hyperparams"`
+	KOfN         int                    `json:"k_of_n"`
+	TimeoutS     int                    `json:"timeout_s"`
+	TaskWasmImage string                `json:"task_wasm_image,omitempty"`
+}
+
 var (
-	rounds       = make(map[string]*RoundState)
-	roundsMu     sync.RWMutex
-	modelVersion = 0
-	modelMu      sync.Mutex
-	httpClient   *http.Client
+	rounds          = make(map[string]*RoundState)
+	roundsMu        sync.RWMutex
+	modelVersion    = 0
+	modelMu         sync.Mutex
+	httpClient      *http.Client
 	modelRegistryURL string
 	aggregatorURL   string
 )
 
 func main() {
-	// Configuration
 	port := "8080"
 	if p := os.Getenv("COORDINATOR_PORT"); p != "" {
 		port = p
@@ -79,15 +90,14 @@ func main() {
 		Timeout: 30 * time.Second,
 	}
 
-	// HTTP Router
 	r := mux.NewRouter()
 	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.HandleFunc("/experiments", postExperimentHandler).Methods("POST")
 	r.HandleFunc("/task", getTaskHandler).Methods("GET")
 	r.HandleFunc("/update", postUpdateHandler).Methods("POST")
 	r.HandleFunc("/update_cbor", postUpdateCBORHandler).Methods("POST")
 	r.HandleFunc("/rounds/{round_id}/complete", getRoundCompleteHandler).Methods("GET")
 
-	// Start HTTP server
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: r,
@@ -100,10 +110,8 @@ func main() {
 		}
 	}()
 
-	// Start round timeout checker
 	go checkRoundTimeouts()
 
-	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -116,8 +124,95 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func postExperimentHandler(w http.ResponseWriter, r *http.Request) {
+	var config ExperimentConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if config.RoundID == "" {
+		http.Error(w, "round_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if config.KOfN == 0 {
+		config.KOfN = 3
+	}
+	if config.TimeoutS == 0 {
+		config.TimeoutS = 60
+	}
+	if config.ModelRef == "" {
+		config.ModelRef = "fl/models/global_model_v0"
+	}
+
+	slog.Info("Received experiment configuration",
+		"experiment_id", config.ExperimentID,
+		"round_id", config.RoundID,
+		"model_ref", config.ModelRef,
+		"k_of_n", config.KOfN)
+
+	modelVersion := extractModelVersion(config.ModelRef)
+
+	modelURL := fmt.Sprintf("%s/models/%d", modelRegistryURL, modelVersion)
+	resp, err := httpClient.Get(modelURL)
+	if err != nil {
+		slog.Warn("Failed to load initial model from registry", "error", err, "version", modelVersion)
+	} else {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			var model map[string]interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&model); err == nil {
+				slog.Info("Loaded initial model from registry", "version", modelVersion)
+			}
+		}
+	}
+
+	roundsMu.Lock()
+	round := &RoundState{
+		RoundID:   config.RoundID,
+		ModelURI:  config.ModelRef,
+		KOfN:      config.KOfN,
+		TimeoutS:  config.TimeoutS,
+		StartTime: time.Now(),
+		Updates:   make([]Update, 0),
+		Completed: false,
+	}
+	rounds[config.RoundID] = round
+	roundsMu.Unlock()
+
+	slog.Info("Experiment configured and round initialized",
+		"round_id", config.RoundID,
+		"model_version", modelVersion)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"experiment_id": config.ExperimentID,
+		"round_id":      config.RoundID,
+		"status":        "configured",
+		"model_version": modelVersion,
+	})
+}
+
+func extractModelVersion(modelRef string) int {
+	version := 0
+	for i := len(modelRef) - 1; i >= 0; i-- {
+		if modelRef[i] >= '0' && modelRef[i] <= '9' {
+			var versionStr string
+			for j := i; j >= 0 && modelRef[j] >= '0' && modelRef[j] <= '9'; j-- {
+				versionStr = string(modelRef[j]) + versionStr
+			}
+			if v, err := strconv.Atoi(versionStr); err == nil {
+				version = v
+				break
+			}
+		}
+	}
+	return version
+}
+
 func getTaskHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract query parameters
 	roundID := r.URL.Query().Get("round_id")
 	propletID := r.URL.Query().Get("proplet_id")
 
@@ -131,11 +226,14 @@ func getTaskHandler(w http.ResponseWriter, r *http.Request) {
 	roundsMu.RUnlock()
 
 	if !exists {
-		// Initialize round if it doesn't exist
 		roundsMu.Lock()
+		modelMu.Lock()
+		currentVersion := modelVersion
+		modelMu.Unlock()
+
 		round = &RoundState{
 			RoundID:   roundID,
-			ModelURI:  "fl/models/global_model_v0",
+			ModelURI:  fmt.Sprintf("fl/models/global_model_v%d", currentVersion),
 			KOfN:      3,
 			TimeoutS:  60,
 			StartTime: time.Now(),
@@ -147,14 +245,14 @@ func getTaskHandler(w http.ResponseWriter, r *http.Request) {
 		slog.Info("Initialized round from task request", "round_id", roundID)
 	}
 
-	// Get current model version
-	modelMu.Lock()
-	currentVersion := modelVersion
-	modelMu.Unlock()
+	modelRef := round.ModelURI
+	if modelRef == "" {
+		modelMu.Lock()
+		currentVersion := modelVersion
+		modelMu.Unlock()
+		modelRef = fmt.Sprintf("fl/models/global_model_v%d", currentVersion)
+	}
 
-	modelRef := fmt.Sprintf("fl/models/global_model_v%d", currentVersion)
-
-	// Create task response
 	task := Task{
 		RoundID:  roundID,
 		ModelRef: modelRef,
@@ -187,9 +285,7 @@ func postUpdateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func postUpdateCBORHandler(w http.ResponseWriter, r *http.Request) {
-	// For now, decode CBOR to JSON and process
-	// In production, use proper CBOR library
-	http.Error(w, "CBOR support coming soon", http.StatusNotImplemented)
+	http.Error(w, "CBOR support not implemented", http.StatusNotImplemented)
 }
 
 func getRoundCompleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +325,6 @@ func processUpdate(update Update) {
 	round, exists := rounds[roundID]
 
 	if !exists {
-		slog.Info("Received update for unknown round, lazy initializing", "round_id", roundID)
 		modelURI := update.BaseModelURI
 		if modelURI == "" {
 			modelURI = "fl/models/global_model_v0"
@@ -260,7 +355,6 @@ func processUpdate(update Update) {
 	round.Updates = append(round.Updates, update)
 	slog.Info("Received update", "round_id", roundID, "proplet_id", update.PropletID, "total_updates", len(round.Updates), "k_of_n", round.KOfN)
 
-	// Check if we have enough updates
 	if len(round.Updates) >= round.KOfN {
 		slog.Info("Round complete: received k_of_n updates", "round_id", roundID, "updates", len(round.Updates))
 		round.Completed = true
@@ -281,7 +375,6 @@ func aggregateAndAdvance(round *RoundState) {
 
 	slog.Info("Calling aggregator service", "round_id", round.RoundID, "num_updates", len(updates))
 
-	// Call aggregator service
 	aggregatorReq := map[string]interface{}{
 		"updates": updates,
 	}
@@ -292,7 +385,7 @@ func aggregateAndAdvance(round *RoundState) {
 		return
 	}
 
-	resp, err := httpClient.Post(aggregatorURL+"/aggregate", "application/json", 
+	resp, err := httpClient.Post(aggregatorURL+"/aggregate", "application/json",
 		bytes.NewBuffer(reqBody))
 	if err != nil {
 		slog.Error("Failed to call aggregator", "error", err)
@@ -311,13 +404,11 @@ func aggregateAndAdvance(round *RoundState) {
 		return
 	}
 
-	// Increment model version
 	modelMu.Lock()
 	modelVersion++
 	newVersion := modelVersion
 	modelMu.Unlock()
 
-	// Store model in registry
 	modelData := map[string]interface{}{
 		"version": newVersion,
 		"model":   aggregatedModel,
@@ -343,6 +434,9 @@ func aggregateAndAdvance(round *RoundState) {
 	}
 
 	slog.Info("Aggregated model stored", "round_id", round.RoundID, "version", newVersion)
+	slog.Info("Round complete, next round available",
+		"round_id", round.RoundID,
+		"new_model_version", newVersion)
 }
 
 func checkRoundTimeouts() {

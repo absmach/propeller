@@ -1,8 +1,6 @@
 package manager
 
 import (
-	"time"
-
 	"github.com/absmach/propeller/pkg/fl"
 )
 
@@ -26,10 +24,15 @@ type RoundStatus struct {
 	ModelVersion int  `json:"model_version,omitempty"`
 }
 
-// Model represents a machine learning model in the registry
-type Model struct {
-	Version  int                    `json:"version"`
-	Data     map[string]interface{} `json:"data"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt time.Time             `json:"created_at"`
+// ExperimentConfig represents an FL experiment configuration
+// Manager (as Orchestrator) uses this to configure experiments with FL Coordinator
+type ExperimentConfig struct {
+	ExperimentID string                 `json:"experiment_id"`
+	RoundID      string                 `json:"round_id"`
+	ModelRef     string                 `json:"model_ref"`
+	Participants []string               `json:"participants"`
+	Hyperparams  map[string]interface{} `json:"hyperparams"`
+	KOfN         int                    `json:"k_of_n"`
+	TimeoutS     int                    `json:"timeout_s"`
+	TaskWasmImage string                `json:"task_wasm_image,omitempty"` // WASM image to execute on Proplets
 }

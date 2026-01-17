@@ -113,9 +113,25 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		})
 	})
 
-	// Federated Learning Coordination API (matches diagram architecture)
+	// Federated Learning API
+	// Manager acts as Orchestrator/Experiment Config (Step 1 in diagram)
+	// Also provides forwarding endpoints for compatibility
 	mux.Route("/fl", func(r chi.Router) {
-		// GET /task - Client pulls task
+		// POST /experiments - Configure experiment with FL Coordinator (Step 1: Orchestrator → Coordinator)
+		r.Post("/experiments", otelhttp.NewHandler(kithttp.NewServer(
+			configureExperimentEndpoint(svc),
+			decodeExperimentConfigReq,
+			api.EncodeResponse,
+			opts...,
+		), "configure-experiment").ServeHTTP)
+
+		// GET /task - Forward task request to FL Coordinator
+		// 
+		// IMPORTANT: Clients MUST call FL Coordinator directly (Step 3 in workflow diagram)
+		// This endpoint exists ONLY for compatibility/MQTT forwarding scenarios
+		// 
+		// Correct client flow: Client → FL Coordinator (GET /task)
+		// NOT: Client → Manager → FL Coordinator
 		r.Get("/task", otelhttp.NewHandler(kithttp.NewServer(
 			getFLTaskEndpoint(svc),
 			decodeFLTaskReq,
@@ -123,7 +139,14 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 			opts...,
 		), "get-fl-task").ServeHTTP)
 
-		// POST /update - Client sends update (JSON)
+		// POST /update - Forward update to FL Coordinator
+		//
+		// IMPORTANT: Clients MUST call FL Coordinator directly (Step 7 in workflow diagram)
+		// This endpoint exists ONLY for compatibility/MQTT forwarding scenarios
+		// Manager does NOT aggregate - only forwards
+		//
+		// Correct client flow: Client → FL Coordinator (POST /update)
+		// NOT: Client → Manager → FL Coordinator
 		r.Post("/update", otelhttp.NewHandler(kithttp.NewServer(
 			postFLUpdateEndpoint(svc),
 			decodeFLUpdateReq,
@@ -131,7 +154,13 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 			opts...,
 		), "post-fl-update").ServeHTTP)
 
-		// POST /update_cbor - Client sends update (CBOR)
+		// POST /update_cbor - Forward CBOR update to FL Coordinator
+		//
+		// IMPORTANT: Clients MUST call FL Coordinator directly (Step 7 in workflow diagram)
+		// This endpoint exists ONLY for compatibility/MQTT forwarding scenarios
+		//
+		// Correct client flow: Client → FL Coordinator (POST /update_cbor)
+		// NOT: Client → Manager → FL Coordinator
 		r.Post("/update_cbor", otelhttp.NewHandler(kithttp.NewServer(
 			postFLUpdateCBOREndpoint(svc),
 			decodeFLUpdateCBORReq,
@@ -139,40 +168,13 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 			opts...,
 		), "post-fl-update-cbor").ServeHTTP)
 
-		// GET /rounds/{round_id}/complete - Check round status
+		// GET /rounds/{round_id}/complete - Forward round status request to FL Coordinator
 		r.Get("/rounds/{round_id}/complete", otelhttp.NewHandler(kithttp.NewServer(
 			getRoundStatusEndpoint(svc),
 			decodeRoundStatusReq,
 			api.EncodeResponse,
 			opts...,
 		), "get-round-status").ServeHTTP)
-	})
-
-	// Model Registry API
-	mux.Route("/models", func(r chi.Router) {
-		// GET /models/{version} - Get model by version
-		r.Get("/{version}", otelhttp.NewHandler(kithttp.NewServer(
-			getModelEndpoint(svc),
-			decodeModelReq,
-			api.EncodeResponse,
-			opts...,
-		), "get-model").ServeHTTP)
-
-		// GET /models - List all model versions
-		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
-			listModelsEndpoint(svc),
-			decodeListEntityReq,
-			api.EncodeResponse,
-			opts...,
-		), "list-models").ServeHTTP)
-
-		// POST /models - Store new model
-		r.Post("/", otelhttp.NewHandler(kithttp.NewServer(
-			storeModelEndpoint(svc),
-			decodeStoreModelReq,
-			api.EncodeResponse,
-			opts...,
-		), "store-model").ServeHTTP)
 	})
 
 	mux.Get("/health", supermq.Health("manager", instanceID))

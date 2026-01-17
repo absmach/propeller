@@ -1,5 +1,16 @@
 services:
-  # Model Registry (HTTP-based, matches diagrams)
+  # MQTT Broker (for Propeller Manager/Proplet communication)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - fl-demo-http
+
+  # Model Registry (central server for storing models)
   model-registry:
     build:
       context: ./model-registry
@@ -7,14 +18,14 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - fl-models-http:/tmp/fl-models
+      - fl-models:/tmp/fl-models
     environment:
       - MODELS_DIR=/tmp/fl-models
       - REGISTRY_PORT=8081
     networks:
       - fl-demo-http
 
-  # Aggregator Service (separate component, matches diagrams)
+  # Aggregator Service (separate component for aggregation)
   aggregator:
     build:
       context: ./aggregator
@@ -26,7 +37,7 @@ services:
     networks:
       - fl-demo-http
 
-  # FML Coordinator (HTTP-based, matches diagrams)
+  # FL Coordinator (receives updates, aggregates, stores models)
   coordinator-http:
     build:
       context: ./coordinator-http
@@ -41,73 +52,95 @@ services:
       - MODEL_REGISTRY_URL=http://model-registry:8081
       - AGGREGATOR_URL=http://aggregator:8082
     volumes:
-      - fl-models-http:/tmp/fl-models
+      - fl-models:/tmp/fl-models
     networks:
       - fl-demo-http
 
-  # Orchestrator (experiment configuration, matches diagrams)
-  orchestrator:
+  # Propeller Manager (workload-agnostic orchestrator)
+  # Forwards FL updates to FL Coordinator, does NOT aggregate
+  manager:
     build:
-      context: ./orchestrator
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        SVC: manager
     depends_on:
+      - mqtt
       - coordinator-http
     ports:
-      - "8083:8083"
+      - "7070:7070"
     environment:
-      - ORCHESTRATOR_PORT=8083
-      - COORDINATOR_URL=http://coordinator-http:8080
+      - MANAGER_DOMAIN_ID=demo
+      - MANAGER_CHANNEL_ID=fl
+      - MANAGER_CLIENT_ID=manager
+      - MANAGER_CLIENT_KEY=manager-key
+      - MANAGER_MQTT_ADDRESS=tcp://mqtt:1883
+      - MANAGER_HTTP_HOST=0.0.0.0
+      # Forward FL updates to HTTP coordinator
+      - FL_COORDINATOR_URL=http://coordinator-http:8080
     networks:
       - fl-demo-http
 
-  # HTTP-based Clients (matches diagrams - client pull model)
-  client-http-1:
+  # Propeller Proplets (execute WASM training modules)
+  proplet-1:
     build:
-      context: ./client-http
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - coordinator-http
-      - model-registry
+      - mqtt
+      - manager
     environment:
-      - COORDINATOR_URL=http://coordinator-http:8080
-      - MODEL_REGISTRY_URL=http://model-registry:8081
-      - PROPLET_ID=proplet-1
-      - ROUND_ID=r-http-demo
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-1
+      - PROPLET_CLIENT_KEY=proplet-1-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo-http
+    healthcheck:
+      disable: true
 
-  client-http-2:
+  proplet-2:
     build:
-      context: ./client-http
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - coordinator-http
-      - model-registry
+      - mqtt
+      - manager
     environment:
-      - COORDINATOR_URL=http://coordinator-http:8080
-      - MODEL_REGISTRY_URL=http://model-registry:8081
-      - PROPLET_ID=proplet-2
-      - ROUND_ID=r-http-demo
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-2
+      - PROPLET_CLIENT_KEY=proplet-2-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo-http
+    healthcheck:
+      disable: true
 
-  client-http-3:
+  proplet-3:
     build:
-      context: ./client-http
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - coordinator-http
-      - model-registry
+      - mqtt
+      - manager
     environment:
-      - COORDINATOR_URL=http://coordinator-http:8080
-      - MODEL_REGISTRY_URL=http://model-registry:8081
-      - PROPLET_ID=proplet-3
-      - ROUND_ID=r-http-demo
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-3
+      - PROPLET_CLIENT_KEY=proplet-3-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
     networks:
       - fl-demo-http
+    healthcheck:
+      disable: true
 
 volumes:
-  fl-models-http:
+  fl-models:
 
 networks:
   fl-demo-http:

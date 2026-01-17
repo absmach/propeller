@@ -1,198 +1,171 @@
 package manager
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"sync"
-	"time"
+	"net/http"
 
-	"github.com/absmach/propeller/pkg/fl"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/fxamacker/cbor/v2"
 )
 
-// RoundState represents the state of a federated learning round
-type RoundState struct {
-	RoundID   string
-	ModelRef  string
-	KOfN      int
-	TimeoutS  int
-	StartTime time.Time
-	Updates   []fl.Update
-	Completed bool
-	mu        sync.Mutex
-}
-
-var (
-	rounds       = make(map[string]*RoundState)
-	roundsMu     sync.RWMutex
-	models       = make(map[int]Model)
-	modelsMu     sync.RWMutex
-	modelVersion = 0
-	modelMu      sync.Mutex
-	aggregator   fl.Aggregator = fl.NewFedAvgAggregator() // Default to FedAvg
-)
-
-// SetAggregator sets the aggregator implementation
-func SetAggregator(agg fl.Aggregator) {
-	aggregator = agg
-}
-
-// init initializes the model registry with a default model
-func init() {
-	// Initialize with default model v0
-	models[0] = Model{
-		Version: 0,
-		Data: map[string]interface{}{
-			"w": []float64{0.0, 0.0, 0.0},
-			"b": 0.0,
-		},
-		Metadata: map[string]interface{}{
-			"initial": true,
-		},
-		CreatedAt: time.Now(),
-	}
-}
-
-// GetFLTask returns a federated learning task for a client (GET /task)
-func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (FLTask, error) {
-	if roundID == "" {
-		return FLTask{}, pkgerrors.ErrInvalidData
-	}
-
-	roundsMu.RLock()
-	round, exists := rounds[roundID]
-	roundsMu.RUnlock()
-
-	if !exists {
-		// Initialize round if it doesn't exist
-		roundsMu.Lock()
-		round = &RoundState{
-			RoundID:   roundID,
-			ModelRef:  "fl/models/global_model_v0",
-			KOfN:      3,
-			TimeoutS:  60,
-			StartTime: time.Now(),
-			Updates:   make([]fl.Update, 0),
-			Completed: false,
-		}
-		rounds[roundID] = round
-		roundsMu.Unlock()
-		svc.logger.InfoContext(ctx, "Initialized round from task request", "round_id", roundID)
-	}
-
-	// Get current model version
-	modelMu.Lock()
-	currentVersion := modelVersion
-	modelMu.Unlock()
-
-	modelRef := fmt.Sprintf("fl/models/global_model_v%d", currentVersion)
-
-	task := FLTask{
-		RoundID:  roundID,
-		ModelRef: modelRef,
-		Config: map[string]interface{}{
-			"proplet_id": propletID,
-		},
-		Hyperparams: map[string]interface{}{
-			"epochs":      1,
-			"lr":          0.01,
-			"batch_size":  16,
-		},
-	}
-
-	return task, nil
-}
-
-// PostFLUpdate receives and buffers a federated learning update (POST /update)
-func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
-	roundID := update.RoundID
-	if roundID == "" {
+// ConfigureExperiment configures an FL experiment with the FL Coordinator (Step 1 in diagram)
+// Manager acts as Orchestrator/Experiment Config and sends configuration to FL Coordinator
+// After configuration, Manager can optionally trigger round start to orchestrate WASM execution
+func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentConfig) error {
+	if config.RoundID == "" {
 		return pkgerrors.ErrInvalidData
 	}
 
-	update.ReceivedAt = time.Now()
-
-	roundsMu.Lock()
-	round, exists := rounds[roundID]
-
-	if !exists {
-		// Lazy initialization
-		modelRef := update.BaseModelURI
-		if modelRef == "" {
-			modelRef = "fl/models/global_model_v0"
-		}
-
-		round = &RoundState{
-			RoundID:   roundID,
-			ModelRef:   modelRef,
-			KOfN:       3,
-			TimeoutS:   60,
-			StartTime:   time.Now(),
-			Updates:    make([]fl.Update, 0),
-			Completed:  false,
-		}
-		rounds[roundID] = round
-		svc.logger.InfoContext(ctx, "Lazy initialized round from update", "round_id", roundID)
+	// Validate required fields for orchestration
+	if len(config.Participants) == 0 {
+		return fmt.Errorf("participants list is required for orchestration")
 	}
-	roundsMu.Unlock()
-
-	round.mu.Lock()
-	defer round.mu.Unlock()
-
-	if round.Completed {
-		svc.logger.WarnContext(ctx, "Received update for completed round", "round_id", roundID)
-		return fmt.Errorf("round %s is already completed", roundID)
+	if config.TaskWasmImage == "" {
+		return fmt.Errorf("task_wasm_image is required for WASM orchestration")
+	}
+	if config.ModelRef == "" {
+		return fmt.Errorf("model_ref is required")
 	}
 
-	// Validate update
-	if update.Update == nil || len(update.Update) == 0 {
-		return fmt.Errorf("update data is empty")
+	// Send experiment configuration to FL Coordinator via HTTP
+	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
+		return fmt.Errorf("FL_COORDINATOR_URL must be configured for HTTP-based FL coordination")
 	}
 
-	// Buffer update
-	round.Updates = append(round.Updates, update)
-	svc.logger.InfoContext(ctx, "Buffered FL update", 
-		"round_id", roundID, 
-		"proplet_id", update.PropletID,
-		"total_updates", len(round.Updates),
-		"k_of_n", round.KOfN)
-
-	// Persist round state if storage is available
-	if svc.flStorage != nil {
-		// Convert to storage format
-		storageState := &fl.RoundState{
-			RoundID:   round.RoundID,
-			ModelRef:  round.ModelRef,
-			KOfN:      round.KOfN,
-			TimeoutS:  round.TimeoutS,
-			StartTime: round.StartTime,
-			Updates:   round.Updates,
-			Completed: round.Completed,
-		}
-		if err := svc.flStorage.SaveRound(roundID, storageState); err != nil {
-			svc.logger.WarnContext(ctx, "Failed to persist round state", "error", err)
-		}
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal experiment config: %w", err)
 	}
 
-	// Check if we have enough updates for aggregation
-	if len(round.Updates) >= round.KOfN {
-		svc.logger.InfoContext(ctx, "Round complete: k_of_n reached", 
-			"round_id", roundID, 
-			"updates", len(round.Updates))
-		round.Completed = true
-		
-		// Trigger aggregation asynchronously
-		go svc.aggregateAndAdvance(ctx, round)
+	// Send to HTTP coordinator
+	url := fmt.Sprintf("%s/experiments", svc.flCoordinatorURL)
+	resp, err := svc.httpClient.Post(url, "application/json", bytes.NewBuffer(configJSON))
+	if err != nil {
+		return fmt.Errorf("failed to configure experiment with HTTP coordinator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("HTTP coordinator returned error: %d", resp.StatusCode)
+	}
+
+	svc.logger.InfoContext(ctx, "Configured experiment with FL Coordinator",
+		"experiment_id", config.ExperimentID,
+		"round_id", config.RoundID)
+
+	// After successful configuration, trigger round start to orchestrate WASM execution
+	// This publishes to fl/rounds/start which handleRoundStart will process
+	// Note: This is Manager's internal orchestration mechanism, not part of FL protocol
+	roundStartMsg := map[string]any{
+		"round_id":        config.RoundID,
+		"model_uri":       config.ModelRef,
+		"task_wasm_image": config.TaskWasmImage,
+		"participants":    config.Participants,
+		"hyperparams":     config.Hyperparams,
+	}
+
+	if err := svc.pubsub.Publish(ctx, "fl/rounds/start", roundStartMsg); err != nil {
+		svc.logger.WarnContext(ctx, "Failed to trigger round start after configuration",
+			"round_id", config.RoundID, "error", err)
+		// Don't fail the configuration if round start trigger fails
+	} else {
+		svc.logger.InfoContext(ctx, "Triggered round start for orchestration",
+			"round_id", config.RoundID,
+			"participants", len(config.Participants))
 	}
 
 	return nil
 }
 
-// PostFLUpdateCBOR receives a CBOR-encoded update (POST /update_cbor)
+// GetFLTask forwards task request to FL Coordinator
+// 
+// IMPORTANT: Clients MUST call FL Coordinator directly (Step 3 in workflow diagram)
+// This endpoint exists ONLY for compatibility scenarios
+// 
+// Correct client flow: Client → FL Coordinator (GET /task)
+// NOT: Client → Manager → FL Coordinator
+func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (FLTask, error) {
+	if roundID == "" {
+		return FLTask{}, pkgerrors.ErrInvalidData
+	}
+
+	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
+		return FLTask{}, fmt.Errorf("FL_COORDINATOR_URL must be configured")
+	}
+
+	url := fmt.Sprintf("%s/task?round_id=%s&proplet_id=%s", svc.flCoordinatorURL, roundID, propletID)
+	resp, err := svc.httpClient.Get(url)
+	if err != nil {
+		return FLTask{}, fmt.Errorf("failed to forward task request to coordinator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return FLTask{}, fmt.Errorf("coordinator returned error: %d", resp.StatusCode)
+	}
+
+	var taskResp struct {
+		Task FLTask `json:"task"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&taskResp); err != nil {
+		return FLTask{}, fmt.Errorf("failed to decode coordinator response: %w", err)
+	}
+
+	svc.logger.InfoContext(ctx, "Forwarded FL task request to coordinator", "round_id", roundID, "proplet_id", propletID)
+	return taskResp.Task, nil
+}
+
+// PostFLUpdate forwards update to FL Coordinator
+//
+// IMPORTANT: Clients MUST call FL Coordinator directly (Step 7 in workflow diagram)
+// This endpoint exists ONLY for compatibility scenarios
+//
+// Correct client flow: Client → FL Coordinator (POST /update)
+// NOT: Client → Manager → FL Coordinator
+func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
+	if update.RoundID == "" {
+		return pkgerrors.ErrInvalidData
+	}
+
+	// Validate update has data
+	if update.Update == nil || len(update.Update) == 0 {
+		return fmt.Errorf("update data is empty")
+	}
+
+	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
+		return fmt.Errorf("FL_COORDINATOR_URL must be configured")
+	}
+
+	// Forward to HTTP coordinator
+	updateJSON, err := json.Marshal(update)
+	if err != nil {
+		return fmt.Errorf("failed to marshal update: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/update", svc.flCoordinatorURL)
+	resp, err := svc.httpClient.Post(url, "application/json", bytes.NewBuffer(updateJSON))
+	if err != nil {
+		return fmt.Errorf("failed to forward update to HTTP coordinator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP coordinator returned error: %d", resp.StatusCode)
+	}
+
+	svc.logger.InfoContext(ctx, "Forwarded FL update to HTTP coordinator",
+		"round_id", update.RoundID,
+		"proplet_id", update.PropletID)
+	return nil
+}
+
+// PostFLUpdateCBOR forwards CBOR-encoded update to FL Coordinator
 func (svc *service) PostFLUpdateCBOR(ctx context.Context, updateData []byte) error {
 	var update FLUpdate
-	
+
 	// Decode CBOR
 	if err := cbor.Unmarshal(updateData, &update); err != nil {
 		return fmt.Errorf("failed to decode CBOR update: %w", err)
@@ -201,225 +174,34 @@ func (svc *service) PostFLUpdateCBOR(ctx context.Context, updateData []byte) err
 	return svc.PostFLUpdate(ctx, update)
 }
 
-// GetRoundStatus returns the status of a federated learning round
+// GetRoundStatus forwards round status request to FL Coordinator
 func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundStatus, error) {
-	roundsMu.RLock()
-	round, exists := rounds[roundID]
-	roundsMu.RUnlock()
-
-	if !exists {
-		return RoundStatus{}, fmt.Errorf("round %s not found", roundID)
+	if roundID == "" {
+		return RoundStatus{}, pkgerrors.ErrInvalidData
 	}
 
-	round.mu.Lock()
-	defer round.mu.Unlock()
-
-	modelMu.Lock()
-	currentVersion := modelVersion
-	modelMu.Unlock()
-
-	return RoundStatus{
-		RoundID:      roundID,
-		Completed:    round.Completed,
-		NumUpdates:   len(round.Updates),
-		KOfN:         round.KOfN,
-		ModelVersion: currentVersion,
-	}, nil
-}
-
-// aggregateAndAdvance performs aggregation and advances to next model version
-func (svc *service) aggregateAndAdvance(ctx context.Context, round *RoundState) {
-	round.mu.Lock()
-	updates := make([]fl.Update, len(round.Updates))
-	copy(updates, round.Updates)
-	round.mu.Unlock()
-
-	if len(updates) == 0 {
-		svc.logger.ErrorContext(ctx, "No updates to aggregate", "round_id", round.RoundID)
-		return
+	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
+		return RoundStatus{}, fmt.Errorf("FL_COORDINATOR_URL must be configured")
 	}
 
-	svc.logger.InfoContext(ctx, "Aggregating updates", 
-		"round_id", round.RoundID, 
-		"num_updates", len(updates))
-
-	// Use aggregator to perform aggregation
-	aggregatedModel, err := aggregator.Aggregate(updates)
-
+	url := fmt.Sprintf("%s/rounds/%s/complete", svc.flCoordinatorURL, roundID)
+	resp, err := svc.httpClient.Get(url)
 	if err != nil {
-		svc.logger.ErrorContext(ctx, "Aggregation failed", 
-			"round_id", round.RoundID, 
-			"error", err)
-		return
+		return RoundStatus{}, fmt.Errorf("failed to forward round status request to coordinator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return RoundStatus{}, fmt.Errorf("coordinator returned error: %d", resp.StatusCode)
 	}
 
-	// Increment model version
-	modelMu.Lock()
-	modelVersion++
-	newVersion := modelVersion
-	modelMu.Unlock()
-
-	// Store model
-	model := Model{
-		Version:   newVersion,
-		Data:      aggregatedModel.Data,
-		Metadata:  aggregatedModel.Metadata,
-		CreatedAt: time.Now(),
+	var statusResp struct {
+		Status RoundStatus `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		return RoundStatus{}, fmt.Errorf("failed to decode coordinator response: %w", err)
 	}
 
-	if err := svc.StoreModel(ctx, model); err != nil {
-		svc.logger.ErrorContext(ctx, "Failed to store aggregated model", 
-			"round_id", round.RoundID, 
-			"version", newVersion, 
-			"error", err)
-		return
-	}
-
-	// Persist model if storage is available
-	if svc.flStorage != nil {
-		storageModel := fl.Model{
-			Data:     aggregatedModel.Data,
-			Metadata: aggregatedModel.Metadata,
-		}
-		if err := svc.flStorage.SaveModel(newVersion, storageModel); err != nil {
-			svc.logger.WarnContext(ctx, "Failed to persist model", "version", newVersion, "error", err)
-		}
-	}
-
-	svc.logger.InfoContext(ctx, "Aggregated model stored", 
-		"round_id", round.RoundID, 
-		"version", newVersion)
-}
-
-// loadPersistedState loads rounds and models from persistent storage
-func (svc *service) loadPersistedState() {
-	if svc.flStorage == nil {
-		return
-	}
-
-	// Load models
-	modelVersions, err := svc.flStorage.ListModels()
-	if err == nil {
-		for _, version := range modelVersions {
-			storageModel, err := svc.flStorage.LoadModel(version)
-			if err == nil {
-				modelsMu.Lock()
-				models[version] = Model{
-					Version:   version,
-					Data:      storageModel.Data,
-					Metadata:  storageModel.Metadata,
-					CreatedAt: time.Now(), // Approximate
-				}
-				if version > modelVersion {
-					modelVersion = version
-				}
-				modelsMu.Unlock()
-				svc.logger.Info("Loaded persisted model", "version", version)
-			}
-		}
-	}
-
-	// Load rounds (for recovery)
-	roundIDs, err := svc.flStorage.ListRounds()
-	if err == nil {
-		for _, roundID := range roundIDs {
-			storageState, err := svc.flStorage.LoadRound(roundID)
-			if err == nil && !storageState.Completed {
-				roundsMu.Lock()
-				rounds[roundID] = &RoundState{
-					RoundID:   storageState.RoundID,
-					ModelRef:  storageState.ModelRef,
-					KOfN:      storageState.KOfN,
-					TimeoutS:  storageState.TimeoutS,
-					StartTime: storageState.StartTime,
-					Updates:   storageState.Updates,
-					Completed: storageState.Completed,
-				}
-				roundsMu.Unlock()
-				svc.logger.Info("Loaded persisted round", "round_id", roundID)
-			}
-		}
-	}
-}
-
-
-// GetModel retrieves a model from the registry
-func (svc *service) GetModel(ctx context.Context, version int) (Model, error) {
-	modelsMu.RLock()
-	model, exists := models[version]
-	modelsMu.RUnlock()
-
-	if !exists {
-		// Try to load from persistent storage
-		if svc.flStorage != nil {
-			storageModel, err := svc.flStorage.LoadModel(version)
-			if err == nil {
-				model = Model{
-					Version:   version,
-					Data:      storageModel.Data,
-					Metadata:  storageModel.Metadata,
-					CreatedAt: time.Now(),
-				}
-				// Cache in memory
-				modelsMu.Lock()
-				models[version] = model
-				modelsMu.Unlock()
-				return model, nil
-			}
-		}
-		return Model{}, fmt.Errorf("model version %d not found", version)
-	}
-
-	return model, nil
-}
-
-// StoreModel stores a model in the registry
-func (svc *service) StoreModel(ctx context.Context, model Model) error {
-	modelsMu.Lock()
-	models[model.Version] = model
-	modelsMu.Unlock()
-
-	svc.logger.InfoContext(ctx, "Model stored in registry", "version", model.Version)
-	return nil
-}
-
-// ListModels returns all available model versions
-func (svc *service) ListModels(ctx context.Context) ([]int, error) {
-	modelsMu.RLock()
-	versions := make([]int, 0, len(models))
-	for v := range models {
-		versions = append(versions, v)
-	}
-	modelsMu.RUnlock()
-
-	return versions, nil
-}
-
-// checkRoundTimeouts checks for round timeouts and triggers aggregation if needed
-func (svc *service) checkRoundTimeouts() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		now := time.Now()
-		roundsMu.RLock()
-		for roundID, round := range rounds {
-			round.mu.Lock()
-			if !round.Completed {
-				elapsed := now.Sub(round.StartTime)
-				if elapsed >= time.Duration(round.TimeoutS)*time.Second {
-					svc.logger.Warn("Round timeout exceeded",
-						"round_id", roundID,
-						"timeout_s", round.TimeoutS,
-						"updates", len(round.Updates))
-					round.Completed = true
-					if len(round.Updates) > 0 {
-						go svc.aggregateAndAdvance(context.Background(), round)
-					}
-				}
-			}
-			round.mu.Unlock()
-		}
-		roundsMu.RUnlock()
-	}
+	svc.logger.InfoContext(ctx, "Forwarded round status request to coordinator", "round_id", roundID)
+	return statusResp.Status, nil
 }

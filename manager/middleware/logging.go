@@ -287,6 +287,25 @@ func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
 	return lm.svc.Subscribe(ctx)
 }
 
+// FL Orchestration methods
+func (lm *loggingMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("experiment_id", config.ExperimentID),
+			slog.String("round_id", config.RoundID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Configure experiment failed", args...)
+			return
+		}
+		lm.logger.Info("Configure experiment completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.ConfigureExperiment(ctx, config)
+}
+
 // FL Coordination methods
 func (lm *loggingMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (resp manager.FLTask, err error) {
 	defer func(begin time.Time) {
@@ -358,52 +377,3 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 	return lm.svc.GetRoundStatus(ctx, roundID)
 }
 
-func (lm *loggingMiddleware) GetModel(ctx context.Context, version int) (resp manager.Model, err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-			slog.Int("version", version),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Get model failed", args...)
-			return
-		}
-		lm.logger.Info("Get model completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.GetModel(ctx, version)
-}
-
-func (lm *loggingMiddleware) StoreModel(ctx context.Context, model manager.Model) (err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-			slog.Int("version", model.Version),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Store model failed", args...)
-			return
-		}
-		lm.logger.Info("Store model completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.StoreModel(ctx, model)
-}
-
-func (lm *loggingMiddleware) ListModels(ctx context.Context) (resp []int, err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("List models failed", args...)
-			return
-		}
-		lm.logger.Info("List models completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.ListModels(ctx)
-}

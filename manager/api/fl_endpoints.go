@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/absmach/propeller/manager"
@@ -45,29 +44,36 @@ type roundStatusResponse struct {
 	Status manager.RoundStatus `json:"status"`
 }
 
-// Model Request/Response
-type modelReq struct {
-	version int
+// Experiment Config Request/Response
+type experimentConfigReq struct {
+	Config manager.ExperimentConfig `json:"config"`
 }
 
-type modelResponse struct {
-	Model manager.Model `json:"model"`
-}
-
-type storeModelReq struct {
-	Model manager.Model `json:"model"`
-}
-
-type storeModelResponse struct {
-	Version int    `json:"version"`
-	Status  string `json:"status"`
-}
-
-type listModelsResponse struct {
-	Versions []int `json:"versions"`
+type experimentConfigResponse struct {
+	ExperimentID string `json:"experiment_id"`
+	RoundID      string `json:"round_id"`
+	Status       string `json:"status"`
 }
 
 // Endpoints
+func configureExperimentEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(experimentConfigReq)
+		if !ok {
+			return experimentConfigResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+
+		if err := svc.ConfigureExperiment(ctx, req.Config); err != nil {
+			return experimentConfigResponse{}, err
+		}
+
+		return experimentConfigResponse{
+			ExperimentID: req.Config.ExperimentID,
+			RoundID:      req.Config.RoundID,
+			Status:       "configured",
+		}, nil
+	}
+}
 func getFLTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(flTaskReq)
@@ -130,51 +136,6 @@ func getRoundStatusEndpoint(svc manager.Service) endpoint.Endpoint {
 	}
 }
 
-func getModelEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request any) (any, error) {
-		req, ok := request.(modelReq)
-		if !ok {
-			return modelResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
-		}
-
-		model, err := svc.GetModel(ctx, req.version)
-		if err != nil {
-			return modelResponse{}, err
-		}
-
-		return modelResponse{Model: model}, nil
-	}
-}
-
-func storeModelEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request any) (any, error) {
-		req, ok := request.(storeModelReq)
-		if !ok {
-			return storeModelResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
-		}
-
-		if err := svc.StoreModel(ctx, req.Model); err != nil {
-			return storeModelResponse{}, err
-		}
-
-		return storeModelResponse{
-			Version: req.Model.Version,
-			Status:  "stored",
-		}, nil
-	}
-}
-
-func listModelsEndpoint(svc manager.Service) endpoint.Endpoint {
-	return func(ctx context.Context, request any) (any, error) {
-		versions, err := svc.ListModels(ctx)
-		if err != nil {
-			return listModelsResponse{}, err
-		}
-
-		return listModelsResponse{Versions: versions}, nil
-	}
-}
-
 // Decoders
 func decodeFLTaskReq(_ context.Context, r *http.Request) (any, error) {
 	roundID := r.URL.Query().Get("round_id")
@@ -227,25 +188,15 @@ func decodeRoundStatusReq(_ context.Context, r *http.Request) (any, error) {
 	return roundStatusReq{roundID: roundID}, nil
 }
 
-func decodeModelReq(_ context.Context, r *http.Request) (any, error) {
-	versionStr := chi.URLParam(r, "version")
-	version, err := strconv.Atoi(versionStr)
-	if err != nil {
-		return nil, errors.Join(apiutil.ErrValidation, errors.New("invalid version"))
-	}
-
-	return modelReq{version: version}, nil
-}
-
-func decodeStoreModelReq(_ context.Context, r *http.Request) (any, error) {
+func decodeExperimentConfigReq(_ context.Context, r *http.Request) (any, error) {
 	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
 		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
 	}
 
-	var model manager.Model
-	if err := json.NewDecoder(r.Body).Decode(&model); err != nil {
+	var config manager.ExperimentConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)
 	}
 
-	return storeModelReq{Model: model}, nil
+	return experimentConfigReq{Config: config}, nil
 }
