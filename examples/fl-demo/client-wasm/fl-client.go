@@ -1,11 +1,6 @@
 //go:build wasm
 // +build wasm
 
-// FL Client Wasm Module
-// This module implements a simple federated learning client that:
-// 1. Reads ROUND_ID and MODEL_URI from environment
-// 2. Performs toy local training
-// 3. Returns JSON update in the new format
 package main
 
 import (
@@ -22,17 +17,28 @@ func run() {
 }
 
 func main() {
-	// Read environment variables (set by Manager from round start message)
 	roundID := os.Getenv("ROUND_ID")
 	modelURI := os.Getenv("MODEL_URI")
 	hyperparamsJSON := os.Getenv("HYPERPARAMS")
+	coordinatorURL := os.Getenv("COORDINATOR_URL")
+	modelRegistryURL := os.Getenv("MODEL_REGISTRY_URL")
+	propletID := os.Getenv("PROPLET_ID")
 
 	if roundID == "" {
 		fmt.Fprintf(os.Stderr, "Missing ROUND_ID environment variable\n")
 		os.Exit(1)
 	}
 
-	// Parse hyperparameters if provided
+	if coordinatorURL == "" {
+		coordinatorURL = "http://coordinator-http:8080"
+	}
+	if modelRegistryURL == "" {
+		modelRegistryURL = "http://model-registry:8081"
+	}
+	if propletID == "" {
+		propletID = "proplet-unknown"
+	}
+
 	var epochs int = 1
 	var lr float64 = 0.01
 	var batchSize int = 16
@@ -52,57 +58,76 @@ func main() {
 		}
 	}
 
-	// Initialize model (in a real implementation, we'd fetch from modelURI)
-	// For this demo, we'll use a simple model structure
-	// Note: modelURI is now an MQTT topic like "fl/models/global_model_v0"
+	taskRequest := map[string]interface{}{
+		"action": "get_task",
+		"url":    fmt.Sprintf("%s/task?round_id=%s&proplet_id=%s", coordinatorURL, roundID, propletID),
+	}
+	taskRequestJSON, _ := json.Marshal(taskRequest)
+	fmt.Fprintf(os.Stderr, "TASK_REQUEST:%s\n", string(taskRequestJSON))
+
+	task := map[string]interface{}{
+		"round_id":  roundID,
+		"model_ref": modelURI,
+		"config": map[string]interface{}{
+			"proplet_id": propletID,
+		},
+		"hyperparams": map[string]interface{}{
+			"epochs":      epochs,
+			"lr":          lr,
+			"batch_size":  batchSize,
+		},
+	}
+
+	modelVersion := extractModelVersion(modelURI)
+
+	modelRequest := map[string]interface{}{
+		"action": "get_model",
+		"url":    fmt.Sprintf("%s/models/%d", modelRegistryURL, modelVersion),
+	}
+	modelRequestJSON, _ := json.Marshal(modelRequest)
+	fmt.Fprintf(os.Stderr, "MODEL_REQUEST:%s\n", string(modelRequestJSON))
+
 	model := map[string]interface{}{
-		"w": []float64{0.0, 0.0, 0.0}, // weights
-		"b": 0.0,                      // bias
+		"w": []float64{0.0, 0.0, 0.0},
+		"b": 0.0,
 	}
 
-	// If modelURI is provided, in a real implementation we'd subscribe to MQTT topic
-	// For this demo, we'll simulate loading a model
-	if modelURI != "" {
-		// In a real implementation: subscribe to MQTT topic from modelURI
-		// For now, we'll use a simple initialization
-		// model = fetchModelFromMQTT(modelURI)
+	numSamples := batchSize * epochs
+	if numSamples == 0 {
+		numSamples = 512
 	}
 
-	// Simulate local training
-	// In a real implementation, this would train on local data
 	rand.Seed(time.Now().UnixNano())
 
 	weights := model["w"].([]float64)
 	for epoch := 0; epoch < epochs; epoch++ {
-		// Simulate training: add small random updates
 		for i := range weights {
-			// Simple gradient-like update
 			gradient := (rand.Float64() - 0.5) * 0.1
 			weights[i] += lr * gradient
 		}
-		// Update bias
 		bias := model["b"].(float64)
 		model["b"] = bias + lr*(rand.Float64()-0.5)*0.1
 	}
 
-	// Generate number of samples (simulated)
-	numSamples := batchSize * epochs
-	if numSamples == 0 {
-		numSamples = 512 // default
-	}
-
-	// Create update in new format
 	update := map[string]interface{}{
 		"round_id":       roundID,
+		"proplet_id":     propletID,
 		"base_model_uri": modelURI,
 		"num_samples":    numSamples,
 		"metrics": map[string]interface{}{
-			"loss": rand.Float64()*0.5 + 0.5, // simulated loss
+			"loss": rand.Float64()*0.5 + 0.5,
 		},
 		"update": model,
 	}
 
-	// Output JSON update
+	updateRequest := map[string]interface{}{
+		"action": "post_update",
+		"url":    fmt.Sprintf("%s/update", coordinatorURL),
+		"data":   update,
+	}
+	updateRequestJSON, _ := json.Marshal(updateRequest)
+	fmt.Fprintf(os.Stderr, "UPDATE_REQUEST:%s\n", string(updateRequestJSON))
+
 	updateJSON, err := json.Marshal(update)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to marshal update: %v\n", err)
@@ -110,4 +135,33 @@ func main() {
 	}
 
 	fmt.Print(string(updateJSON))
+}
+
+func extractModelVersion(modelRef string) int {
+	version := 0
+	for i := len(modelRef) - 1; i >= 0; i-- {
+		if modelRef[i] >= '0' && modelRef[i] <= '9' {
+			var versionStr string
+			for j := i; j >= 0 && modelRef[j] >= '0' && modelRef[j] <= '9'; j-- {
+				versionStr = string(modelRef[j]) + versionStr
+			}
+			if v, err := parseInt(versionStr); err == nil {
+				version = v
+				break
+			}
+		}
+	}
+	return version
+}
+
+func parseInt(s string) (int, error) {
+	result := 0
+	for _, char := range s {
+		if char >= '0' && char <= '9' {
+			result = result*10 + int(char-'0')
+		} else {
+			return 0, fmt.Errorf("invalid character")
+		}
+	}
+	return result, nil
 }

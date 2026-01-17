@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,12 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/0x6flab/namegenerator"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	"github.com/absmach/propeller/pkg/fl"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
@@ -45,7 +42,6 @@ type service struct {
 	logger           *slog.Logger
 	flCoordinatorURL string // HTTP coordinator URL (optional, for HTTP mode)
 	httpClient       *http.Client
-	flStorage        *fl.PersistentStorage // Persistent storage for FL rounds/models
 }
 
 func NewService(
@@ -53,6 +49,7 @@ func NewService(
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
 ) Service {
+	// FL Coordinator URL for experiment configuration and HTTP communication (required)
 	flCoordinatorURL := os.Getenv("FL_COORDINATOR_URL")
 	var httpClient *http.Client
 	if flCoordinatorURL != "" {
@@ -60,40 +57,8 @@ func NewService(
 			Timeout: 30 * time.Second,
 		}
 		logger.Info("HTTP FL Coordinator enabled", "url", flCoordinatorURL)
-	}
-
-	// Initialize persistent storage for FL
-	roundsDir := os.Getenv("FL_ROUNDS_DIR")
-	if roundsDir == "" {
-		roundsDir = "/tmp/fl-rounds"
-	}
-	modelsDir := os.Getenv("FL_MODELS_DIR")
-	if modelsDir == "" {
-		modelsDir = "/tmp/fl-models"
-	}
-
-	flStorage, err := fl.NewPersistentStorage(roundsDir, modelsDir)
-	if err != nil {
-		logger.Warn("Failed to initialize FL persistent storage, using in-memory only", "error", err)
-		flStorage = nil
 	} else {
-		logger.Info("FL persistent storage initialized", "rounds_dir", roundsDir, "models_dir", modelsDir)
-	}
-
-	// Initialize Wasm aggregator if configured
-	wasmAggregatorPath := os.Getenv("FL_WASM_AGGREGATOR_PATH")
-	if wasmAggregatorPath != "" {
-		wasmRuntime := os.Getenv("FL_WASM_RUNTIME")
-		if wasmRuntime == "" {
-			wasmRuntime = "wasmtime"
-		}
-		wasmAgg, err := fl.NewWasmAggregator(wasmAggregatorPath, wasmRuntime)
-		if err != nil {
-			logger.Warn("Failed to initialize Wasm aggregator, using default FedAvg", "error", err)
-		} else {
-			SetAggregator(wasmAgg)
-			logger.Info("Wasm aggregator initialized", "path", wasmAggregatorPath, "runtime", wasmRuntime)
-		}
+		logger.Warn("FL_COORDINATOR_URL not configured - FL features will not be available")
 	}
 
 	svc := &service{
@@ -107,15 +72,6 @@ func NewService(
 		logger:           logger,
 		flCoordinatorURL: flCoordinatorURL,
 		httpClient:       httpClient,
-		flStorage:        flStorage,
-	}
-
-	// Start round timeout checker
-	go svc.checkRoundTimeouts()
-
-	// Load persisted rounds and models on startup
-	if flStorage != nil {
-		go svc.loadPersistedState()
 	}
 
 	return svc
@@ -366,13 +322,11 @@ func (svc *service) Subscribe(ctx context.Context) error {
 		return err
 	}
 
-	// Subscribe to generic FL round start topic (workload-agnostic)
+	// Subscribe to FL round start topic for WASM orchestration
+	// This is Manager's internal orchestration mechanism (not part of FL protocol)
+	// After configuring experiment with Coordinator, Manager triggers round start
+	// to orchestrate WASM execution on Proplets
 	if err := svc.pubsub.Subscribe(ctx, "fl/rounds/start", svc.handleRoundStart(ctx)); err != nil {
-		return err
-	}
-
-	// Subscribe to FL update forwarding topic (workload-agnostic)
-	if err := svc.pubsub.Subscribe(ctx, "fl/rounds/+/updates/+", svc.handleUpdateForward(ctx)); err != nil {
 		return err
 	}
 
@@ -645,67 +599,14 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 	}
 }
 
-// handleUpdateForward forwards FL update messages verbatim to the FML coordinator.
-// Manager does not inspect, validate, decode, or aggregate updates.
-func (svc *service) handleUpdateForward(ctx context.Context) func(topic string, msg map[string]any) error {
-	return func(topic string, msg map[string]any) error {
-		// Run in a goroutine to avoid blocking the MQTT client listener
-		go func() {
-			// Extract round_id and proplet_id from topic: fl/rounds/{round_id}/updates/{proplet_id}
-			parts := strings.Split(topic, "/")
-			if len(parts) != 5 || parts[0] != "fl" || parts[1] != "rounds" || parts[3] != "updates" {
-				svc.logger.WarnContext(ctx, "unexpected FL update topic format", "topic", topic)
-				return
-			}
-
-			roundID := parts[2]
-			propletID := parts[4]
-
-			// Add metadata (optional timestamp)
-			forwardMsg := make(map[string]any)
-			for k, v := range msg {
-				forwardMsg[k] = v
-			}
-			forwardMsg["round_id"] = roundID
-			forwardMsg["proplet_id"] = propletID
-			forwardMsg["forwarded_at"] = time.Now().UTC().Format(time.RFC3339)
-
-			// Forward to coordinator (MQTT or HTTP based on configuration)
-			if svc.flCoordinatorURL != "" && svc.httpClient != nil {
-				// HTTP mode: Forward to HTTP coordinator
-				updateJSON, err := json.Marshal(forwardMsg)
-				if err != nil {
-					svc.logger.ErrorContext(ctx, "failed to marshal update for HTTP coordinator", "round_id", roundID, "proplet_id", propletID, "error", err)
-					return
-				}
-
-				resp, err := svc.httpClient.Post(svc.flCoordinatorURL+"/update", "application/json", bytes.NewBuffer(updateJSON))
-				if err != nil {
-					svc.logger.ErrorContext(ctx, "failed to forward FL update to HTTP coordinator", "round_id", roundID, "proplet_id", propletID, "error", err)
-					return
-				}
-				defer resp.Body.Close()
-
-				if resp.StatusCode != http.StatusOK {
-					svc.logger.ErrorContext(ctx, "HTTP coordinator returned error", "round_id", roundID, "proplet_id", propletID, "status", resp.StatusCode)
-					return
-				}
-
-				svc.logger.InfoContext(ctx, "forwarded FL update to HTTP coordinator", "round_id", roundID, "proplet_id", propletID)
-			} else {
-				// MQTT mode: Forward to MQTT coordinator
-				if err := svc.pubsub.Publish(ctx, "fml/updates", forwardMsg); err != nil {
-					svc.logger.ErrorContext(ctx, "failed to forward FL update to MQTT coordinator", "round_id", roundID, "proplet_id", propletID, "error", err)
-					return
-				}
-
-				svc.logger.InfoContext(ctx, "forwarded FL update to MQTT coordinator", "round_id", roundID, "proplet_id", propletID)
-			}
-		}()
-
-		return nil
-	}
-}
+// NOTE: handleUpdateForward has been removed
+// Clients MUST publish updates directly to FL Coordinator MQTT topic (e.g., "fml/updates")
+// Manager does NOT forward MQTT updates - this ensures direct client-to-coordinator communication
+// as per the workflow diagram (Step 7: Client → Coordinator)
+//
+// MQTT Flow:
+//   Client → MQTT topic "fml/updates" → FL Coordinator
+//   NOT: Client → Manager → Coordinator
 
 func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)

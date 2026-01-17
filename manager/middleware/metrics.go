@@ -143,6 +143,16 @@ func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 	return mm.svc.Subscribe(ctx)
 }
 
+// FL Orchestration methods
+func (mm *metricsMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "configure-experiment").Add(1)
+		mm.latency.With("method", "configure-experiment").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.ConfigureExperiment(ctx, config)
+}
+
 // FL Coordination methods
 func (mm *metricsMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (manager.FLTask, error) {
 	defer func(begin time.Time) {
@@ -180,29 +190,3 @@ func (mm *metricsMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 	return mm.svc.GetRoundStatus(ctx, roundID)
 }
 
-func (mm *metricsMiddleware) GetModel(ctx context.Context, version int) (manager.Model, error) {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "get-model").Add(1)
-		mm.latency.With("method", "get-model").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.GetModel(ctx, version)
-}
-
-func (mm *metricsMiddleware) StoreModel(ctx context.Context, model manager.Model) error {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "store-model").Add(1)
-		mm.latency.With("method", "store-model").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.StoreModel(ctx, model)
-}
-
-func (mm *metricsMiddleware) ListModels(ctx context.Context) ([]int, error) {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "list-models").Add(1)
-		mm.latency.With("method", "list-models").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.ListModels(ctx)
-}
