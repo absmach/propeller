@@ -23,3 +23,4 @@ url = "2.5"
 sysinfo = "0.32"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+reqwest = { version = "0.12", features = ["json"] }

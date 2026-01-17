@@ -97,6 +97,7 @@ func main() {
 	r.HandleFunc("/update", postUpdateHandler).Methods("POST")
 	r.HandleFunc("/update_cbor", postUpdateCBORHandler).Methods("POST")
 	r.HandleFunc("/rounds/{round_id}/complete", getRoundCompleteHandler).Methods("GET")
+	r.HandleFunc("/rounds/next", getNextRoundHandler).Methods("GET")
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -314,6 +315,46 @@ func getRoundCompleteHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Step 12: Next round available notification endpoint
+func getNextRoundHandler(w http.ResponseWriter, r *http.Request) {
+	roundsMu.RLock()
+	defer roundsMu.RUnlock()
+
+	// Find the most recently completed round
+	var latestRound *RoundState
+	var latestRoundID string
+	for roundID, round := range rounds {
+		round.mu.Lock()
+		if round.Completed && (latestRound == nil || round.StartTime.After(latestRound.StartTime)) {
+			latestRound = round
+			latestRoundID = roundID
+		}
+		round.mu.Unlock()
+	}
+
+	if latestRound == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"next_round_available": false,
+			"message":              "No completed rounds found",
+		})
+		return
+	}
+
+	modelMu.Lock()
+	currentVersion := modelVersion
+	modelMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"next_round_available": true,
+		"last_completed_round":  latestRoundID,
+		"new_model_version":     currentVersion,
+		"model_uri":            fmt.Sprintf("fl/models/global_model_v%d", currentVersion),
+		"status":               "ready",
+	})
+}
+
 func processUpdate(update Update) {
 	roundID := update.RoundID
 	if roundID == "" {
@@ -434,9 +475,25 @@ func aggregateAndAdvance(round *RoundState) {
 	}
 
 	slog.Info("Aggregated model stored", "round_id", round.RoundID, "version", newVersion)
+	
+	// Step 12: Notify clients that next round is available
+	// Publish notification to MQTT topic (if MQTT is available) or HTTP endpoint
+	nextRoundNotification := map[string]interface{}{
+		"round_id":        round.RoundID,
+		"new_model_version": newVersion,
+		"model_uri":        fmt.Sprintf("fl/models/global_model_v%d", newVersion),
+		"status":           "complete",
+		"next_round_available": true,
+	}
+	
+	// Log the notification (in production, this could be published to MQTT or sent via HTTP)
 	slog.Info("Round complete, next round available",
 		"round_id", round.RoundID,
-		"new_model_version", newVersion)
+		"new_model_version", newVersion,
+		"notification", nextRoundNotification)
+	
+	// Note: Clients can poll /rounds/{round_id}/complete endpoint to check if next round is available
+	// Or subscribe to MQTT topic: fl/rounds/next (if MQTT integration is added)
 }
 
 func checkRoundTimeouts() {

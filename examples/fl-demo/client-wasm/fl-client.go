@@ -80,16 +80,29 @@ func main() {
 
 	modelVersion := extractModelVersion(modelURI)
 
-	modelRequest := map[string]interface{}{
-		"action": "get_model",
-		"url":    fmt.Sprintf("%s/models/%d", modelRegistryURL, modelVersion),
-	}
-	modelRequestJSON, _ := json.Marshal(modelRequest)
-	fmt.Fprintf(os.Stderr, "MODEL_REQUEST:%s\n", string(modelRequestJSON))
-
-	model := map[string]interface{}{
-		"w": []float64{0.0, 0.0, 0.0},
-		"b": 0.0,
+	// Step 4: Fetch model from Model Registry
+	// The proplet runtime fetches the model before execution and passes it via MODEL_DATA env var
+	// If not available, try to fetch it (though WASM can't make HTTP calls directly)
+	modelDataStr := os.Getenv("MODEL_DATA")
+	var model map[string]interface{}
+	
+	if modelDataStr != "" {
+		// Model was fetched by proplet runtime and passed via env var
+		if err := json.Unmarshal([]byte(modelDataStr), &model); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to parse MODEL_DATA: %v\n", err)
+			// Fallback to default model
+			model = map[string]interface{}{
+				"w": []float64{0.0, 0.0, 0.0},
+				"b": 0.0,
+			}
+		}
+	} else {
+		// Fallback: use default model (in real implementation, proplet should fetch it)
+		model = map[string]interface{}{
+			"w": []float64{0.0, 0.0, 0.0},
+			"b": 0.0,
+		}
+		fmt.Fprintf(os.Stderr, "MODEL_DATA not available, using default model. Model should be fetched by proplet runtime.\n")
 	}
 
 	numSamples := batchSize * epochs
