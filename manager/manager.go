@@ -35,5 +35,9 @@ type Service interface {
 	PostFLUpdateCBOR(ctx context.Context, updateData []byte) error
 	GetRoundStatus(ctx context.Context, roundID string) (RoundStatus, error)
 
+	// Note: Round completion notifications are handled by FL Coordinator directly.
+	// Coordinators publish MQTT notifications to "fl/rounds/next" topic.
+	// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
+
 	Subscribe(ctx context.Context) error
 }

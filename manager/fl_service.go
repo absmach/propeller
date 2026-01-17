@@ -205,3 +205,8 @@ func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundSt
 	svc.logger.InfoContext(ctx, "Forwarded round status request to coordinator", "round_id", roundID)
 	return statusResp.Status, nil
 }
+
+// Note: Round completion notifications are handled by the FL Coordinator directly.
+// Coordinators should publish MQTT notifications to "fl/rounds/next" topic when rounds complete.
+// This keeps the architecture simple: Coordinator → MQTT Broker → Clients
+// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
