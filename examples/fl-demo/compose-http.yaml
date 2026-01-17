@@ -1,0 +1,114 @@
+services:
+  # Model Registry (HTTP-based, matches diagrams)
+  model-registry:
+    build:
+      context: ./model-registry
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    volumes:
+      - fl-models-http:/tmp/fl-models
+    environment:
+      - MODELS_DIR=/tmp/fl-models
+      - REGISTRY_PORT=8081
+    networks:
+      - fl-demo-http
+
+  # Aggregator Service (separate component, matches diagrams)
+  aggregator:
+    build:
+      context: ./aggregator
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - AGGREGATOR_PORT=8082
+    networks:
+      - fl-demo-http
+
+  # FML Coordinator (HTTP-based, matches diagrams)
+  coordinator-http:
+    build:
+      context: ./coordinator-http
+      dockerfile: Dockerfile
+    depends_on:
+      - model-registry
+      - aggregator
+    ports:
+      - "8080:8080"
+    environment:
+      - COORDINATOR_PORT=8080
+      - MODEL_REGISTRY_URL=http://model-registry:8081
+      - AGGREGATOR_URL=http://aggregator:8082
+    volumes:
+      - fl-models-http:/tmp/fl-models
+    networks:
+      - fl-demo-http
+
+  # Orchestrator (experiment configuration, matches diagrams)
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    depends_on:
+      - coordinator-http
+    ports:
+      - "8083:8083"
+    environment:
+      - ORCHESTRATOR_PORT=8083
+      - COORDINATOR_URL=http://coordinator-http:8080
+    networks:
+      - fl-demo-http
+
+  # HTTP-based Clients (matches diagrams - client pull model)
+  client-http-1:
+    build:
+      context: ./client-http
+      dockerfile: Dockerfile
+    depends_on:
+      - coordinator-http
+      - model-registry
+    environment:
+      - COORDINATOR_URL=http://coordinator-http:8080
+      - MODEL_REGISTRY_URL=http://model-registry:8081
+      - PROPLET_ID=proplet-1
+      - ROUND_ID=r-http-demo
+    networks:
+      - fl-demo-http
+
+  client-http-2:
+    build:
+      context: ./client-http
+      dockerfile: Dockerfile
+    depends_on:
+      - coordinator-http
+      - model-registry
+    environment:
+      - COORDINATOR_URL=http://coordinator-http:8080
+      - MODEL_REGISTRY_URL=http://model-registry:8081
+      - PROPLET_ID=proplet-2
+      - ROUND_ID=r-http-demo
+    networks:
+      - fl-demo-http
+
+  client-http-3:
+    build:
+      context: ./client-http
+      dockerfile: Dockerfile
+    depends_on:
+      - coordinator-http
+      - model-registry
+    environment:
+      - COORDINATOR_URL=http://coordinator-http:8080
+      - MODEL_REGISTRY_URL=http://model-registry:8081
+      - PROPLET_ID=proplet-3
+      - ROUND_ID=r-http-demo
+    networks:
+      - fl-demo-http
+
+volumes:
+  fl-models-http:
+
+networks:
+  fl-demo-http:
+    driver: bridge

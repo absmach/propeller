@@ -142,3 +142,67 @@ func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 
 	return mm.svc.Subscribe(ctx)
 }
+
+// FL Coordination methods
+func (mm *metricsMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (manager.FLTask, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-fl-task").Add(1)
+		mm.latency.With("method", "get-fl-task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetFLTask(ctx, roundID, propletID)
+}
+
+func (mm *metricsMiddleware) PostFLUpdate(ctx context.Context, update manager.FLUpdate) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "post-fl-update").Add(1)
+		mm.latency.With("method", "post-fl-update").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.PostFLUpdate(ctx, update)
+}
+
+func (mm *metricsMiddleware) PostFLUpdateCBOR(ctx context.Context, updateData []byte) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "post-fl-update-cbor").Add(1)
+		mm.latency.With("method", "post-fl-update-cbor").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.PostFLUpdateCBOR(ctx, updateData)
+}
+
+func (mm *metricsMiddleware) GetRoundStatus(ctx context.Context, roundID string) (manager.RoundStatus, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-round-status").Add(1)
+		mm.latency.With("method", "get-round-status").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetRoundStatus(ctx, roundID)
+}
+
+func (mm *metricsMiddleware) GetModel(ctx context.Context, version int) (manager.Model, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-model").Add(1)
+		mm.latency.With("method", "get-model").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetModel(ctx, version)
+}
+
+func (mm *metricsMiddleware) StoreModel(ctx context.Context, model manager.Model) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "store-model").Add(1)
+		mm.latency.With("method", "store-model").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StoreModel(ctx, model)
+}
+
+func (mm *metricsMiddleware) ListModels(ctx context.Context) ([]int, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "list-models").Add(1)
+		mm.latency.With("method", "list-models").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.ListModels(ctx)
+}

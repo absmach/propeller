@@ -113,6 +113,68 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		})
 	})
 
+	// Federated Learning Coordination API (matches diagram architecture)
+	mux.Route("/fl", func(r chi.Router) {
+		// GET /task - Client pulls task
+		r.Get("/task", otelhttp.NewHandler(kithttp.NewServer(
+			getFLTaskEndpoint(svc),
+			decodeFLTaskReq,
+			api.EncodeResponse,
+			opts...,
+		), "get-fl-task").ServeHTTP)
+
+		// POST /update - Client sends update (JSON)
+		r.Post("/update", otelhttp.NewHandler(kithttp.NewServer(
+			postFLUpdateEndpoint(svc),
+			decodeFLUpdateReq,
+			api.EncodeResponse,
+			opts...,
+		), "post-fl-update").ServeHTTP)
+
+		// POST /update_cbor - Client sends update (CBOR)
+		r.Post("/update_cbor", otelhttp.NewHandler(kithttp.NewServer(
+			postFLUpdateCBOREndpoint(svc),
+			decodeFLUpdateCBORReq,
+			api.EncodeResponse,
+			opts...,
+		), "post-fl-update-cbor").ServeHTTP)
+
+		// GET /rounds/{round_id}/complete - Check round status
+		r.Get("/rounds/{round_id}/complete", otelhttp.NewHandler(kithttp.NewServer(
+			getRoundStatusEndpoint(svc),
+			decodeRoundStatusReq,
+			api.EncodeResponse,
+			opts...,
+		), "get-round-status").ServeHTTP)
+	})
+
+	// Model Registry API
+	mux.Route("/models", func(r chi.Router) {
+		// GET /models/{version} - Get model by version
+		r.Get("/{version}", otelhttp.NewHandler(kithttp.NewServer(
+			getModelEndpoint(svc),
+			decodeModelReq,
+			api.EncodeResponse,
+			opts...,
+		), "get-model").ServeHTTP)
+
+		// GET /models - List all model versions
+		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
+			listModelsEndpoint(svc),
+			decodeListEntityReq,
+			api.EncodeResponse,
+			opts...,
+		), "list-models").ServeHTTP)
+
+		// POST /models - Store new model
+		r.Post("/", otelhttp.NewHandler(kithttp.NewServer(
+			storeModelEndpoint(svc),
+			decodeStoreModelReq,
+			api.EncodeResponse,
+			opts...,
+		), "store-model").ServeHTTP)
+	})
+
 	mux.Get("/health", supermq.Health("manager", instanceID))
 	mux.Handle("/metrics", promhttp.Handler())
 
