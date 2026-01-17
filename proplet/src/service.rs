@@ -522,6 +522,38 @@ impl PropletService {
                 }
             }
 
+            // Step 5: Fetch local dataset from Local Data Store
+            let data_store_url = env.get("DATA_STORE_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://local-data-store:8083".to_string());
+            let proplet_id = env.get("PROPLET_ID")
+                .cloned()
+                .unwrap_or_else(|| "proplet-unknown".to_string());
+            
+            let dataset_url = format!("{}/datasets/{}", data_store_url, proplet_id);
+            info!("Fetching dataset from Local Data Store: {}", dataset_url);
+            match http_client.get(&dataset_url).send().await {
+                Ok(response) if response.status().is_success() => {
+                    if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
+                        // Pass dataset as JSON string in environment variable
+                        if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
+                            env.insert("DATASET_DATA".to_string(), dataset_str);
+                            if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
+                                info!("Successfully fetched dataset with {} samples and passed to client", size);
+                            } else {
+                                info!("Successfully fetched dataset and passed to client");
+                            }
+                        }
+                    }
+                }
+                Ok(response) => {
+                    warn!("Failed to fetch dataset: HTTP {} (will use synthetic data)", response.status());
+                }
+                Err(e) => {
+                    warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
+                }
+            }
+
             let result = runtime.start_app(ctx, config).await;
 
             if let Some(handle) = monitor_handle {

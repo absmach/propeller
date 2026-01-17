@@ -25,6 +25,21 @@ services:
     networks:
       - fl-demo-http
 
+  # Local Data Store (stores client datasets)
+  local-data-store:
+    build:
+      context: ./local-data-store
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    volumes:
+      - fl-datasets:/tmp/fl-datasets
+    environment:
+      - DATA_DIR=/tmp/fl-datasets
+      - DATA_STORE_PORT=8083
+    networks:
+      - fl-demo-http
+
   # Aggregator Service (separate component for aggregation)
   aggregator:
     build:
@@ -45,12 +60,15 @@ services:
     depends_on:
       - model-registry
       - aggregator
+      - mqtt
     ports:
       - "8080:8080"
     environment:
       - COORDINATOR_PORT=8080
       - MODEL_REGISTRY_URL=http://model-registry:8081
       - AGGREGATOR_URL=http://aggregator:8082
+      - MQTT_BROKER=tcp://mqtt:1883
+      - MQTT_CLIENT_ID=fl-coordinator
     volumes:
       - fl-models:/tmp/fl-models
     networks:
@@ -89,6 +107,7 @@ services:
     depends_on:
       - mqtt
       - manager
+      - local-data-store
     environment:
       - PROPLET_DOMAIN_ID=demo
       - PROPLET_CHANNEL_ID=fl
@@ -96,6 +115,7 @@ services:
       - PROPLET_CLIENT_KEY=proplet-1-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
     networks:
       - fl-demo-http
     healthcheck:
@@ -108,6 +128,7 @@ services:
     depends_on:
       - mqtt
       - manager
+      - local-data-store
     environment:
       - PROPLET_DOMAIN_ID=demo
       - PROPLET_CHANNEL_ID=fl
@@ -115,6 +136,7 @@ services:
       - PROPLET_CLIENT_KEY=proplet-2-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
     networks:
       - fl-demo-http
     healthcheck:
@@ -127,6 +149,7 @@ services:
     depends_on:
       - mqtt
       - manager
+      - local-data-store
     environment:
       - PROPLET_DOMAIN_ID=demo
       - PROPLET_CHANNEL_ID=fl
@@ -134,6 +157,7 @@ services:
       - PROPLET_CLIENT_KEY=proplet-3-key
       - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
     networks:
       - fl-demo-http
     healthcheck:
@@ -141,6 +165,7 @@ services:
 
 volumes:
   fl-models:
+  fl-datasets:
 
 networks:
   fl-demo-http:

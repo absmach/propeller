@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 type RoundState struct {
@@ -68,6 +69,8 @@ var (
 	httpClient      *http.Client
 	modelRegistryURL string
 	aggregatorURL   string
+	mqttClient      mqtt.Client
+	mqttEnabled     bool
 )
 
 func main() {
@@ -88,6 +91,37 @@ func main() {
 
 	httpClient = &http.Client{
 		Timeout: 30 * time.Second,
+	}
+
+	// Initialize MQTT client for push notifications
+	mqttBroker := os.Getenv("MQTT_BROKER")
+	if mqttBroker == "" {
+		mqttBroker = "tcp://mqtt:1883"
+	}
+	mqttClientID := os.Getenv("MQTT_CLIENT_ID")
+	if mqttClientID == "" {
+		mqttClientID = "fl-coordinator"
+	}
+
+	if mqttBroker != "" {
+		opts := mqtt.NewClientOptions()
+		opts.AddBroker(mqttBroker)
+		opts.SetClientID(mqttClientID)
+		opts.SetAutoReconnect(true)
+		opts.SetConnectRetry(true)
+		opts.SetConnectRetryInterval(5 * time.Second)
+
+		mqttClient = mqtt.NewClient(opts)
+		if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
+			slog.Warn("Failed to connect to MQTT broker, push notifications disabled", "error", token.Error())
+			mqttEnabled = false
+		} else {
+			mqttEnabled = true
+			slog.Info("Connected to MQTT broker for push notifications", "broker", mqttBroker)
+		}
+	} else {
+		mqttEnabled = false
+		slog.Info("MQTT broker not configured, push notifications disabled")
 	}
 
 	r := mux.NewRouter()
@@ -476,24 +510,38 @@ func aggregateAndAdvance(round *RoundState) {
 
 	slog.Info("Aggregated model stored", "round_id", round.RoundID, "version", newVersion)
 	
-	// Step 12: Notify clients that next round is available
-	// Publish notification to MQTT topic (if MQTT is available) or HTTP endpoint
+	// Step 12: Notify clients that next round is available via MQTT push notification
 	nextRoundNotification := map[string]interface{}{
-		"round_id":        round.RoundID,
-		"new_model_version": newVersion,
-		"model_uri":        fmt.Sprintf("fl/models/global_model_v%d", newVersion),
-		"status":           "complete",
+		"round_id":            round.RoundID,
+		"new_model_version":   newVersion,
+		"model_uri":           fmt.Sprintf("fl/models/global_model_v%d", newVersion),
+		"status":              "complete",
 		"next_round_available": true,
+		"timestamp":           time.Now().UTC().Format(time.RFC3339),
 	}
 	
-	// Log the notification (in production, this could be published to MQTT or sent via HTTP)
-	slog.Info("Round complete, next round available",
-		"round_id", round.RoundID,
-		"new_model_version", newVersion,
-		"notification", nextRoundNotification)
-	
-	// Note: Clients can poll /rounds/{round_id}/complete endpoint to check if next round is available
-	// Or subscribe to MQTT topic: fl/rounds/next (if MQTT integration is added)
+	notificationJSON, err := json.Marshal(nextRoundNotification)
+	if err != nil {
+		slog.Error("Failed to marshal notification", "error", err)
+	} else {
+		// Publish to MQTT topic for round completion notifications
+		if mqttEnabled && mqttClient != nil && mqttClient.IsConnected() {
+			topic := "fl/rounds/next"
+			token := mqttClient.Publish(topic, 1, false, notificationJSON)
+			if token.Wait() && token.Error() != nil {
+				slog.Error("Failed to publish round completion notification", "error", token.Error())
+			} else {
+				slog.Info("Published round completion notification to MQTT",
+					"topic", topic,
+					"round_id", round.RoundID,
+					"new_model_version", newVersion)
+			}
+		} else {
+			slog.Info("Round complete, next round available (MQTT not available, clients should poll)",
+				"round_id", round.RoundID,
+				"new_model_version", newVersion)
+		}
+	}
 }
 
 func checkRoundTimeouts() {
