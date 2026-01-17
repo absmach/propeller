@@ -23,5 +23,16 @@ type Service interface {
 	GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error)
 	GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error)
 
+	// Federated Learning Coordination API
+	GetFLTask(ctx context.Context, roundID, propletID string) (FLTask, error)
+	PostFLUpdate(ctx context.Context, update FLUpdate) error
+	PostFLUpdateCBOR(ctx context.Context, updateData []byte) error
+	GetRoundStatus(ctx context.Context, roundID string) (RoundStatus, error)
+
+	// Model Registry API
+	GetModel(ctx context.Context, version int) (Model, error)
+	StoreModel(ctx context.Context, model Model) error
+	ListModels(ctx context.Context) ([]int, error)
+
 	Subscribe(ctx context.Context) error
 }

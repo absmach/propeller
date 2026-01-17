@@ -146,3 +146,67 @@ func (tm *tracing) Subscribe(ctx context.Context) (err error) {
 
 	return tm.svc.Subscribe(ctx)
 }
+
+// FL Coordination methods
+func (tm *tracing) GetFLTask(ctx context.Context, roundID, propletID string) (resp manager.FLTask, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-fl-task", trace.WithAttributes(
+		attribute.String("round_id", roundID),
+		attribute.String("proplet_id", propletID),
+	))
+	defer span.End()
+
+	return tm.svc.GetFLTask(ctx, roundID, propletID)
+}
+
+func (tm *tracing) PostFLUpdate(ctx context.Context, update manager.FLUpdate) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "post-fl-update", trace.WithAttributes(
+		attribute.String("round_id", update.RoundID),
+		attribute.String("proplet_id", update.PropletID),
+	))
+	defer span.End()
+
+	return tm.svc.PostFLUpdate(ctx, update)
+}
+
+func (tm *tracing) PostFLUpdateCBOR(ctx context.Context, updateData []byte) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "post-fl-update-cbor", trace.WithAttributes(
+		attribute.Int("data_size", len(updateData)),
+	))
+	defer span.End()
+
+	return tm.svc.PostFLUpdateCBOR(ctx, updateData)
+}
+
+func (tm *tracing) GetRoundStatus(ctx context.Context, roundID string) (resp manager.RoundStatus, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-round-status", trace.WithAttributes(
+		attribute.String("round_id", roundID),
+	))
+	defer span.End()
+
+	return tm.svc.GetRoundStatus(ctx, roundID)
+}
+
+func (tm *tracing) GetModel(ctx context.Context, version int) (resp manager.Model, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-model", trace.WithAttributes(
+		attribute.Int("version", version),
+	))
+	defer span.End()
+
+	return tm.svc.GetModel(ctx, version)
+}
+
+func (tm *tracing) StoreModel(ctx context.Context, model manager.Model) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "store-model", trace.WithAttributes(
+		attribute.Int("version", model.Version),
+	))
+	defer span.End()
+
+	return tm.svc.StoreModel(ctx, model)
+}
+
+func (tm *tracing) ListModels(ctx context.Context) (resp []int, err error) {
+	ctx, span := tm.tracer.Start(ctx, "list-models")
+	defer span.End()
+
+	return tm.svc.ListModels(ctx)
+}
