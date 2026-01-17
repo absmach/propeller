@@ -105,19 +105,91 @@ func main() {
 		fmt.Fprintf(os.Stderr, "MODEL_DATA not available, using default model. Model should be fetched by proplet runtime.\n")
 	}
 
-	numSamples := batchSize * epochs
-	if numSamples == 0 {
-		numSamples = 512
+	// Step 5: Load local dataset from Local Data Store
+	// The proplet runtime fetches the dataset before execution and passes it via DATASET_DATA env var
+	datasetDataStr := os.Getenv("DATASET_DATA")
+	var dataset []map[string]interface{}
+	var numSamples int
+
+	if datasetDataStr != "" {
+		// Dataset was fetched by proplet runtime and passed via env var
+		var datasetObj map[string]interface{}
+		if err := json.Unmarshal([]byte(datasetDataStr), &datasetObj); err == nil {
+			if data, ok := datasetObj["data"].([]interface{}); ok {
+				dataset = make([]map[string]interface{}, len(data))
+				for i, item := range data {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						dataset[i] = itemMap
+					}
+				}
+				if size, ok := datasetObj["size"].(float64); ok {
+					numSamples = int(size)
+				} else {
+					numSamples = len(dataset)
+				}
+				fmt.Fprintf(os.Stderr, "Loaded dataset with %d samples from Local Data Store\n", numSamples)
+			}
+		}
 	}
 
-	rand.Seed(time.Now().UnixNano())
-
-	weights := model["w"].([]float64)
-	for epoch := 0; epoch < epochs; epoch++ {
-		for i := range weights {
-			gradient := (rand.Float64() - 0.5) * 0.1
-			weights[i] += lr * gradient
+	// Fallback to synthetic data if dataset not available
+	if len(dataset) == 0 {
+		fmt.Fprintf(os.Stderr, "DATASET_DATA not available, using synthetic data. Dataset should be fetched by proplet runtime.\n")
+		numSamples = batchSize * epochs
+		if numSamples == 0 {
+			numSamples = 512
 		}
+		// Generate synthetic data for fallback
+		rand.Seed(time.Now().UnixNano())
+		dataset = make([]map[string]interface{}, numSamples)
+		for i := 0; i < numSamples; i++ {
+			dataset[i] = map[string]interface{}{
+				"x": []float64{
+					rand.Float64(),
+					rand.Float64(),
+					rand.Float64(),
+				},
+				"y": float64(i % 2),
+			}
+		}
+	}
+
+	// Step 6: Local training using real dataset
+	rand.Seed(time.Now().UnixNano())
+	weights := model["w"].([]float64)
+	
+	for epoch := 0; epoch < epochs; epoch++ {
+		// Shuffle dataset for each epoch
+		for i := len(dataset) - 1; i > 0; i-- {
+			j := rand.Intn(i + 1)
+			dataset[i], dataset[j] = dataset[j], dataset[i]
+		}
+
+		// Train on batches
+		for batchStart := 0; batchStart < len(dataset); batchStart += batchSize {
+			batchEnd := batchStart + batchSize
+			if batchEnd > len(dataset) {
+				batchEnd = len(dataset)
+			}
+
+			// Process batch
+			for i := batchStart; i < batchEnd; i++ {
+				sample := dataset[i]
+				if x, ok := sample["x"].([]interface{}); ok {
+					// Simple gradient update based on data
+					for j := range weights {
+						if j < len(x) {
+							if xVal, ok := x[j].(float64); ok {
+								gradient := (xVal - 0.5) * 0.1
+								weights[j] += lr * gradient
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Update bias
 		bias := model["b"].(float64)
 		model["b"] = bias + lr*(rand.Float64()-0.5)*0.1
 	}
