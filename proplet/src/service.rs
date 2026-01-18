@@ -415,6 +415,13 @@ impl PropletService {
 
             info!("Executing task {} in spawned task", task_id);
 
+            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
+            // This must be done BEFORE creating StartConfig so it's included in WASM environment
+            // This is the Manager-known identity that should be used in FL updates
+            if !env.contains_key("PROPLET_ID") {
+                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
+            }
+
             let config = StartConfig {
                 id: task_id.clone(),
                 function_name: task_name.clone(),
@@ -492,13 +499,7 @@ impl PropletService {
 
             // Before task execution: Handle model fetching if MODEL_URI is set
             // Step 4: Fetch model (Client → Model Registry)
-            
-            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
-            // This is the Manager-known identity that should be used in FL updates
-            if !env.contains_key("PROPLET_ID") {
-                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
-            }
-            
+            // Note: PROPLET_ID was already set above before StartConfig creation
             let coordinator_url = env.get("COORDINATOR_URL")
                 .cloned()
                 .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
