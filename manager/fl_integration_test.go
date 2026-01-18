@@ -12,8 +12,6 @@ package manager
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -69,11 +67,6 @@ func (m *mockPubSub) simulateMessage(topic string, msg map[string]any) error {
 		}
 	}
 	return nil
-}
-
-func encodeJSONForTest(data []float64) string {
-	jsonData, _ := json.Marshal(data)
-	return base64.StdEncoding.EncodeToString(jsonData)
 }
 
 func matchesWildcard(topic, pattern string) bool {

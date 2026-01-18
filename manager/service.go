@@ -828,10 +828,11 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 }
 
 func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {
-	p.TaskCount = uint64(int64(p.TaskCount) + delta)
-	if p.TaskCount < 0 {
-		p.TaskCount = 0
+	newCount := int64(p.TaskCount) + delta
+	if newCount < 0 {
+		newCount = 0
 	}
+	p.TaskCount = uint64(newCount)
 	return svc.propletsDB.Update(ctx, p.ID, p)
 }
 
@@ -842,13 +843,3 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	return svc.tasksDB.Update(ctx, t.ID, *t)
 }
 
-func copyStringMap(m map[string]string) map[string]string {
-	if m == nil {
-		return nil
-	}
-	cpy := make(map[string]string, len(m))
-	for k, v := range m {
-		cpy[k] = v
-	}
-	return cpy
-}

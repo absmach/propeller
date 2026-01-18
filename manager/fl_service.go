@@ -131,7 +131,7 @@ func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 	}
 
 	// Validate update has data
-	if update.Update == nil || len(update.Update) == 0 {
+	if len(update.Update) == 0 {
 		return fmt.Errorf("update data is empty")
 	}
 
