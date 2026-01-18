@@ -390,7 +390,7 @@ impl PropletService {
         let proplet_id = self.proplet.lock().await.id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
-        let env = req.env.unwrap_or_default();
+        let mut env = req.env.unwrap_or_default();
         if !env.is_empty() {
             info!("Received {} environment variables for task {}", env.len(), task_id);
             for (key, value) in &env {
