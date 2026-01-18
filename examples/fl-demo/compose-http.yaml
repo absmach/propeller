@@ -1,0 +1,172 @@
+services:
+  # MQTT Broker (for Propeller Manager/Proplet communication)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - fl-demo-http
+
+  # Model Registry (central server for storing models)
+  model-registry:
+    build:
+      context: ./model-registry
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    volumes:
+      - fl-models:/tmp/fl-models
+    environment:
+      - MODELS_DIR=/tmp/fl-models
+      - REGISTRY_PORT=8081
+    networks:
+      - fl-demo-http
+
+  # Local Data Store (stores client datasets)
+  local-data-store:
+    build:
+      context: ./local-data-store
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    volumes:
+      - fl-datasets:/tmp/fl-datasets
+    environment:
+      - DATA_DIR=/tmp/fl-datasets
+      - DATA_STORE_PORT=8083
+    networks:
+      - fl-demo-http
+
+  # Aggregator Service (separate component for aggregation)
+  aggregator:
+    build:
+      context: ./aggregator
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - AGGREGATOR_PORT=8082
+    networks:
+      - fl-demo-http
+
+  # FL Coordinator (receives updates, aggregates, stores models)
+  coordinator-http:
+    build:
+      context: ./coordinator-http
+      dockerfile: Dockerfile
+    depends_on:
+      - model-registry
+      - aggregator
+      - mqtt
+    ports:
+      - "8080:8080"
+    environment:
+      - COORDINATOR_PORT=8080
+      - MODEL_REGISTRY_URL=http://model-registry:8081
+      - AGGREGATOR_URL=http://aggregator:8082
+      - MQTT_BROKER=tcp://mqtt:1883
+      - MQTT_CLIENT_ID=fl-coordinator
+    volumes:
+      - fl-models:/tmp/fl-models
+    networks:
+      - fl-demo-http
+
+  # Propeller Manager (workload-agnostic orchestrator)
+  # Forwards FL updates to FL Coordinator, does NOT aggregate
+  manager:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        SVC: manager
+    depends_on:
+      - mqtt
+      - coordinator-http
+    ports:
+      - "7070:7070"
+    environment:
+      - MANAGER_DOMAIN_ID=demo
+      - MANAGER_CHANNEL_ID=fl
+      - MANAGER_CLIENT_ID=manager
+      - MANAGER_CLIENT_KEY=manager-key
+      - MANAGER_MQTT_ADDRESS=tcp://mqtt:1883
+      - MANAGER_HTTP_HOST=0.0.0.0
+      # Forward FL updates to HTTP coordinator
+      - FL_COORDINATOR_URL=http://coordinator-http:8080
+    networks:
+      - fl-demo-http
+
+  # Propeller Proplets (execute WASM training modules)
+  proplet-1:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
+    depends_on:
+      - mqtt
+      - manager
+      - local-data-store
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-1
+      - PROPLET_CLIENT_KEY=proplet-1-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
+    networks:
+      - fl-demo-http
+    healthcheck:
+      disable: true
+
+  proplet-2:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
+    depends_on:
+      - mqtt
+      - manager
+      - local-data-store
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-2
+      - PROPLET_CLIENT_KEY=proplet-2-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
+    networks:
+      - fl-demo-http
+    healthcheck:
+      disable: true
+
+  proplet-3:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.proplet
+    depends_on:
+      - mqtt
+      - manager
+      - local-data-store
+    environment:
+      - PROPLET_DOMAIN_ID=demo
+      - PROPLET_CHANNEL_ID=fl
+      - PROPLET_CLIENT_ID=proplet-3
+      - PROPLET_CLIENT_KEY=proplet-3-key
+      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
+      - DATA_STORE_URL=http://local-data-store:8083
+    networks:
+      - fl-demo-http
+    healthcheck:
+      disable: true
+
+volumes:
+  fl-models:
+  fl-datasets:
+
+networks:
+  fl-demo-http:
+    driver: bridge

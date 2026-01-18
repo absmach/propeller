@@ -126,7 +126,6 @@ pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::Sender<Mqtt
                 debug!("Received MQTT packet: {:?}", packet);
             }
             Ok(Event::Outgoing(_)) => {
-                // Ignore outgoing events
             }
             Err(e) => {
                 warn!("MQTT connection error: {}", e);
@@ -140,17 +139,7 @@ pub fn build_topic(domain_id: &str, channel_id: &str, path: &str) -> String {
     format!("m/{domain_id}/c/{channel_id}/{path}")
 }
 
-/// Parse MQTT broker address into (host, port, use_tls)
-///
-/// Supports various formats:
-/// - `tcp://host:port` or `mqtt://host:port` -> (host, port, false)
-/// - `ssl://host:port`, `tls://host:port`, or `mqtts://host:port` -> (host, port, true)
-/// - `host:port` (no scheme) -> (host, port, false)
-/// - IPv6: `tcp://[::1]:1883` or `[::1]:1883` -> (::1, 1883, false)
-///
-/// Default port: 1883 for non-TLS, 8883 for TLS
 fn parse_mqtt_address(address: &str) -> Result<(String, u16, bool)> {
-    // Try parsing as a full URL first
     if let Ok(url) = Url::parse(address) {
         let scheme = url.scheme();
         let use_tls = matches!(scheme, "ssl" | "tls" | "mqtts");
@@ -364,7 +353,6 @@ mod tests {
 
     #[test]
     fn test_mqtt_config_address_parsing_with_scheme_and_port() {
-        // Test address parsing logic (unit test for the parsing logic)
         let address = "tcp://broker.example.com:1883";
         let address_without_scheme = address.split("://").nth(1).unwrap_or(address);
 

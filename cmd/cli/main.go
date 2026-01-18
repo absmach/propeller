@@ -50,8 +50,9 @@ func main() {
 
 	tasksCmd := cli.NewTasksCmd()
 	provisionCmd := cli.NewProvisionCmd()
+	flCmd := cli.NewFLCmd()
 
-	rootCmd.AddCommand(tasksCmd, provisionCmd)
+	rootCmd.AddCommand(tasksCmd, provisionCmd, flCmd)
 
 	rootCmd.PersistentFlags().StringVarP(
 		&managerURL,

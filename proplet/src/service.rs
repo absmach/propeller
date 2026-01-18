@@ -4,13 +4,14 @@ use crate::monitoring::{system::SystemMonitor, ProcessMonitor};
 use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
+use reqwest::Client as HttpClient;
 
 #[derive(Debug)]
 struct ChunkAssemblyState {
@@ -54,6 +55,7 @@ pub struct PropletService {
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
     monitor: Arc<SystemMonitor>,
     metrics_collector: Arc<Mutex<MetricsCollector>>,
+    http_client: HttpClient,
 }
 
 impl PropletService {
@@ -61,6 +63,13 @@ impl PropletService {
         let proplet = Proplet::new(config.instance_id.clone(), "proplet".to_string());
         let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
         let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
+        let http_client = HttpClient::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|e| {
+                warn!("Failed to create HTTP client, using default: {}", e);
+                HttpClient::new()
+            });
 
         let service = Self {
             config,
@@ -71,6 +80,7 @@ impl PropletService {
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
             monitor,
             metrics_collector,
+            http_client,
         };
 
         service.start_chunk_expiry_task();
@@ -120,7 +130,6 @@ impl PropletService {
             service.start_liveliness_updates().await;
         });
 
-        // Start proplet metrics updates if enabled
         if self.config.enable_monitoring && self.config.metrics_interval > 0 {
             let service = self.clone();
             tokio::spawn(async move {
@@ -318,6 +327,10 @@ impl PropletService {
 
         {
             let mut tasks = self.running_tasks.lock().await;
+            if tasks.contains_key(&req.id) {
+                warn!("Task {} is already running, ignoring duplicate start command", req.id);
+                return Ok(());
+            }
             tasks.insert(req.id.clone(), TaskState::Running);
         }
 
@@ -374,13 +387,24 @@ impl PropletService {
         let domain_id = self.config.domain_id.clone();
         let channel_id = self.config.channel_id.clone();
         let qos = self.config.qos();
-        let proplet_id = self.proplet.lock().await.id.clone();
+        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
+        // This is the Manager-known identity used in discovery and FL updates
+        let proplet_id = self.config.client_id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
-        let env = req.env.unwrap_or_default();
+        let mut env = req.env.unwrap_or_default();
+        if !env.is_empty() {
+            info!("Received {} environment variables for task {}", env.len(), task_id);
+            for (key, value) in &env {
+                debug!("  {}={}", key, value);
+            }
+        } else {
+            warn!("No environment variables in start request for task {}", task_id);
+        }
         let daemon = req.daemon;
         let cli_args = req.cli_args.clone();
         let inputs = req.inputs.clone();
+        let http_client = self.http_client.clone();
 
         let export_metrics = monitoring_profile.enabled && monitoring_profile.export_to_mqtt;
 
@@ -391,17 +415,24 @@ impl PropletService {
 
             info!("Executing task {} in spawned task", task_id);
 
+            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
+            // This must be done BEFORE creating StartConfig so it's included in WASM environment
+            // This is the Manager-known identity that should be used in FL updates
+            if !env.contains_key("PROPLET_ID") {
+                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
+            }
+
             let config = StartConfig {
                 id: task_id.clone(),
                 function_name: task_name.clone(),
                 daemon,
                 wasm_binary,
                 cli_args,
-                env,
+                env: env.clone(),
                 args: inputs,
+                mode: req.mode.clone(),
             };
 
-            // Start monitoring setup (if enabled)
             if export_metrics {
                 if let Err(e) = monitor
                     .start_monitoring(&task_id, monitoring_profile.clone())
@@ -411,7 +442,6 @@ impl PropletService {
                 }
             }
 
-            // Spawn the monitoring attachment in a separate task to run concurrently
             let monitor_handle = if export_metrics {
                 let monitor_clone = monitor.clone();
                 let runtime_clone = runtime.clone();
@@ -467,6 +497,78 @@ impl PropletService {
                 None
             };
 
+            // Before task execution: Handle model fetching if MODEL_URI is set
+            // Step 4: Fetch model (Client → Model Registry)
+            // Note: PROPLET_ID was already set above before StartConfig creation
+            let coordinator_url = env.get("COORDINATOR_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
+            let model_registry_url = env.get("MODEL_REGISTRY_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://model-registry:8081".to_string());
+            
+            // Fetch model if MODEL_URI is provided and pass it to client
+            if let Some(model_uri) = env.get("MODEL_URI") {
+                let model_version = extract_model_version_from_uri(model_uri);
+                let model_url = format!("{}/models/{}", model_registry_url, model_version);
+                
+                info!("Fetching model from registry: {}", model_url);
+                match http_client.get(&model_url).send().await {
+                    Ok(response) if response.status().is_success() => {
+                        if let Ok(model_json) = response.json::<serde_json::Value>().await {
+                            // Pass model as JSON string in environment variable
+                            if let Ok(model_str) = serde_json::to_string(&model_json) {
+                                env.insert("MODEL_DATA".to_string(), model_str);
+                                info!("Successfully fetched model v{} and passed to client", model_version);
+                            }
+                        }
+                    }
+                    Ok(response) => {
+                        warn!("Failed to fetch model: HTTP {}", response.status());
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch model from registry: {}", e);
+                    }
+                }
+            }
+
+            // Step 5: Fetch local dataset from Local Data Store
+            // Use PROPLET_ID from env (which we set above from config.client_id)
+            // This ensures we fetch the correct dataset for this proplet
+            let dataset_proplet_id = env.get("PROPLET_ID")
+                .cloned()
+                .unwrap_or_else(|| {
+                    warn!("PROPLET_ID not in environment, using proplet_id from config: {}", proplet_id);
+                    proplet_id.clone()
+                });
+            let data_store_url = env.get("DATA_STORE_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://local-data-store:8083".to_string());
+            
+            let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
+            info!("Fetching dataset from Local Data Store: {}", dataset_url);
+            match http_client.get(&dataset_url).send().await {
+                Ok(response) if response.status().is_success() => {
+                    if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
+                        // Pass dataset as JSON string in environment variable
+                        if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
+                            env.insert("DATASET_DATA".to_string(), dataset_str);
+                            if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
+                                info!("Successfully fetched dataset with {} samples and passed to client", size);
+                            } else {
+                                info!("Successfully fetched dataset and passed to client");
+                            }
+                        }
+                    }
+                }
+                Ok(response) => {
+                    warn!("Failed to fetch dataset: HTTP {} (will use synthetic data)", response.status());
+                }
+                Err(e) => {
+                    warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
+                }
+            }
+
             let result = runtime.start_app(ctx, config).await;
 
             if let Some(handle) = monitor_handle {
@@ -490,21 +592,108 @@ impl PropletService {
                 }
             };
 
-            let result_msg = ResultMessage {
-                task_id: task_id.clone(),
-                proplet_id,
-                results: result_str,
-                error,
-            };
+            // Check if this is an FL task via ROUND_ID environment variable
+            // Step 7: POST /update (Client → Coordinator) via HTTP
+            if let Some(round_id) = env.get("ROUND_ID") {
+                // Parse the result as JSON (fl-client.go outputs JSON)
+                if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
+                    // Try HTTP POST first (Step 7: direct HTTP communication)
+                    let update_url = format!("{}/update", coordinator_url);
+                    
+                    match http_client
+                        .post(&update_url)
+                        .json(&update_json)
+                        .send()
+                        .await
+                    {
+                        Ok(response) if response.status().is_success() => {
+                            info!(
+                                "Successfully posted FL update to coordinator via HTTP: {}",
+                                update_url
+                            );
+                        }
+                        Ok(response) => {
+                            warn!(
+                                "Coordinator returned error status {} for update, falling back to MQTT",
+                                response.status()
+                            );
+                            // Fallback to MQTT
+                            let fl_topic = format!("fl/rounds/{}/updates/{}", round_id, proplet_id);
+                            if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
+                                error!("Failed to publish FL update to {}: {}", fl_topic, e);
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to POST update to coordinator via HTTP: {}, falling back to MQTT",
+                                e
+                            );
+                            // Fallback to MQTT
+                            let fl_topic = format!("fl/rounds/{}/updates/{}", round_id, proplet_id);
+                            if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
+                                error!("Failed to publish FL update to {}: {}", fl_topic, e);
+                            } else {
+                                info!("Successfully published FL update to coordinator via MQTT: {}", fl_topic);
+                            }
+                        }
+                    }
+                } else if error.is_none() {
+                    // Only warn if task didn't fail - failed tasks might not have valid JSON
+                    warn!(
+                        "Task {} output was not valid JSON, skipping FL update publish to coordinator",
+                        task_id
+                    );
+                }
+            }
 
-            let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+            if req.mode.as_deref() == Some("train") && req.fl.is_some() {
+                let fl_spec = req.fl.as_ref().unwrap();
+                let update_envelope = build_fl_update_envelope(
+                    &task_id,
+                    &proplet_id,
+                    &result_str,
+                    fl_spec,
+                    &env,
+                );
 
-            info!("Publishing result for task {}", task_id);
+                #[derive(serde::Serialize)]
+                struct FLResultMessage {
+                    task_id: String,
+                    results: serde_json::Value,
+                    error: Option<String>,
+                }
 
-            if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
-                error!("Failed to publish result for task {}: {}", task_id, e);
+                let fl_result = FLResultMessage {
+                    task_id: task_id.clone(),
+                    results: serde_json::to_value(&update_envelope).unwrap_or_default(),
+                    error,
+                };
+
+                let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+                info!("Publishing FL update for task {}", task_id);
+
+                if let Err(e) = pubsub.publish(&topic, &fl_result, qos).await {
+                    error!("Failed to publish FL result for task {}: {}", task_id, e);
+                } else {
+                    info!("Successfully published FL update for task {}", task_id);
+                }
             } else {
-                info!("Successfully published result for task {}", task_id);
+                let result_msg = ResultMessage {
+                    task_id: task_id.clone(),
+                    proplet_id,
+                    results: result_str,
+                    error,
+                };
+
+                let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+
+                info!("Publishing result for task {}", task_id);
+
+                if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
+                    error!("Failed to publish result for task {}: {}", task_id, e);
+                } else {
+                    info!("Successfully published result for task {}", task_id);
+                }
             }
 
             running_tasks.lock().await.remove(&task_id);
@@ -642,7 +831,8 @@ impl PropletService {
         results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
-        let proplet_id = self.proplet.lock().await.id.clone();
+        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
+        let proplet_id = self.config.client_id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
 
         let result_msg = ResultMessage {
@@ -663,4 +853,207 @@ impl PropletService {
             .await?;
         Ok(())
     }
+
+    fn build_fl_update_envelope(
+        &self,
+        task_id: &str,
+        proplet_id: &str,
+        result_str: &str,
+        fl_spec: &crate::types::FLSpec,
+        env: &HashMap<String, String>,
+    ) -> serde_json::Value {
+        build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
+    }
+
+    /// Parse stderr for HTTP request markers (MODEL_REQUEST, UPDATE_REQUEST, TASK_REQUEST)
+    fn parse_http_requests_from_stderr(stderr: &str) -> Vec<HttpRequest> {
+        let mut requests = Vec::new();
+        
+        for line in stderr.lines() {
+            if let Some(json_str) = line.strip_prefix("MODEL_REQUEST:") {
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
+                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
+                        requests.push(HttpRequest {
+                            action: "get_model".to_string(),
+                            url: url.to_string(),
+                            data: None,
+                        });
+                    }
+                }
+            } else if let Some(json_str) = line.strip_prefix("UPDATE_REQUEST:") {
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
+                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
+                        let data = req.get("data").cloned();
+                        requests.push(HttpRequest {
+                            action: "post_update".to_string(),
+                            url: url.to_string(),
+                            data,
+                        });
+                    }
+                }
+            } else if let Some(json_str) = line.strip_prefix("TASK_REQUEST:") {
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
+                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
+                        requests.push(HttpRequest {
+                            action: "get_task".to_string(),
+                            url: url.to_string(),
+                            data: None,
+                        });
+                    }
+                }
+            }
+        }
+        
+        requests
+    }
+
+    /// Fetch model from Model Registry
+    async fn fetch_model_from_registry(&self, url: &str) -> Result<serde_json::Value> {
+        info!("Fetching model from registry: {}", url);
+        let response = self
+            .http_client
+            .get(url)
+            .send()
+            .await
+            .context("Failed to send GET request to model registry")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Model registry returned error: {}",
+                response.status()
+            ));
+        }
+
+        let model: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse model JSON from registry")?;
+
+        info!("Successfully fetched model from registry");
+        Ok(model)
+    }
+
+    /// POST update to Coordinator
+    async fn post_update_to_coordinator(
+        &self,
+        url: &str,
+        update_data: &serde_json::Value,
+    ) -> Result<()> {
+        info!("Posting update to coordinator: {}", url);
+        let response = self
+            .http_client
+            .post(url)
+            .json(update_data)
+            .send()
+            .await
+            .context("Failed to send POST request to coordinator")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Coordinator returned error: {}",
+                response.status()
+            ));
+        }
+
+        info!("Successfully posted update to coordinator");
+        Ok(())
+    }
+
+    /// GET task from Coordinator
+    async fn get_task_from_coordinator(&self, url: &str) -> Result<serde_json::Value> {
+        info!("Getting task from coordinator: {}", url);
+        let response = self
+            .http_client
+            .get(url)
+            .send()
+            .await
+            .context("Failed to send GET request to coordinator")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Coordinator returned error: {}",
+                response.status()
+            ));
+        }
+
+        let task: serde_json::Value = response
+            .json()
+            .await
+            .context("Failed to parse task JSON from coordinator")?;
+
+        info!("Successfully got task from coordinator");
+        Ok(task)
+    }
+}
+
+#[derive(Debug)]
+struct HttpRequest {
+    action: String,
+    url: String,
+    data: Option<serde_json::Value>,
+}
+
+/// Extract model version from model URI (e.g., "fl/models/global_model_v0" -> 0)
+fn extract_model_version_from_uri(uri: &str) -> i32 {
+    // Try to extract version number from URI
+    // Pattern: "fl/models/global_model_v{N}" or similar
+    if let Some(last_part) = uri.split('/').last() {
+        if let Some(v_part) = last_part.strip_prefix("global_model_v") {
+            if let Ok(version) = v_part.parse::<i32>() {
+                return version;
+            }
+        }
+        // Try to extract any trailing number
+        if let Some(num_str) = last_part
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+            .parse::<i32>()
+            .ok()
+        {
+            return num_str;
+        }
+    }
+    0 // Default to version 0
+}
+
+fn build_fl_update_envelope(
+    task_id: &str,
+    proplet_id: &str,
+    result_str: &str,
+    fl_spec: &crate::types::FLSpec,
+    env: &HashMap<String, String>,
+) -> serde_json::Value {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    let num_samples = env
+        .get("FL_NUM_SAMPLES")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1);
+
+    let update_format = if !fl_spec.update_format.is_empty() {
+        fl_spec.update_format.clone()
+    } else {
+        env.get("FL_FORMAT")
+            .cloned()
+            .unwrap_or_else(|| "f32-delta".to_string())
+    };
+
+    let update_b64 = STANDARD.encode(result_str.as_bytes());
+
+    serde_json::json!({
+        "task_id": task_id,
+        "job_id": fl_spec.job_id,
+        "round_id": fl_spec.round_id,
+        "global_version": fl_spec.global_version,
+        "proplet_id": proplet_id,
+        "num_samples": num_samples,
+        "update_b64": update_b64,
+        "format": update_format,
+        "metrics": {}
+    })
 }
