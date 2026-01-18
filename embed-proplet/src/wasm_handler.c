@@ -28,6 +28,70 @@ static void maybe_init_wamr_runtime(void);
 static int find_free_slot(void);
 static int find_app_by_id(const char *task_id);
 
+/* Helper function to write string to WASM linear memory and return offset/length */
+static bool write_string_to_wasm_memory(wasm_exec_env_t exec_env, const char *str,
+                                         uint32_t *ret_offset, uint32_t *ret_len) {
+  wasm_module_inst_t module_inst = wasm_runtime_get_module_inst(exec_env);
+  if (!module_inst || !str) {
+    return false;
+  }
+  
+  size_t str_len = strlen(str);
+  uint32_t str_buf_offset = wasm_runtime_module_malloc(module_inst, str_len + 1, (void**)NULL);
+  if (str_buf_offset == 0) {
+    LOG_ERR("Failed to allocate WASM memory for string");
+    return false;
+  }
+  
+  char *str_buf = wasm_runtime_addr_app_to_native(module_inst, str_buf_offset);
+  if (!str_buf) {
+    wasm_runtime_module_free(module_inst, str_buf_offset);
+    return false;
+  }
+  
+  memcpy(str_buf, str, str_len + 1);
+  *ret_offset = str_buf_offset;
+  *ret_len = str_len;
+  return true;
+}
+
+/* Host function: get_proplet_id - Returns PROPLET_ID as string in WASM memory */
+static bool get_proplet_id_wrapper(wasm_exec_env_t exec_env,
+                                    uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *proplet_id = g_current_task.proplet_id[0] != '\0' 
+                            ? g_current_task.proplet_id 
+                            : "";
+  return write_string_to_wasm_memory(exec_env, proplet_id, ret_offset, ret_len);
+}
+
+/* Host function: get_model_data - Returns MODEL_DATA JSON string in WASM memory */
+static bool get_model_data_wrapper(wasm_exec_env_t exec_env,
+                                    uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *model_data = g_current_task.model_data_fetched && g_current_task.model_data[0] != '\0'
+                            ? g_current_task.model_data
+                            : "";
+  return write_string_to_wasm_memory(exec_env, model_data, ret_offset, ret_len);
+}
+
+/* Host function: get_dataset_data - Returns DATASET_DATA JSON string in WASM memory */
+static bool get_dataset_data_wrapper(wasm_exec_env_t exec_env,
+                                      uint32_t *ret_offset, uint32_t *ret_len) {
+  extern struct task g_current_task;
+  const char *dataset_data = g_current_task.dataset_data_fetched && g_current_task.dataset_data[0] != '\0'
+                              ? g_current_task.dataset_data
+                              : "";
+  return write_string_to_wasm_memory(exec_env, dataset_data, ret_offset, ret_len);
+}
+
+/* Native symbol definitions for host functions */
+static NativeSymbol native_symbols[] = {
+    {"get_proplet_id", (void*)get_proplet_id_wrapper, "(~i)", NULL},
+    {"get_model_data", (void*)get_model_data_wrapper, "(~i)", NULL},
+    {"get_dataset_data", (void*)get_dataset_data_wrapper, "(~i)", NULL},
+};
+
 void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
                          size_t wasm_size, const uint64_t *inputs,
                          size_t inputs_count)
@@ -71,6 +135,12 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
                                            const char *);
     publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
     return;
+  }
+
+  // Register native symbols (host functions) for environment variable access
+  uint32_t n_native_symbols = sizeof(native_symbols) / sizeof(NativeSymbol);
+  if (!wasm_runtime_register_natives("env", native_symbols, n_native_symbols)) {
+    LOG_WRN("Failed to register native symbols, host functions may not be available");
   }
 
   wasm_module_inst_t module_inst =
