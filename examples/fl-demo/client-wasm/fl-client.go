@@ -65,20 +65,7 @@ func main() {
 	taskRequestJSON, _ := json.Marshal(taskRequest)
 	fmt.Fprintf(os.Stderr, "TASK_REQUEST:%s\n", string(taskRequestJSON))
 
-	task := map[string]interface{}{
-		"round_id":  roundID,
-		"model_ref": modelURI,
-		"config": map[string]interface{}{
-			"proplet_id": propletID,
-		},
-		"hyperparams": map[string]interface{}{
-			"epochs":      epochs,
-			"lr":          lr,
-			"batch_size":  batchSize,
-		},
-	}
-
-	modelVersion := extractModelVersion(modelURI)
+	_ = extractModelVersion(modelURI) // Extract model version for potential future use
 
 	// Step 4: Fetch model from Model Registry
 	// The proplet runtime fetches the model before execution and passes it via MODEL_DATA env var

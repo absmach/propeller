@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/gorilla/mux"
 )
