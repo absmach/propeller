@@ -387,7 +387,9 @@ impl PropletService {
         let domain_id = self.config.domain_id.clone();
         let channel_id = self.config.channel_id.clone();
         let qos = self.config.qos();
-        let proplet_id = self.proplet.lock().await.id.clone();
+        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
+        // This is the Manager-known identity used in discovery and FL updates
+        let proplet_id = self.config.client_id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
         let mut env = req.env.unwrap_or_default();
@@ -490,6 +492,13 @@ impl PropletService {
 
             // Before task execution: Handle model fetching if MODEL_URI is set
             // Step 4: Fetch model (Client → Model Registry)
+            
+            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
+            // This is the Manager-known identity that should be used in FL updates
+            if !env.contains_key("PROPLET_ID") {
+                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
+            }
+            
             let coordinator_url = env.get("COORDINATOR_URL")
                 .cloned()
                 .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
@@ -523,14 +532,19 @@ impl PropletService {
             }
 
             // Step 5: Fetch local dataset from Local Data Store
+            // Use PROPLET_ID from env (which we set above from config.client_id)
+            // This ensures we fetch the correct dataset for this proplet
+            let dataset_proplet_id = env.get("PROPLET_ID")
+                .cloned()
+                .unwrap_or_else(|| {
+                    warn!("PROPLET_ID not in environment, using proplet_id from config: {}", proplet_id);
+                    proplet_id.clone()
+                });
             let data_store_url = env.get("DATA_STORE_URL")
                 .cloned()
                 .unwrap_or_else(|| "http://local-data-store:8083".to_string());
-            let proplet_id = env.get("PROPLET_ID")
-                .cloned()
-                .unwrap_or_else(|| "proplet-unknown".to_string());
             
-            let dataset_url = format!("{}/datasets/{}", data_store_url, proplet_id);
+            let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
             info!("Fetching dataset from Local Data Store: {}", dataset_url);
             match http_client.get(&dataset_url).send().await {
                 Ok(response) if response.status().is_success() => {
@@ -816,7 +830,8 @@ impl PropletService {
         results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
-        let proplet_id = self.proplet.lock().await.id.clone();
+        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
+        let proplet_id = self.config.client_id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
 
         let result_msg = ResultMessage {
