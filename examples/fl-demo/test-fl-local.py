@@ -14,12 +14,31 @@ MANAGER_URL = "http://localhost:7070"  # Default manager port
 WASM_FILE = "client-wasm/fl-client.wasm"
 ROUND_ID = f"r-{int(time.time())}"
 
+def check_manager_health():
+    """Check if manager is accessible before starting tests."""
+    try:
+        response = requests.get(f"{MANAGER_URL}/health", timeout=5)
+        if response.status_code == 200:
+            print(f"✓ Manager is accessible at {MANAGER_URL}")
+            return True
+        else:
+            print(f"✗ Manager returned status {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Cannot connect to manager at {MANAGER_URL}: {e}")
+        print(f"  Make sure services are running: docker compose -f compose-http.yaml up -d")
+        return False
+
 def main():
+    # Check manager health first
+    if not check_manager_health():
+        sys.exit(1)
     # Read and encode WASM file
     wasm_path = Path(WASM_FILE)
     if not wasm_path.exists():
         print(f"Error: WASM file not found: {WASM_FILE}")
-        print(f"Please build it first: cd client-wasm && tinygo build -target wasi -o fl-client.wasm fl-client.go")
+        print(f"Please build it first:")
+        print(f"  cd client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go")
         sys.exit(1)
     
     print(f"Reading WASM file: {wasm_path}")
@@ -101,11 +120,17 @@ def main():
     if task_ids:
         print(f"\n✅ Successfully launched {len(task_ids)} tasks")
         print(f"\nMonitor progress:")
-        print(f"  docker compose logs -f coordinator")
-        print(f"  docker compose logs -f manager")
-        print(f"  docker compose logs -f proplet-1")
-        print(f"\nCheck aggregated models:")
-        print(f"  docker compose exec model-server ls -la /tmp/fl-models/")
+        print(f"  docker compose -f compose-http.yaml logs -f coordinator-http")
+        print(f"  docker compose -f compose-http.yaml logs -f manager")
+        print(f"  docker compose -f compose-http.yaml logs -f proplet-1")
+        print(f"\nVerify results:")
+        print(f"  # Check proplet_id in logs (should be proplet-1/2/3, not proplet-unknown):")
+        print(f"  docker compose -f compose-http.yaml logs proplet-1 | grep proplet_id")
+        print(f"\n  # Check dataset fetch success (should show 'Successfully fetched dataset'):")
+        print(f"  docker compose -f compose-http.yaml logs proplet-1 | grep -i dataset")
+        print(f"\n  # Check aggregated models:")
+        print(f"  docker compose -f compose-http.yaml exec model-registry ls -la /tmp/fl-models/")
+        print(f"  docker compose -f compose-http.yaml exec model-registry cat /tmp/fl-models/global_model_v1.json")
     else:
         print("\n❌ Failed to launch any tasks")
         sys.exit(1)
