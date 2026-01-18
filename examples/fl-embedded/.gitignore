@@ -1,0 +1,7 @@
+# Build artifacts
+*.wasm
+
+# Go build cache
+*.exe
+*.test
+*.prof
