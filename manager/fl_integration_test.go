@@ -1,13 +1,3 @@
-// Package manager contains integration tests for the federated learning workflow.
-//
-// This test file verifies end-to-end FL functionality:
-//   - Task creation and assignment to multiple proplets
-//   - Update collection from different proplets
-//   - FedAvg aggregation correctness
-//   - Round progression logic
-//
-// This is a critical integration test that validates the complete FL pipeline
-// beyond unit tests. It ensures Manager, proplets, and aggregation work together correctly.
 package manager
 
 import (
@@ -24,7 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// mockPubSub is a simple mock MQTT pub/sub for testing
 type mockPubSub struct {
 	published  map[string]interface{}
 	subscribed map[string]mqtt.Handler
@@ -76,7 +65,6 @@ func matchesWildcard(topic, pattern string) bool {
 	if pattern == topic {
 		return true
 	}
-	// Simple wildcard matching for patterns like "m/+/c/+/#"
 	patternParts := splitTopic(pattern)
 	topicParts := splitTopic(topic)
 	
@@ -117,7 +105,6 @@ func splitTopic(topic string) []string {
 func TestFLWorkflowIntegration(t *testing.T) {
 	ctx := context.Background()
 	
-	// Setup
 	tasksDB := storage.NewInMemoryStorage()
 	propletsDB := storage.NewInMemoryStorage()
 	taskPropletDB := storage.NewInMemoryStorage()
@@ -133,18 +120,15 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		pubsubMock,
 		"test-domain",
 		"test-channel",
-		nil, // logger
+		nil,
 	).(*service)
 	
-	// Store reference for simulation
 	pubsubMockTyped := pubsubMock
 	
-	// Subscribe to handle messages
 	if err := svc.Subscribe(ctx); err != nil {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
 	
-	// Step 1: Create proplets
 	proplet1 := proplet.Proplet{
 		ID:   "proplet-1",
 		Name: "proplet-1",
@@ -173,7 +157,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to update proplet2: %v", err)
 	}
 	
-	// Step 2: Create federated learning task
 	jobID := uuid.NewString()
 	flTask := task.Task{
 		Name:     "fl-task-1",
@@ -207,8 +190,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Errorf("Expected JobID=%s, got %s", jobID, createdTask.FL.JobID)
 	}
 	
-	// Step 3: Start the task (this should create round 1 tasks)
-	// For simplicity, we'll manually create round 1 tasks for each proplet
 	round1Task1 := task.Task{
 		Name:     "fl-task-1-round-1-p1",
 		Kind:     task.TaskKindFederated,
@@ -247,7 +228,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to create round 1 task 2: %v", err)
 	}
 	
-	// Pin tasks to proplets
 	if err := taskPropletDB.Create(ctx, createdRound1Task1.ID, proplet1.ID); err != nil {
 		t.Fatalf("Failed to pin task 1: %v", err)
 	}
@@ -255,9 +235,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to pin task 2: %v", err)
 	}
 	
-	// Step 4: Simulate proplets completing training and sending updates
-	// Note: Updates are now sent directly to FL Coordinator via HTTP or MQTT
-	// Manager receives updates via results topic and forwards them
 	update1 := flpkg.Update{
 		RoundID:    "round-1",
 		PropletID:  proplet1.ID,
@@ -272,9 +249,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		Update:     map[string]interface{}{"w": []float64{2.0, 3.0, 4.0}},
 	}
 	
-	// Simulate first proplet completing
-	// Note: In the new architecture, updates are sent directly to Coordinator
-	// Manager receives results via control/proplet/results topic
 	resultMsg1 := map[string]any{
 		"task_id": createdRound1Task1.ID,
 		"results": update1,
@@ -285,7 +259,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to simulate result message 1: %v", err)
 	}
 	
-	// Verify task 1 is marked as completed
 	completedTask1, err := svc.GetTask(ctx, createdRound1Task1.ID)
 	if err != nil {
 		t.Fatalf("Failed to get completed task 1: %v", err)
@@ -294,7 +267,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Errorf("Expected task 1 state to be Completed, got %s", completedTask1.State.String())
 	}
 	
-	// Simulate second proplet completing
 	resultMsg2 := map[string]any{
 		"task_id": createdRound1Task2.ID,
 		"results": update2,
@@ -305,7 +277,6 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Failed to simulate result message 2: %v", err)
 	}
 	
-	// Verify task 2 is marked as completed
 	completedTask2, err := svc.GetTask(ctx, createdRound1Task2.ID)
 	if err != nil {
 		t.Fatalf("Failed to get completed task 2: %v", err)
@@ -334,12 +305,8 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		}
 	}
 	
-	// Note: In a real scenario, startNextRound would create round 2 tasks
-	// For this test, we're verifying the aggregation worked correctly
-	// Round progression would happen automatically when aggregation completes
 	t.Logf("Found %d round 2 tasks (expected 0 in this simplified test)", round2Tasks)
 	
-	// Additional verification: Check that both tasks are completed
 	if completedTask1.State != task.Completed {
 		t.Errorf("Task 1 should be completed, got %s", completedTask1.State.String())
 	}
@@ -347,7 +314,5 @@ func TestFLWorkflowIntegration(t *testing.T) {
 		t.Errorf("Task 2 should be completed, got %s", completedTask2.State.String())
 	}
 	
-	// Verify updates were received (Manager forwards to Coordinator, doesn't aggregate)
-	// In the new architecture, Manager receives updates via results topic and forwards them
 	t.Logf("Integration test complete: Both tasks completed, updates forwarded to Coordinator")
 }

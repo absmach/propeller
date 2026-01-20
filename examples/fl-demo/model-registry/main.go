@@ -37,12 +37,10 @@ func main() {
 		store.modelsDir = dir
 	}
 
-	// Create models directory
 	if err := os.MkdirAll(store.modelsDir, 0755); err != nil {
 		log.Fatalf("Failed to create models directory: %v", err)
 	}
 
-	// Initialize with default model if none exists
 	defaultModelPath := filepath.Join(store.modelsDir, "global_model_v0.json")
 	if _, err := os.Stat(defaultModelPath); os.IsNotExist(err) {
 		defaultModel := map[string]interface{}{
@@ -143,7 +141,6 @@ func getModelHandler(w http.ResponseWriter, r *http.Request) {
 	store.mu.RUnlock()
 
 	if !exists {
-		// Try to load from file
 		modelFile := filepath.Join(store.modelsDir, fmt.Sprintf("global_model_v%d.json", version))
 		data, err := os.ReadFile(modelFile)
 		if err != nil {

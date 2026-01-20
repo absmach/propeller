@@ -8,14 +8,12 @@ import (
 	"sync"
 )
 
-// PersistentStorage provides persistent storage for rounds and models
 type PersistentStorage struct {
 	roundsDir string
 	modelsDir string
 	mu        sync.RWMutex
 }
 
-// NewPersistentStorage creates a new persistent storage instance
 func NewPersistentStorage(roundsDir, modelsDir string) (*PersistentStorage, error) {
 	if err := os.MkdirAll(roundsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create rounds directory: %w", err)
@@ -30,7 +28,6 @@ func NewPersistentStorage(roundsDir, modelsDir string) (*PersistentStorage, erro
 	}, nil
 }
 
-// SaveRound saves round state to disk
 func (ps *PersistentStorage) SaveRound(roundID string, state *RoundState) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -48,7 +45,6 @@ func (ps *PersistentStorage) SaveRound(roundID string, state *RoundState) error 
 	return nil
 }
 
-// LoadRound loads round state from disk
 func (ps *PersistentStorage) LoadRound(roundID string) (*RoundState, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -67,7 +63,6 @@ func (ps *PersistentStorage) LoadRound(roundID string) (*RoundState, error) {
 	return &state, nil
 }
 
-// ListRounds returns all round IDs
 func (ps *PersistentStorage) ListRounds() ([]string, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -91,7 +86,6 @@ func (ps *PersistentStorage) ListRounds() ([]string, error) {
 	return roundIDs, nil
 }
 
-// SaveModel saves model to disk
 func (ps *PersistentStorage) SaveModel(version int, model Model) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -109,7 +103,6 @@ func (ps *PersistentStorage) SaveModel(version int, model Model) error {
 	return nil
 }
 
-// LoadModel loads model from disk
 func (ps *PersistentStorage) LoadModel(version int) (*Model, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -128,7 +121,6 @@ func (ps *PersistentStorage) LoadModel(version int) (*Model, error) {
 	return &model, nil
 }
 
-// ListModels returns all model versions
 func (ps *PersistentStorage) ListModels() ([]int, error) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()

@@ -40,7 +40,7 @@ type service struct {
 	baseTopic        string
 	pubsub           mqtt.PubSub
 	logger           *slog.Logger
-	flCoordinatorURL string // HTTP coordinator URL (optional, for HTTP mode)
+	flCoordinatorURL string
 	httpClient       *http.Client
 }
 
@@ -49,7 +49,6 @@ func NewService(
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
 ) Service {
-	// FL Coordinator URL for experiment configuration and HTTP communication (required)
 	flCoordinatorURL := os.Getenv("FL_COORDINATOR_URL")
 	var httpClient *http.Client
 	if flCoordinatorURL != "" {
@@ -316,16 +315,11 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 }
 
 func (svc *service) Subscribe(ctx context.Context) error {
-	// Subscribe to standard Propeller control topics
 	topic := svc.baseTopic + "/#"
 	if err := svc.pubsub.Subscribe(ctx, topic, svc.handle(ctx)); err != nil {
 		return err
 	}
 
-	// Subscribe to FL round start topic for WASM orchestration
-	// This is Manager's internal orchestration mechanism (not part of FL protocol)
-	// After configuring experiment with Coordinator, Manager triggers round start
-	// to orchestrate WASM execution on Proplets
 	if err := svc.pubsub.Subscribe(ctx, "fl/rounds/start", svc.handleRoundStart(ctx)); err != nil {
 		return err
 	}
@@ -482,7 +476,6 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		return err
 	}
 
-	// Handle standard tasks (workload-agnostic)
 	t.Results = msg["results"]
 	t.State = task.Completed
 	t.UpdatedAt = time.Now()
@@ -499,11 +492,8 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	return nil
 }
 
-// handleRoundStart is a generic handler for FL round start messages.
-// It launches tasks for each participant without any FL-specific validation or state tracking.
 func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
-		// Run in a goroutine to avoid blocking the MQTT client listener
 		go func() {
 			roundID, ok := msg["round_id"].(string)
 			if !ok || roundID == "" {
@@ -531,7 +521,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 
 			hyperparams, _ := msg["hyperparams"].(map[string]any)
 
-			// Convert participants to string slice
 			participants := make([]string, 0, len(participantsRaw))
 			for _, p := range participantsRaw {
 				if pid, ok := p.(string); ok && pid != "" {
@@ -544,9 +533,7 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 				return
 			}
 
-			// Launch a task for each participant
 			for _, propletID := range participants {
-				// Verify proplet exists and is alive
 				p, err := svc.GetProplet(ctx, propletID)
 				if err != nil {
 					svc.logger.WarnContext(ctx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
@@ -557,7 +544,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 					continue
 				}
 
-				// Create generic task
 				t := task.Task{
 					Name:     fmt.Sprintf("fl-round-%s-%s", roundID, propletID),
 					Kind:     task.TaskKindStandard,
@@ -571,7 +557,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 					CreatedAt: time.Now(),
 				}
 
-				// Add hyperparams to env if provided
 				if hyperparams != nil {
 					hyperparamsJSON, err := json.Marshal(hyperparams)
 					if err == nil {
@@ -579,7 +564,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 					}
 				}
 
-				// Create and start task
 				created, err := svc.CreateTask(ctx, t)
 				if err != nil {
 					svc.logger.ErrorContext(ctx, "failed to create task for participant", "proplet_id", propletID, "error", err)
@@ -598,15 +582,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 		return nil
 	}
 }
-
-// NOTE: handleUpdateForward has been removed
-// Clients MUST publish updates directly to FL Coordinator MQTT topic (e.g., "fml/updates")
-// Manager does NOT forward MQTT updates - this ensures direct client-to-coordinator communication
-// as per the workflow diagram (Step 7: Client → Coordinator)
-//
-// MQTT Flow:
-//   Client → MQTT topic "fml/updates" → FL Coordinator
-//   NOT: Client → Manager → Coordinator
 
 func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
@@ -798,7 +773,6 @@ func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetric
 	return metrics
 }
 
-// Helper functions for task management
 func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID string) error {
 	return svc.taskPropletDB.Create(ctx, taskID, propletID)
 }

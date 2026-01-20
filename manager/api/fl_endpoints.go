@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/kit/endpoint"
 )
 
-// FL Task Request/Response
 type flTaskReq struct {
 	roundID   string
 	propletID string
@@ -26,7 +25,6 @@ type flTaskResponse struct {
 	Task manager.FLTask `json:"task"`
 }
 
-// FL Update Request/Response
 type flUpdateReq struct {
 	Update manager.FLUpdate `json:"update"`
 }
@@ -35,7 +33,6 @@ type flUpdateResponse struct {
 	Status string `json:"status"`
 }
 
-// Round Status Request/Response
 type roundStatusReq struct {
 	roundID string
 }
@@ -44,7 +41,6 @@ type roundStatusResponse struct {
 	Status manager.RoundStatus `json:"status"`
 }
 
-// Experiment Config Request/Response
 type experimentConfigReq struct {
 	Config manager.ExperimentConfig `json:"config"`
 }
@@ -55,7 +51,6 @@ type experimentConfigResponse struct {
 	Status       string `json:"status"`
 }
 
-// Endpoints
 func configureExperimentEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(experimentConfigReq)
@@ -136,7 +131,6 @@ func getRoundStatusEndpoint(svc manager.Service) endpoint.Endpoint {
 	}
 }
 
-// Decoders
 func decodeFLTaskReq(_ context.Context, r *http.Request) (any, error) {
 	roundID := r.URL.Query().Get("round_id")
 	propletID := r.URL.Query().Get("proplet_id")
@@ -165,10 +159,8 @@ func decodeFLUpdateReq(_ context.Context, r *http.Request) (any, error) {
 }
 
 func decodeFLUpdateCBORReq(_ context.Context, r *http.Request) (any, error) {
-	// Check Content-Type
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/cbor" && contentType != "application/cbor-seq" {
-		// Allow if not specified (for compatibility)
 	}
 	
 	data, err := io.ReadAll(r.Body)

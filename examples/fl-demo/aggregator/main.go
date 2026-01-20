@@ -77,12 +77,10 @@ func aggregateHandler(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("Aggregating updates", "num_updates", len(req.Updates))
 
-	// Perform FedAvg aggregation
 	var aggregatedW []float64
 	var aggregatedB float64
 	var totalSamples int
 
-	// Initialize from first update
 	if len(req.Updates) > 0 && req.Updates[0].Update != nil {
 		if w, ok := req.Updates[0].Update["w"].([]interface{}); ok {
 			aggregatedW = make([]float64, len(w))
@@ -92,7 +90,6 @@ func aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Weighted average
 	for _, update := range req.Updates {
 		if update.Update == nil {
 			continue
@@ -101,7 +98,6 @@ func aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		weight := float64(update.NumSamples)
 		totalSamples += update.NumSamples
 
-		// Aggregate weights
 		if w, ok := update.Update["w"].([]interface{}); ok {
 			for i, v := range w {
 				if f, ok := v.(float64); ok {
@@ -112,13 +108,11 @@ func aggregateHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Aggregate bias
 		if b, ok := update.Update["b"].(float64); ok {
 			aggregatedB += b * weight
 		}
 	}
 
-	// Normalize by total samples
 	if totalSamples > 0 {
 		weightNorm := float64(totalSamples)
 		for i := range aggregatedW {

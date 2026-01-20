@@ -65,26 +65,20 @@ func main() {
 	taskRequestJSON, _ := json.Marshal(taskRequest)
 	fmt.Fprintf(os.Stderr, "TASK_REQUEST:%s\n", string(taskRequestJSON))
 
-	_ = extractModelVersion(modelURI) // Extract model version for potential future use
+	_ = extractModelVersion(modelURI)
 
-	// Step 4: Fetch model from Model Registry
-	// The proplet runtime fetches the model before execution and passes it via MODEL_DATA env var
-	// If not available, try to fetch it (though WASM can't make HTTP calls directly)
 	modelDataStr := os.Getenv("MODEL_DATA")
 	var model map[string]interface{}
 	
 	if modelDataStr != "" {
-		// Model was fetched by proplet runtime and passed via env var
 		if err := json.Unmarshal([]byte(modelDataStr), &model); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to parse MODEL_DATA: %v\n", err)
-			// Fallback to default model
 			model = map[string]interface{}{
 				"w": []float64{0.0, 0.0, 0.0},
 				"b": 0.0,
 			}
 		}
 	} else {
-		// Fallback: use default model (in real implementation, proplet should fetch it)
 		model = map[string]interface{}{
 			"w": []float64{0.0, 0.0, 0.0},
 			"b": 0.0,
@@ -92,14 +86,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "MODEL_DATA not available, using default model. Model should be fetched by proplet runtime.\n")
 	}
 
-	// Step 5: Load local dataset from Local Data Store
-	// The proplet runtime fetches the dataset before execution and passes it via DATASET_DATA env var
 	datasetDataStr := os.Getenv("DATASET_DATA")
 	var dataset []map[string]interface{}
 	var numSamples int
 
 	if datasetDataStr != "" {
-		// Dataset was fetched by proplet runtime and passed via env var
 		var datasetObj map[string]interface{}
 		if err := json.Unmarshal([]byte(datasetDataStr), &datasetObj); err == nil {
 			if data, ok := datasetObj["data"].([]interface{}); ok {
@@ -119,14 +110,12 @@ func main() {
 		}
 	}
 
-	// Fallback to synthetic data if dataset not available
 	if len(dataset) == 0 {
 		fmt.Fprintf(os.Stderr, "DATASET_DATA not available, using synthetic data. Dataset should be fetched by proplet runtime.\n")
 		numSamples = batchSize * epochs
 		if numSamples == 0 {
 			numSamples = 512
 		}
-		// Generate synthetic data for fallback
 		rand.Seed(time.Now().UnixNano())
 		dataset = make([]map[string]interface{}, numSamples)
 		for i := 0; i < numSamples; i++ {
@@ -141,29 +130,24 @@ func main() {
 		}
 	}
 
-	// Step 6: Local training using real dataset
 	rand.Seed(time.Now().UnixNano())
 	weights := model["w"].([]float64)
 	
 	for epoch := 0; epoch < epochs; epoch++ {
-		// Shuffle dataset for each epoch
 		for i := len(dataset) - 1; i > 0; i-- {
 			j := rand.Intn(i + 1)
 			dataset[i], dataset[j] = dataset[j], dataset[i]
 		}
 
-		// Train on batches
 		for batchStart := 0; batchStart < len(dataset); batchStart += batchSize {
 			batchEnd := batchStart + batchSize
 			if batchEnd > len(dataset) {
 				batchEnd = len(dataset)
 			}
 
-			// Process batch
 			for i := batchStart; i < batchEnd; i++ {
 				sample := dataset[i]
 				if x, ok := sample["x"].([]interface{}); ok {
-					// Simple gradient update based on data
 					for j := range weights {
 						if j < len(x) {
 							if xVal, ok := x[j].(float64); ok {
@@ -176,7 +160,6 @@ func main() {
 			}
 		}
 
-		// Update bias
 		bias := model["b"].(float64)
 		model["b"] = bias + lr*(rand.Float64()-0.5)*0.1
 	}

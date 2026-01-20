@@ -1,14 +1,11 @@
 package fl
 
-// FedAvgAggregator implements Federated Averaging algorithm
 type FedAvgAggregator struct{}
 
-// NewFedAvgAggregator creates a new FedAvg aggregator
 func NewFedAvgAggregator() Aggregator {
 	return &FedAvgAggregator{}
 }
 
-// Aggregate performs Federated Averaging on the provided updates
 func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 	if len(updates) == 0 {
 		return Model{}, ErrNoUpdates
@@ -18,14 +15,12 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 	var aggregatedB float64
 	var totalSamples int
 
-	// Initialize from first update
 	if len(updates) > 0 && updates[0].Update != nil {
 		if w, ok := updates[0].Update["w"].([]interface{}); ok {
 			aggregatedW = make([]float64, len(w))
 		}
 	}
 
-	// Weighted average
 	for _, update := range updates {
 		if update.Update == nil {
 			continue
@@ -34,7 +29,6 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 		weight := float64(update.NumSamples)
 		totalSamples += update.NumSamples
 
-		// Aggregate weights
 		if w, ok := update.Update["w"].([]interface{}); ok {
 			for i, v := range w {
 				if f, ok := v.(float64); ok {
@@ -45,13 +39,11 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 			}
 		}
 
-		// Aggregate bias
 		if b, ok := update.Update["b"].(float64); ok {
 			aggregatedB += b * weight
 		}
 	}
 
-	// Normalize by total samples
 	if totalSamples > 0 {
 		weightNorm := float64(totalSamples)
 		for i := range aggregatedW {

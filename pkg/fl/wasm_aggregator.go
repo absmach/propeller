@@ -7,13 +7,11 @@ import (
 	"os/exec"
 )
 
-// WasmAggregator implements aggregation using a WebAssembly component
 type WasmAggregator struct {
 	wasmPath string
-	runtime  string // wasmtime, wasmer, etc.
+	runtime  string
 }
 
-// NewWasmAggregator creates a new Wasm-based aggregator
 func NewWasmAggregator(wasmPath, runtime string) (*WasmAggregator, error) {
 	if _, err := os.Stat(wasmPath); err != nil {
 		return nil, fmt.Errorf("wasm aggregator file not found: %w", err)
@@ -29,24 +27,18 @@ func NewWasmAggregator(wasmPath, runtime string) (*WasmAggregator, error) {
 	}, nil
 }
 
-// Aggregate performs aggregation by calling the Wasm aggregator component
 func (w *WasmAggregator) Aggregate(updates []Update) (Model, error) {
-	// Serialize updates to JSON for passing to Wasm component
 	updatesJSON, err := json.Marshal(updates)
 	if err != nil {
 		return Model{}, fmt.Errorf("failed to marshal updates: %w", err)
 	}
 
-	// Call Wasm aggregator via wasmtime (or other runtime)
-	// This is a simplified implementation
-	// In production, you'd use a proper Wasm runtime library
 	cmd := exec.Command(w.runtime, "run", w.wasmPath, "--", string(updatesJSON))
 	output, err := cmd.Output()
 	if err != nil {
 		return Model{}, fmt.Errorf("wasm aggregator execution failed: %w", err)
 	}
 
-	// Parse aggregated model from Wasm output
 	var model Model
 	if err := json.Unmarshal(output, &model); err != nil {
 		return Model{}, fmt.Errorf("failed to unmarshal aggregated model: %w", err)

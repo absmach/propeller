@@ -11,7 +11,7 @@ var flCmd = []cobra.Command{
 	{
 		Use:   "round-start",
 		Short: "Start a federated learning round",
-		Long:  `Publish a round start message to trigger FL training. This is a sample FML application command.`,
+		Long:  ``,
 		Run: func(cmd *cobra.Command, args []string) {
 			roundID, _ := cmd.Flags().GetString("round-id")
 			modelURI, _ := cmd.Flags().GetString("model-uri")
@@ -20,7 +20,6 @@ var flCmd = []cobra.Command{
 			kOfN, _ := cmd.Flags().GetInt("k-of-n")
 			timeoutS, _ := cmd.Flags().GetInt("timeout-s")
 
-			// Build hyperparams
 			hyperparams := make(map[string]interface{})
 			if epochs, _ := cmd.Flags().GetInt("epochs"); epochs > 0 {
 				hyperparams["epochs"] = epochs
@@ -32,7 +31,6 @@ var flCmd = []cobra.Command{
 				hyperparams["batch_size"] = batchSize
 			}
 
-			// Validate required fields
 			if roundID == "" {
 				logErrorCmd(*cmd, fmt.Errorf("round-id is required"))
 				return
@@ -50,7 +48,6 @@ var flCmd = []cobra.Command{
 				return
 			}
 
-			// Build round start message
 			roundStart := map[string]interface{}{
 				"round_id":        roundID,
 				"model_uri":       modelURI,
@@ -72,7 +69,7 @@ var flCmd = []cobra.Command{
 
 			fmt.Println("Round start message (publish to fl/rounds/start):")
 			fmt.Println(string(roundStartJSON))
-			fmt.Println("\nNote: This is a sample FML application. Use an MQTT client to publish this message.")
+			fmt.Println("")
 		},
 	},
 }
@@ -81,14 +78,13 @@ func NewFLCmd() *cobra.Command {
 	cmd := cobra.Command{
 		Use:   "fl",
 		Short: "Federated Learning (sample FML application)",
-		Long:  `Sample FML application commands. FL is implemented as an external application, not a core Propeller feature.`,
+		Long:  ``,
 	}
 
 	for i := range flCmd {
 		cmd.AddCommand(&flCmd[i])
 	}
 
-	// Flags for round-start command
 	roundStartCmd := &flCmd[0]
 	roundStartCmd.Flags().StringP("round-id", "r", "", "Round identifier (required)")
 	roundStartCmd.Flags().StringP("model-uri", "m", "", "Model URI (required)")

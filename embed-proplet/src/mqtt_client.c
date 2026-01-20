@@ -594,7 +594,6 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  // Initialize FL/FML environment fields
   t.model_data_fetched = false;
   t.dataset_data_fetched = false;
   t.coordinator_url[0] = '\0';
@@ -905,7 +904,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     strcpy(path, "/");
   }
 
-  // Resolve hostname
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);

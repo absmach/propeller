@@ -4,16 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
-/// ML Backend types supported by the task handler
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MLBackend {
-    /// Standard ML backend (full-featured, for cloud/edge)
     #[serde(rename = "standard")]
     Standard,
-    /// TinyML backend (resource-constrained, for microcontrollers)
     #[serde(rename = "tinyml")]
     TinyML,
-    /// Default/auto-select based on task requirements
     #[serde(rename = "auto")]
     Auto,
 }
@@ -24,7 +20,6 @@ impl Default for MLBackend {
     }
 }
 
-/// Task configuration parsed from FL task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FLTaskConfig {
     pub round_id: String,
@@ -34,16 +29,13 @@ pub struct FLTaskConfig {
     pub proplet_id: Option<String>,
 }
 
-/// Task Handler - parses tasks and selects appropriate ML backend
 pub struct TaskHandler;
 
 impl TaskHandler {
-    /// Parse task and select backend based on configuration
     pub fn parse_and_select_backend(
         task_config: &FLTaskConfig,
         env: &HashMap<String, String>,
     ) -> (MLBackend, StartConfig) {
-        // Determine backend
         let backend = task_config
             .backend
             .clone()
@@ -54,7 +46,6 @@ impl TaskHandler {
             backend, task_config.round_id
         );
 
-        // Build environment variables for the task
         let mut task_env = env.clone();
         task_env.insert("ROUND_ID".to_string(), task_config.round_id.clone());
         task_env.insert("MODEL_URI".to_string(), task_config.model_ref.clone());
@@ -65,13 +56,11 @@ impl TaskHandler {
             }
         }
 
-        // Add backend selection to env
         task_env.insert(
             "ML_BACKEND".to_string(),
             format!("{:?}", backend).to_lowercase(),
         );
 
-        // Create StartConfig (WASM binary and other config would be set by caller)
         let start_config = StartConfig {
             id: format!("fl-{}-{}", task_config.round_id, 
                        task_config.proplet_id.as_ref().unwrap_or(&"unknown".to_string())),
@@ -87,12 +76,10 @@ impl TaskHandler {
         (backend, start_config)
     }
 
-    /// Auto-select backend based on task requirements and environment
     fn select_backend_auto(
         task_config: &FLTaskConfig,
         env: &HashMap<String, String>,
     ) -> MLBackend {
-        // Check for explicit backend hint in environment
         if let Some(backend_str) = env.get("ML_BACKEND") {
             match backend_str.to_lowercase().as_str() {
                 "standard" => return MLBackend::Standard,
@@ -101,9 +88,7 @@ impl TaskHandler {
             }
         }
 
-        // Check hyperparameters for resource constraints
         if let Some(hyperparams) = &task_config.hyperparams {
-            // If batch size is very small, might indicate TinyML
             if let Some(batch_size) = hyperparams.get("batch_size") {
                 if let Some(bs) = batch_size.as_u64() {
                     if bs <= 8 {
@@ -119,11 +104,9 @@ impl TaskHandler {
             }
         }
 
-        // Default to Standard ML
         MLBackend::Standard
     }
 
-    /// Get backend-specific configuration
     pub fn get_backend_config(backend: &MLBackend) -> HashMap<String, String> {
         let mut config = HashMap::new();
         
@@ -139,7 +122,6 @@ impl TaskHandler {
                 config.insert("supports_gpu".to_string(), "false".to_string());
             }
             MLBackend::Auto => {
-                // Will be resolved later
             }
         }
         
@@ -168,7 +150,6 @@ mod tests {
         let env = HashMap::new();
         let (backend, _) = TaskHandler::parse_and_select_backend(&task_config, &env);
         
-        // Small batch size should select TinyML
         assert_eq!(backend, MLBackend::TinyML);
     }
 

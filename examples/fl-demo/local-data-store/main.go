@@ -15,14 +15,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Dataset represents a local dataset for a client
 type Dataset struct {
 	ClientID string                 `json:"client_id"`
 	Data    []map[string]interface{} `json:"data"`
 	Size    int                     `json:"size"`
 }
 
-// DatasetStore manages local datasets for clients
 type DatasetStore struct {
 	datasets map[string]*Dataset
 	mu       sync.RWMutex
@@ -39,12 +37,10 @@ func main() {
 		store.dataDir = dir
 	}
 
-	// Create data directory
 	if err := os.MkdirAll(store.dataDir, 0755); err != nil {
 		log.Fatalf("Failed to create data directory: %v", err)
 	}
 
-	// Initialize with sample datasets for demo
 	initializeSampleDatasets()
 
 	port := "8083"
@@ -111,7 +107,6 @@ func getDatasetHandler(w http.ResponseWriter, r *http.Request) {
 	store.mu.RUnlock()
 
 	if !exists {
-		// Try to load from file
 		datasetFile := filepath.Join(store.dataDir, fmt.Sprintf("dataset_%s.json", clientID))
 		data, err := os.ReadFile(datasetFile)
 		if err != nil {
@@ -182,11 +177,9 @@ func postDatasetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func initializeSampleDatasets() {
-	// Create sample datasets for demo clients
 	sampleClients := []string{"proplet-1", "proplet-2", "proplet-3"}
 
 	for _, clientID := range sampleClients {
-		// Generate sample training data (in real scenario, this would be actual data)
 		sampleData := make([]map[string]interface{}, 512)
 		for i := 0; i < 512; i++ {
 			sampleData[i] = map[string]interface{}{

@@ -843,7 +843,6 @@ impl PropletService {
         build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
     }
 
-    /// Parse stderr for HTTP request markers (MODEL_REQUEST, UPDATE_REQUEST, TASK_REQUEST)
     fn parse_http_requests_from_stderr(stderr: &str) -> Vec<HttpRequest> {
         let mut requests = Vec::new();
         
@@ -885,7 +884,6 @@ impl PropletService {
         requests
     }
 
-    /// Fetch model from Model Registry
     async fn fetch_model_from_registry(&self, url: &str) -> Result<serde_json::Value> {
         info!("Fetching model from registry: {}", url);
         let response = self
@@ -911,7 +909,6 @@ impl PropletService {
         Ok(model)
     }
 
-    /// POST update to Coordinator
     async fn post_update_to_coordinator(
         &self,
         url: &str,
@@ -937,7 +934,6 @@ impl PropletService {
         Ok(())
     }
 
-    /// GET task from Coordinator
     async fn get_task_from_coordinator(&self, url: &str) -> Result<serde_json::Value> {
         info!("Getting task from coordinator: {}", url);
         let response = self

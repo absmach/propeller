@@ -93,7 +93,6 @@ func main() {
 		Timeout: 30 * time.Second,
 	}
 
-	// Initialize MQTT client for push notifications
 	mqttBroker := os.Getenv("MQTT_BROKER")
 	if mqttBroker == "" {
 		mqttBroker = "tcp://mqtt:1883"
@@ -349,12 +348,10 @@ func getRoundCompleteHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Step 12: Next round available notification endpoint
 func getNextRoundHandler(w http.ResponseWriter, r *http.Request) {
 	roundsMu.RLock()
 	defer roundsMu.RUnlock()
 
-	// Find the most recently completed round
 	var latestRound *RoundState
 	var latestRoundID string
 	for roundID, round := range rounds {
@@ -510,7 +507,6 @@ func aggregateAndAdvance(round *RoundState) {
 
 	slog.Info("Aggregated model stored", "round_id", round.RoundID, "version", newVersion)
 	
-	// Step 12: Notify clients that next round is available via MQTT push notification
 	nextRoundNotification := map[string]interface{}{
 		"round_id":            round.RoundID,
 		"new_model_version":   newVersion,
@@ -524,7 +520,6 @@ func aggregateAndAdvance(round *RoundState) {
 	if err != nil {
 		slog.Error("Failed to marshal notification", "error", err)
 	} else {
-		// Publish to MQTT topic for round completion notifications
 		if mqttEnabled && mqttClient != nil && mqttClient.IsConnected() {
 			topic := "fl/rounds/next"
 			token := mqttClient.Publish(topic, 1, false, notificationJSON)

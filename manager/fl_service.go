@@ -11,15 +11,11 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// ConfigureExperiment configures an FL experiment with the FL Coordinator (Step 1 in diagram)
-// Manager acts as Orchestrator/Experiment Config and sends configuration to FL Coordinator
-// After configuration, Manager can optionally trigger round start to orchestrate WASM execution
 func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentConfig) error {
 	if config.RoundID == "" {
 		return pkgerrors.ErrInvalidData
 	}
 
-	// Validate required fields for orchestration
 	if len(config.Participants) == 0 {
 		return fmt.Errorf("participants list is required for orchestration")
 	}
@@ -30,7 +26,6 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 		return fmt.Errorf("model_ref is required")
 	}
 
-	// Send experiment configuration to FL Coordinator via HTTP
 	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
 		return fmt.Errorf("FL_COORDINATOR_URL must be configured for HTTP-based FL coordination")
 	}
@@ -40,7 +35,6 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 		return fmt.Errorf("failed to marshal experiment config: %w", err)
 	}
 
-	// Send to HTTP coordinator
 	url := fmt.Sprintf("%s/experiments", svc.flCoordinatorURL)
 	resp, err := svc.httpClient.Post(url, "application/json", bytes.NewBuffer(configJSON))
 	if err != nil {
@@ -56,9 +50,6 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 		"experiment_id", config.ExperimentID,
 		"round_id", config.RoundID)
 
-	// After successful configuration, trigger round start to orchestrate WASM execution
-	// This publishes to fl/rounds/start which handleRoundStart will process
-	// Note: This is Manager's internal orchestration mechanism, not part of FL protocol
 	roundStartMsg := map[string]any{
 		"round_id":        config.RoundID,
 		"model_uri":       config.ModelRef,
@@ -70,7 +61,6 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 	if err := svc.pubsub.Publish(ctx, "fl/rounds/start", roundStartMsg); err != nil {
 		svc.logger.WarnContext(ctx, "Failed to trigger round start after configuration",
 			"round_id", config.RoundID, "error", err)
-		// Don't fail the configuration if round start trigger fails
 	} else {
 		svc.logger.InfoContext(ctx, "Triggered round start for orchestration",
 			"round_id", config.RoundID,
@@ -80,13 +70,6 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 	return nil
 }
 
-// GetFLTask forwards task request to FL Coordinator
-// 
-// IMPORTANT: Clients MUST call FL Coordinator directly (Step 3 in workflow diagram)
-// This endpoint exists ONLY for compatibility scenarios
-// 
-// Correct client flow: Client → FL Coordinator (GET /task)
-// NOT: Client → Manager → FL Coordinator
 func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (FLTask, error) {
 	if roundID == "" {
 		return FLTask{}, pkgerrors.ErrInvalidData
@@ -118,19 +101,11 @@ func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (F
 	return taskResp.Task, nil
 }
 
-// PostFLUpdate forwards update to FL Coordinator
-//
-// IMPORTANT: Clients MUST call FL Coordinator directly (Step 7 in workflow diagram)
-// This endpoint exists ONLY for compatibility scenarios
-//
-// Correct client flow: Client → FL Coordinator (POST /update)
-// NOT: Client → Manager → FL Coordinator
 func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 	if update.RoundID == "" {
 		return pkgerrors.ErrInvalidData
 	}
 
-	// Validate update has data
 	if len(update.Update) == 0 {
 		return fmt.Errorf("update data is empty")
 	}
@@ -139,7 +114,6 @@ func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 		return fmt.Errorf("FL_COORDINATOR_URL must be configured")
 	}
 
-	// Forward to HTTP coordinator
 	updateJSON, err := json.Marshal(update)
 	if err != nil {
 		return fmt.Errorf("failed to marshal update: %w", err)
@@ -162,11 +136,9 @@ func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 	return nil
 }
 
-// PostFLUpdateCBOR forwards CBOR-encoded update to FL Coordinator
 func (svc *service) PostFLUpdateCBOR(ctx context.Context, updateData []byte) error {
 	var update FLUpdate
 
-	// Decode CBOR
 	if err := cbor.Unmarshal(updateData, &update); err != nil {
 		return fmt.Errorf("failed to decode CBOR update: %w", err)
 	}
@@ -174,7 +146,6 @@ func (svc *service) PostFLUpdateCBOR(ctx context.Context, updateData []byte) err
 	return svc.PostFLUpdate(ctx, update)
 }
 
-// GetRoundStatus forwards round status request to FL Coordinator
 func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundStatus, error) {
 	if roundID == "" {
 		return RoundStatus{}, pkgerrors.ErrInvalidData
@@ -206,7 +177,3 @@ func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundSt
 	return statusResp.Status, nil
 }
 
-// Note: Round completion notifications are handled by the FL Coordinator directly.
-// Coordinators should publish MQTT notifications to "fl/rounds/next" topic when rounds complete.
-// This keeps the architecture simple: Coordinator → MQTT Broker → Clients
-// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
