@@ -32,7 +32,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define PAYLOAD_BUFFER_SIZE 1024
 #endif
 
-#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "10.42.0.1"
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE "m/%s/c/%s/control/manager/registry"
@@ -62,7 +62,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_BASE64_LEN 1024
 #define MAX_INPUTS 16
 #define MAX_RESULTS 16
-#define MAX_UPDATE_B64_LEN 2048  // For FL update payloads
+#define MAX_UPDATE_B64_LEN 2048
 #define MAX_ERROR_MSG_LEN 256
 
 struct fl_spec {
@@ -86,7 +86,7 @@ struct task {
   char name[MAX_NAME_LEN];
   char state[MAX_STATE_LEN];
   char image_url[MAX_URL_LEN];
-  char mode[MAX_NAME_LEN];  // "train" or "infer"
+  char mode[MAX_NAME_LEN];
 
   char file[MAX_BASE64_LEN];
   size_t file_len;
@@ -116,10 +116,9 @@ struct task {
   char hyperparams[512];
   bool is_fml_task;
   
-  // FL/FML environment variables
   char proplet_id[MAX_ID_LEN];
-  char model_data[4096];      // MODEL_DATA JSON string (injected by proplet)
-  char dataset_data[4096];    // DATASET_DATA JSON string (injected by proplet)
+  char model_data[4096];
+  char dataset_data[4096];
   char coordinator_url[MAX_URL_LEN];
   char model_registry_url[MAX_URL_LEN];
   char data_store_url[MAX_URL_LEN];
@@ -228,7 +227,7 @@ static void mqtt_event_handler(struct mqtt_client *client,
       LOG_ERR("Failed to read payload [%d]", ret);
       return;
     }
-    payload[ret] = '\0'; /* Null-terminate */
+    payload[ret] = '\0';
     LOG_INF("Payload: %s", payload);
 
     const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
@@ -236,13 +235,10 @@ static void mqtt_event_handler(struct mqtt_client *client,
     snprintf(topic_str, sizeof(topic_str), "%.*s", (int)rtopic->size, rtopic->utf8);
     topic_str[sizeof(topic_str) - 1] = '\0';
 
-    // Handle model data received via MQTT (for FL/FML tasks)
     if (g_current_task.is_fml_task && strlen(g_current_task.model_uri) > 0 &&
         strcmp(topic_str, g_current_task.model_uri) == 0) {
       LOG_INF("Received model from topic: %s (payload: %d bytes)", topic_str, (int)pub->message.payload.len);
       
-      // Store model data for injection into WASM environment
-      // For embedded systems, model may be sent as JSON string
       size_t payload_size = MIN(pub->message.payload.len, sizeof(g_current_task.model_data) - 1);
       memcpy(g_current_task.model_data, payload, payload_size);
       g_current_task.model_data[payload_size] = '\0';
@@ -487,40 +483,6 @@ int subscribe(const char *domain_id, const char *channel_id) {
   return ret;
 }
 
-/* 
- * handle_start_command - Processes start command from Manager
- * 
- * FL/FML Task Detection and Workflow (matching Rust proplet structure):
- * 
- * 1. FL Task Detection: Detects FL tasks via ROUND_ID environment variable
- *    - Sets t.is_fml_task = true when ROUND_ID is present
- *    - No special task type needed - uses standard WASM execution
- * 
- * 2. Pre-execution Setup:
- *    - Sets PROPLET_ID from g_proplet_id (PROPLET_CLIENT_ID) - Manager-known identity
- *    - Extracts COORDINATOR_URL, MODEL_REGISTRY_URL, DATA_STORE_URL from env
- * 
- * 3. Model Fetching (Step 4): 
- *    - If MODEL_URI is set, subscribes to MQTT topic for model data
- *    - Model data received via MQTT is stored in g_current_task.model_data
- *    - HTTP fetching can be added if HTTP client is available
- * 
- * 4. Dataset Fetching (Step 5):
- *    - Uses PROPLET_ID to fetch dataset from Local Data Store
- *    - Dataset data stored in g_current_task.dataset_data
- *    - HTTP or MQTT-based fetching (TODO: implement)
- * 
- * 5. WASM Execution (Step 6):
- *    - Standard WASM execution using WAMR
- *    - MODEL_DATA, DATASET_DATA, PROPLET_ID available in g_current_task
- *    - Can be passed to WASM via host functions, linear memory, or WASI env
- * 
- * 6. FL Update Submission (Step 7, in publish_results_with_error):
- *    - Detects FL task via ROUND_ID check
- *    - Parses WASM output as JSON
- *    - Publishes to MQTT topic: fl/rounds/{round_id}/updates/{proplet_id}
- *    - Rust proplet uses HTTP POST with MQTT fallback; embedded uses MQTT directly
- */
 void handle_start_command(const char *payload) {
   cJSON *json = cJSON_Parse(payload);
   if (json == NULL) {
@@ -641,8 +603,6 @@ void handle_start_command(const char *payload) {
   t.model_data[0] = '\0';
   t.dataset_data[0] = '\0';
   
-  // Set PROPLET_ID from g_proplet_id (PROPLET_CLIENT_ID) - must be set before WASM execution
-  // This is the Manager-known identity used in FL updates
   const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
   strncpy(t.proplet_id, pid, sizeof(t.proplet_id) - 1);
   t.proplet_id[sizeof(t.proplet_id) - 1] = '\0';
@@ -655,7 +615,6 @@ void handle_start_command(const char *payload) {
     cJSON *model_registry_url_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_REGISTRY_URL");
     cJSON *data_store_url_env = cJSON_GetObjectItemCaseSensitive(env, "DATA_STORE_URL");
     
-    // Extract coordinator and registry URLs for FL tasks
     if (cJSON_IsString(coordinator_url_env) && coordinator_url_env->valuestring) {
       strncpy(t.coordinator_url, coordinator_url_env->valuestring, sizeof(t.coordinator_url) - 1);
       t.coordinator_url[sizeof(t.coordinator_url) - 1] = '\0';
@@ -790,8 +749,6 @@ void handle_start_command(const char *payload) {
 
   memcpy(&g_current_task, &t, sizeof(t));
 
-  // Step 4: Fetch model from Model Registry (if MODEL_URI is provided)
-  // Try HTTP GET first, fallback to MQTT subscription
   if (t.is_fml_task && strlen(t.model_uri) > 0) {
     int model_version = extract_model_version_from_uri(t.model_uri);
     char model_url[512];
@@ -800,24 +757,18 @@ void handle_start_command(const char *payload) {
     
     LOG_INF("FL/FML task: Fetching model from registry: %s", model_url);
     
-    // Try HTTP GET first
     char http_response[4096];
     if (http_get_json(model_url, http_response, sizeof(http_response)) == 0) {
-      // Store model data
       strncpy(g_current_task.model_data, http_response, 
               sizeof(g_current_task.model_data) - 1);
       g_current_task.model_data[sizeof(g_current_task.model_data) - 1] = '\0';
       g_current_task.model_data_fetched = true;
       LOG_INF("Successfully fetched model v%d via HTTP and stored in MODEL_DATA", model_version);
     } else {
-      // Fallback to MQTT subscription (already subscribed above)
       LOG_WRN("HTTP model fetch failed, will use MQTT subscription for model topic: %s", t.model_uri);
-      // Model data will be stored in g_current_task.model_data when received via MQTT
     }
   }
 
-  // Step 5: Fetch local dataset from Local Data Store (using PROPLET_ID)
-  // Try HTTP GET first
   if (t.is_fml_task && strlen(t.proplet_id) > 0) {
     char dataset_url[512];
     snprintf(dataset_url, sizeof(dataset_url), "%s/datasets/%s", 
@@ -826,10 +777,8 @@ void handle_start_command(const char *payload) {
     LOG_INF("FL/FML task: Fetching dataset for proplet_id=%s from: %s", 
             t.proplet_id, dataset_url);
     
-    // Try HTTP GET
     char http_response[4096];
     if (http_get_json(dataset_url, http_response, sizeof(http_response)) == 0) {
-      // Store dataset data
       strncpy(g_current_task.dataset_data, http_response, 
               sizeof(g_current_task.dataset_data) - 1);
       g_current_task.dataset_data[sizeof(g_current_task.dataset_data) - 1] = '\0';
@@ -838,7 +787,6 @@ void handle_start_command(const char *payload) {
     } else {
       LOG_WRN("HTTP dataset fetch failed for proplet_id=%s (WASM client may use synthetic data)", 
               t.proplet_id);
-      // WASM client can fallback to synthetic data or error handling
     }
   }
 
@@ -856,16 +804,6 @@ void handle_start_command(const char *payload) {
 
     g_current_task.file_len = wasm_decoded_len;
 
-    // Note: MODEL_DATA and DATASET_DATA are stored in g_current_task.model_data
-    // and g_current_task.dataset_data, and PROPLET_ID is in g_current_task.proplet_id.
-    // These can be passed to WASM via:
-    // 1. WASM linear memory (if WAMR supports it) - write data to WASM memory
-    // 2. WASM function arguments - pass pointers/sizes as arguments
-    // 3. Environment variable emulation via WASI (if WAMR supports WASI env)
-    // 4. Custom WASM host functions - register host functions that WASM can call
-    // For now, WASM clients should read these from their environment if WAMR
-    // supports environment variables, or they can be injected via WASM host functions.
-    // See wasm_handler.c for where to integrate environment variable injection.
     execute_wasm_module(t.id, wasm_binary, wasm_decoded_len, t.inputs,
                         t.inputs_count);
 
@@ -927,7 +865,6 @@ void handle_stop_command(const char *payload) {
   cJSON_Delete(json);
 }
 
-/* HTTP GET helper function for fetching model/dataset data */
 static int http_get_json(const char *url, char *response_buffer, size_t buffer_size) {
   int sock = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sock < 0) {
@@ -935,7 +872,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  // Parse URL (simple implementation - assumes http://host:port/path format)
   char host[256] = {0};
   int port = 80;
   char path[512] = {0};
@@ -951,7 +887,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
   const char *path_start = strchr(host_start, '/');
   
   if (port_start && (!path_start || port_start < path_start)) {
-    // Port specified
     size_t host_len = port_start - host_start;
     strncpy(host, host_start, MIN(host_len, sizeof(host) - 1));
     port = atoi(port_start + 1);
@@ -962,12 +897,10 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
       strcpy(path, "/");
     }
   } else if (path_start) {
-    // No port, path specified
     size_t host_len = path_start - host_start;
     strncpy(host, host_start, MIN(host_len, sizeof(host) - 1));
     strncpy(path, path_start, MIN(strlen(path_start), sizeof(path) - 1));
   } else {
-    // No port, no path
     strncpy(host, host_start, MIN(strlen(host_start), sizeof(host) - 1));
     strcpy(path, "/");
   }
@@ -984,7 +917,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  // Connect
   ret = zsock_connect(sock, (struct sockaddr *)&addr, sizeof(addr));
   if (ret < 0) {
     LOG_ERR("Failed to connect to %s:%d: %d", host, port, ret);
@@ -992,7 +924,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  // Send HTTP GET request
   char request[1024];
   snprintf(request, sizeof(request),
            "GET %s HTTP/1.1\r\n"
@@ -1008,7 +939,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  // Receive response
   size_t total_received = 0;
   bool headers_complete = false;
   size_t content_length = 0;
@@ -1022,7 +952,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     chunk[ret] = '\0';
     
     if (!headers_complete) {
-      // Parse headers to find Content-Length and end of headers
       char *header_end = strstr(chunk, "\r\n\r\n");
       if (header_end) {
         headers_complete = true;
@@ -1030,32 +959,27 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
         size_t body_start = header_len;
         size_t body_len = ret - body_start;
         
-        // Extract Content-Length
         char *cl_header = strstr(chunk, "Content-Length:");
         if (cl_header) {
           content_length = atoi(cl_header + strlen("Content-Length:"));
         }
         
-        // Copy body to response buffer
         if (body_len > 0 && total_received + body_len < buffer_size - 1) {
           memcpy(response_buffer + total_received, chunk + body_start, body_len);
           total_received += body_len;
         }
       } else {
-        // Headers not complete yet
         char *cl_header = strstr(chunk, "Content-Length:");
         if (cl_header) {
           content_length = atoi(cl_header + strlen("Content-Length:"));
         }
       }
     } else {
-      // Copy body data
       size_t copy_len = MIN(ret, buffer_size - total_received - 1);
       memcpy(response_buffer + total_received, chunk, copy_len);
       total_received += copy_len;
     }
     
-    // Stop if we've received the full content
     if (content_length > 0 && total_received >= content_length) {
       break;
     }
@@ -1073,22 +997,18 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
   return 0;
 }
 
-/* Extract model version from model URI (e.g., "fl/models/global_model_v0" -> 0) */
 static int extract_model_version_from_uri(const char *uri) {
   if (!uri || strlen(uri) == 0) {
     return 0;
   }
   
-  // Try to extract version number from URI
-  // Pattern: "fl/models/global_model_v{N}" or similar
   const char *last_part = strrchr(uri, '/');
   if (!last_part) {
     last_part = uri;
   } else {
-    last_part++; // Skip the '/'
+    last_part++;
   }
   
-  // Look for "global_model_v{N}" pattern
   const char *v_prefix = strstr(last_part, "global_model_v");
   if (v_prefix) {
     const char *version_str = v_prefix + strlen("global_model_v");
@@ -1096,7 +1016,6 @@ static int extract_model_version_from_uri(const char *uri) {
     return version;
   }
   
-  // Try to extract any trailing number
   size_t len = strlen(last_part);
   int version = 0;
   for (size_t i = len; i > 0; i--) {
@@ -1107,10 +1026,9 @@ static int extract_model_version_from_uri(const char *uri) {
     }
   }
   
-  return version; // Default to version 0 if no number found
+  return version;
 }
 
-/* Handles a single chunk "data" field with the full base64 WASM. */
 int handle_registry_response(const char *payload) {
   cJSON *json = cJSON_Parse(payload);
   if (!json) {
@@ -1143,7 +1061,7 @@ int handle_registry_response(const char *payload) {
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
+  size_t decoded_len = (encoded_len * 3) / 4;
 
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
@@ -1298,10 +1216,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
   char results_payload[2048];
   const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
 
-  // Step 7: FL Update Submission (via MQTT - embedded systems use MQTT directly)
-  // Check if this is an FL task via ROUND_ID environment variable
-  // Rust proplet tries HTTP POST first, then falls back to MQTT
-  // Embedded proplet uses MQTT directly (HTTP can be added later if available)
   if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
     cJSON *update_json = NULL;
     if (results && strlen(results) > 0) {

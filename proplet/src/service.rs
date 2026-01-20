@@ -387,8 +387,6 @@ impl PropletService {
         let domain_id = self.config.domain_id.clone();
         let channel_id = self.config.channel_id.clone();
         let qos = self.config.qos();
-        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
-        // This is the Manager-known identity used in discovery and FL updates
         let proplet_id = self.config.client_id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
@@ -415,9 +413,6 @@ impl PropletService {
 
             info!("Executing task {} in spawned task", task_id);
 
-            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
-            // This must be done BEFORE creating StartConfig so it's included in WASM environment
-            // This is the Manager-known identity that should be used in FL updates
             if !env.contains_key("PROPLET_ID") {
                 env.insert("PROPLET_ID".to_string(), proplet_id.clone());
             }
@@ -497,9 +492,6 @@ impl PropletService {
                 None
             };
 
-            // Before task execution: Handle model fetching if MODEL_URI is set
-            // Step 4: Fetch model (Client → Model Registry)
-            // Note: PROPLET_ID was already set above before StartConfig creation
             let coordinator_url = env.get("COORDINATOR_URL")
                 .cloned()
                 .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
@@ -507,7 +499,6 @@ impl PropletService {
                 .cloned()
                 .unwrap_or_else(|| "http://model-registry:8081".to_string());
             
-            // Fetch model if MODEL_URI is provided and pass it to client
             if let Some(model_uri) = env.get("MODEL_URI") {
                 let model_version = extract_model_version_from_uri(model_uri);
                 let model_url = format!("{}/models/{}", model_registry_url, model_version);
@@ -516,7 +507,6 @@ impl PropletService {
                 match http_client.get(&model_url).send().await {
                     Ok(response) if response.status().is_success() => {
                         if let Ok(model_json) = response.json::<serde_json::Value>().await {
-                            // Pass model as JSON string in environment variable
                             if let Ok(model_str) = serde_json::to_string(&model_json) {
                                 env.insert("MODEL_DATA".to_string(), model_str);
                                 info!("Successfully fetched model v{} and passed to client", model_version);
@@ -532,9 +522,6 @@ impl PropletService {
                 }
             }
 
-            // Step 5: Fetch local dataset from Local Data Store
-            // Use PROPLET_ID from env (which we set above from config.client_id)
-            // This ensures we fetch the correct dataset for this proplet
             let dataset_proplet_id = env.get("PROPLET_ID")
                 .cloned()
                 .unwrap_or_else(|| {
@@ -550,7 +537,6 @@ impl PropletService {
             match http_client.get(&dataset_url).send().await {
                 Ok(response) if response.status().is_success() => {
                     if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
-                        // Pass dataset as JSON string in environment variable
                         if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
                             env.insert("DATASET_DATA".to_string(), dataset_str);
                             if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
@@ -592,12 +578,8 @@ impl PropletService {
                 }
             };
 
-            // Check if this is an FL task via ROUND_ID environment variable
-            // Step 7: POST /update (Client → Coordinator) via HTTP
             if let Some(round_id) = env.get("ROUND_ID") {
-                // Parse the result as JSON (fl-client.go outputs JSON)
                 if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
-                    // Try HTTP POST first (Step 7: direct HTTP communication)
                     let update_url = format!("{}/update", coordinator_url);
                     
                     match http_client
@@ -617,7 +599,6 @@ impl PropletService {
                                 "Coordinator returned error status {} for update, falling back to MQTT",
                                 response.status()
                             );
-                            // Fallback to MQTT
                             let fl_topic = format!("fl/rounds/{}/updates/{}", round_id, proplet_id);
                             if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
                                 error!("Failed to publish FL update to {}: {}", fl_topic, e);
@@ -628,7 +609,6 @@ impl PropletService {
                                 "Failed to POST update to coordinator via HTTP: {}, falling back to MQTT",
                                 e
                             );
-                            // Fallback to MQTT
                             let fl_topic = format!("fl/rounds/{}/updates/{}", round_id, proplet_id);
                             if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
                                 error!("Failed to publish FL update to {}: {}", fl_topic, e);
@@ -638,7 +618,6 @@ impl PropletService {
                         }
                     }
                 } else if error.is_none() {
-                    // Only warn if task didn't fail - failed tasks might not have valid JSON
                     warn!(
                         "Task {} output was not valid JSON, skipping FL update publish to coordinator",
                         task_id
@@ -831,7 +810,6 @@ impl PropletService {
         results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
-        // Use client_id as proplet_id (PROPLET_CLIENT_ID), not instance_id
         let proplet_id = self.config.client_id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
 
@@ -993,17 +971,13 @@ struct HttpRequest {
     data: Option<serde_json::Value>,
 }
 
-/// Extract model version from model URI (e.g., "fl/models/global_model_v0" -> 0)
 fn extract_model_version_from_uri(uri: &str) -> i32 {
-    // Try to extract version number from URI
-    // Pattern: "fl/models/global_model_v{N}" or similar
     if let Some(last_part) = uri.split('/').last() {
         if let Some(v_part) = last_part.strip_prefix("global_model_v") {
             if let Ok(version) = v_part.parse::<i32>() {
                 return version;
             }
         }
-        // Try to extract any trailing number
         if let Some(num_str) = last_part
             .chars()
             .rev()
@@ -1018,7 +992,7 @@ fn extract_model_version_from_uri(uri: &str) -> i32 {
             return num_str;
         }
     }
-    0 // Default to version 0
+    0
 }
 
 fn build_fl_update_envelope(

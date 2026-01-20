@@ -1,16 +1,264 @@
 services:
-  # MQTT Broker (for Propeller Manager/Proplet communication)
-  mqtt:
-    image: eclipse-mosquitto:2.0
-    ports:
-      - "1883:1883"
-      - "9001:9001"
+  # ============================================================================
+  # SuperMQ Services (Minimal setup for demo)
+  # ============================================================================
+  # Note: For production, use the full SuperMQ setup from docker/compose.yaml
+  # or reference an external SuperMQ instance by setting environment variables
+  # ============================================================================
+
+  supermq-spicedb-db:
+    image: docker.io/postgres:18.0-alpine3.22
+    container_name: fl-demo-spicedb-db
+    environment:
+      POSTGRES_USER: ${SMQ_SPICEDB_DB_USER:-spicedb}
+      POSTGRES_PASSWORD: ${SMQ_SPICEDB_DB_PASS:-spicedb}
+      POSTGRES_DB: ${SMQ_SPICEDB_DB_NAME:-spicedb}
     volumes:
-      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - supermq-spicedb-db:/var/lib/postgresql/data
     networks:
       - fl-demo-http
 
-  # Model Registry (central server for storing models)
+  supermq-spicedb:
+    image: docker.io/authzed/spicedb:v1.37.0
+    container_name: fl-demo-spicedb
+    command: "serve"
+    depends_on:
+      - supermq-spicedb-db
+    environment:
+      SPICEDB_GRPC_PRESHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: "postgres://${SMQ_SPICEDB_DB_USER:-spicedb}:${SMQ_SPICEDB_DB_PASS:-spicedb}@supermq-spicedb-db:5432/${SMQ_SPICEDB_DB_NAME:-spicedb}?sslmode=disable"
+    ports:
+      - "50051:50051"
+    networks:
+      - fl-demo-http
+
+  supermq-auth-db:
+    image: docker.io/postgres:18.0-alpine3.22
+    container_name: fl-demo-auth-db
+    environment:
+      POSTGRES_USER: ${SMQ_AUTH_DB_USER:-auth}
+      POSTGRES_PASSWORD: ${SMQ_AUTH_DB_PASS:-auth}
+      POSTGRES_DB: ${SMQ_AUTH_DB_NAME:-auth}
+    volumes:
+      - supermq-auth-db:/var/lib/postgresql/data
+    networks:
+      - fl-demo-http
+
+  supermq-auth-redis:
+    image: docker.io/redis:8.2.2-alpine3.22
+    container_name: fl-demo-auth-redis
+    networks:
+      - fl-demo-http
+
+  supermq-auth:
+    image: docker.io/supermq/auth:${SMQ_RELEASE_TAG:-latest}
+    container_name: fl-demo-auth
+    depends_on:
+      - supermq-auth-db
+      - supermq-spicedb
+    environment:
+      SMQ_AUTH_LOG_LEVEL: ${SMQ_AUTH_LOG_LEVEL:-info}
+      SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
+      SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST:-supermq-spicedb}
+      SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
+      SMQ_AUTH_HTTP_HOST: ${SMQ_AUTH_HTTP_HOST:-0.0.0.0}
+      SMQ_AUTH_HTTP_PORT: ${SMQ_AUTH_HTTP_PORT:-9002}
+      SMQ_AUTH_GRPC_HOST: ${SMQ_AUTH_GRPC_HOST:-0.0.0.0}
+      SMQ_AUTH_GRPC_PORT: ${SMQ_AUTH_GRPC_PORT:-7001}
+      SMQ_AUTH_DB_HOST: ${SMQ_AUTH_DB_HOST:-supermq-auth-db}
+      SMQ_AUTH_DB_PORT: ${SMQ_AUTH_DB_PORT:-5432}
+      SMQ_AUTH_DB_USER: ${SMQ_AUTH_DB_USER:-auth}
+      SMQ_AUTH_DB_PASS: ${SMQ_AUTH_DB_PASS:-auth}
+      SMQ_AUTH_DB_NAME: ${SMQ_AUTH_DB_NAME:-auth}
+      SMQ_AUTH_DB_SSL_MODE: disable
+      SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL:-redis://supermq-auth-redis:6379}
+    ports:
+      - "${SMQ_AUTH_HTTP_PORT:-9002}:${SMQ_AUTH_HTTP_PORT:-9002}"
+      - "${SMQ_AUTH_GRPC_PORT:-7001}:${SMQ_AUTH_GRPC_PORT:-7001}"
+    networks:
+      - fl-demo-http
+
+  supermq-domains-db:
+    image: docker.io/postgres:18.0-alpine3.22
+    container_name: fl-demo-domains-db
+    environment:
+      POSTGRES_USER: ${SMQ_DOMAINS_DB_USER:-domains}
+      POSTGRES_PASSWORD: ${SMQ_DOMAINS_DB_PASS:-domains}
+      POSTGRES_DB: ${SMQ_DOMAINS_DB_NAME:-domains}
+    volumes:
+      - supermq-domains-db:/var/lib/postgresql/data
+    networks:
+      - fl-demo-http
+
+  supermq-domains-redis:
+    image: docker.io/redis:8.2.2-alpine3.22
+    container_name: fl-demo-domains-redis
+    networks:
+      - fl-demo-http
+
+  supermq-domains:
+    image: docker.io/supermq/domains:${SMQ_RELEASE_TAG:-latest}
+    container_name: fl-demo-domains
+    depends_on:
+      - supermq-domains-db
+      - supermq-auth
+    environment:
+      SMQ_DOMAINS_LOG_LEVEL: ${SMQ_DOMAINS_LOG_LEVEL:-info}
+      SMQ_DOMAINS_HTTP_HOST: ${SMQ_DOMAINS_HTTP_HOST:-0.0.0.0}
+      SMQ_DOMAINS_HTTP_PORT: ${SMQ_DOMAINS_HTTP_PORT:-9003}
+      SMQ_DOMAINS_GRPC_HOST: ${SMQ_DOMAINS_GRPC_HOST:-0.0.0.0}
+      SMQ_DOMAINS_GRPC_PORT: ${SMQ_DOMAINS_GRPC_PORT:-7002}
+      SMQ_DOMAINS_DB_HOST: ${SMQ_DOMAINS_DB_HOST:-supermq-domains-db}
+      SMQ_DOMAINS_DB_PORT: ${SMQ_DOMAINS_DB_PORT:-5432}
+      SMQ_DOMAINS_DB_USER: ${SMQ_DOMAINS_DB_USER:-domains}
+      SMQ_DOMAINS_DB_PASS: ${SMQ_DOMAINS_DB_PASS:-domains}
+      SMQ_DOMAINS_DB_NAME: ${SMQ_DOMAINS_DB_NAME:-domains}
+      SMQ_DOMAINS_DB_SSL_MODE: disable
+      SMQ_DOMAINS_CACHE_URL: ${SMQ_DOMAINS_CACHE_URL:-redis://supermq-domains-redis:6379}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+    ports:
+      - "${SMQ_DOMAINS_HTTP_PORT:-9003}:${SMQ_DOMAINS_HTTP_PORT:-9003}"
+      - "${SMQ_DOMAINS_GRPC_PORT:-7002}:${SMQ_DOMAINS_GRPC_PORT:-7002}"
+    networks:
+      - fl-demo-http
+
+  supermq-clients-db:
+    image: docker.io/postgres:18.0-alpine3.22
+    container_name: fl-demo-clients-db
+    environment:
+      POSTGRES_USER: ${SMQ_CLIENTS_DB_USER:-clients}
+      POSTGRES_PASSWORD: ${SMQ_CLIENTS_DB_PASS:-clients}
+      POSTGRES_DB: ${SMQ_CLIENTS_DB_NAME:-clients}
+    volumes:
+      - supermq-clients-db:/var/lib/postgresql/data
+    networks:
+      - fl-demo-http
+
+  supermq-clients-redis:
+    image: docker.io/redis:8.2.2-alpine3.22
+    container_name: fl-demo-clients-redis
+    networks:
+      - fl-demo-http
+
+  supermq-clients:
+    image: docker.io/supermq/clients:${SMQ_RELEASE_TAG:-latest}
+    container_name: fl-demo-clients
+    depends_on:
+      - supermq-clients-db
+      - supermq-auth
+    environment:
+      SMQ_CLIENTS_LOG_LEVEL: ${SMQ_CLIENTS_LOG_LEVEL:-info}
+      SMQ_CLIENTS_HTTP_HOST: ${SMQ_CLIENTS_HTTP_HOST:-0.0.0.0}
+      SMQ_CLIENTS_HTTP_PORT: ${SMQ_CLIENTS_HTTP_PORT:-9006}
+      SMQ_CLIENTS_GRPC_HOST: ${SMQ_CLIENTS_GRPC_HOST:-0.0.0.0}
+      SMQ_CLIENTS_GRPC_PORT: ${SMQ_CLIENTS_GRPC_PORT:-7001}
+      SMQ_CLIENTS_DB_HOST: ${SMQ_CLIENTS_DB_HOST:-supermq-clients-db}
+      SMQ_CLIENTS_DB_PORT: ${SMQ_CLIENTS_DB_PORT:-5432}
+      SMQ_CLIENTS_DB_USER: ${SMQ_CLIENTS_DB_USER:-clients}
+      SMQ_CLIENTS_DB_PASS: ${SMQ_CLIENTS_DB_PASS:-clients}
+      SMQ_CLIENTS_DB_NAME: ${SMQ_CLIENTS_DB_NAME:-clients}
+      SMQ_CLIENTS_DB_SSL_MODE: disable
+      SMQ_CLIENTS_CACHE_URL: ${SMQ_CLIENTS_CACHE_URL:-redis://supermq-clients-redis:6379}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+    ports:
+      - "${SMQ_CLIENTS_HTTP_PORT:-9006}:${SMQ_CLIENTS_HTTP_PORT:-9006}"
+      - "${SMQ_CLIENTS_GRPC_PORT:-7001}:${SMQ_CLIENTS_GRPC_PORT:-7001}"
+    networks:
+      - fl-demo-http
+
+  supermq-channels-db:
+    image: docker.io/postgres:18.0-alpine3.22
+    container_name: fl-demo-channels-db
+    environment:
+      POSTGRES_USER: ${SMQ_CHANNELS_DB_USER:-channels}
+      POSTGRES_PASSWORD: ${SMQ_CHANNELS_DB_PASS:-channels}
+      POSTGRES_DB: ${SMQ_CHANNELS_DB_NAME:-channels}
+    volumes:
+      - supermq-channels-db:/var/lib/postgresql/data
+    networks:
+      - fl-demo-http
+
+  supermq-channels-redis:
+    image: docker.io/redis:8.2.2-alpine3.22
+    container_name: fl-demo-channels-redis
+    networks:
+      - fl-demo-http
+
+  supermq-channels:
+    image: docker.io/supermq/channels:${SMQ_RELEASE_TAG:-latest}
+    container_name: fl-demo-channels
+    depends_on:
+      - supermq-channels-db
+      - supermq-auth
+    environment:
+      SMQ_CHANNELS_LOG_LEVEL: ${SMQ_CHANNELS_LOG_LEVEL:-info}
+      SMQ_CHANNELS_HTTP_HOST: ${SMQ_CHANNELS_HTTP_HOST:-0.0.0.0}
+      SMQ_CHANNELS_HTTP_PORT: ${SMQ_CHANNELS_HTTP_PORT:-9005}
+      SMQ_CHANNELS_GRPC_HOST: ${SMQ_CHANNELS_GRPC_HOST:-0.0.0.0}
+      SMQ_CHANNELS_GRPC_PORT: ${SMQ_CHANNELS_GRPC_PORT:-7003}
+      SMQ_CHANNELS_DB_HOST: ${SMQ_CHANNELS_DB_HOST:-supermq-channels-db}
+      SMQ_CHANNELS_DB_PORT: ${SMQ_CHANNELS_DB_PORT:-5432}
+      SMQ_CHANNELS_DB_USER: ${SMQ_CHANNELS_DB_USER:-channels}
+      SMQ_CHANNELS_DB_PASS: ${SMQ_CHANNELS_DB_PASS:-channels}
+      SMQ_CHANNELS_DB_NAME: ${SMQ_CHANNELS_DB_NAME:-channels}
+      SMQ_CHANNELS_DB_SSL_MODE: disable
+      SMQ_CHANNELS_CACHE_URL: ${SMQ_CHANNELS_CACHE_URL:-redis://supermq-channels-redis:6379}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+    ports:
+      - "${SMQ_CHANNELS_HTTP_PORT:-9005}:${SMQ_CHANNELS_HTTP_PORT:-9005}"
+      - "${SMQ_CHANNELS_GRPC_PORT:-7003}:${SMQ_CHANNELS_GRPC_PORT:-7003}"
+    networks:
+      - fl-demo-http
+
+  supermq-rabbitmq:
+    image: docker.io/rabbitmq:4.1.4-management-alpine
+    container_name: fl-demo-rabbitmq
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${SMQ_RABBITMQ_COOKIE:-secret}
+      RABBITMQ_DEFAULT_USER: ${SMQ_RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${SMQ_RABBITMQ_PASS:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${SMQ_RABBITMQ_VHOST:-/}
+    ports:
+      - "${SMQ_RABBITMQ_PORT:-5672}:${SMQ_RABBITMQ_PORT:-5672}"
+      - "${SMQ_RABBITMQ_HTTP_PORT:-15672}:${SMQ_RABBITMQ_HTTP_PORT:-15672}"
+    volumes:
+      - supermq-rabbitmq:/var/lib/rabbitmq
+    networks:
+      - fl-demo-http
+
+  supermq-nats:
+    image: docker.io/nats:2.12.0-alpine3.22
+    container_name: fl-demo-nats
+    ports:
+      - "${SMQ_NATS_PORT:-4222}:${SMQ_NATS_PORT:-4222}"
+      - "${SMQ_NATS_HTTP_PORT:-8222}:${SMQ_NATS_HTTP_PORT:-8222}"
+    volumes:
+      - supermq-nats:/data
+    networks:
+      - fl-demo-http
+
+  supermq-mqtt:
+    image: docker.io/supermq/mqtt:${SMQ_RELEASE_TAG:-latest}
+    container_name: fl-demo-supermq-mqtt
+    depends_on:
+      - supermq-clients
+      - supermq-rabbitmq
+      - supermq-nats
+    restart: on-failure
+    environment:
+      SMQ_MQTT_ADAPTER_LOG_LEVEL: ${SMQ_MQTT_ADAPTER_LOG_LEVEL:-info}
+      SMQ_MQTT_ADAPTER_MQTT_PORT: ${SMQ_MQTT_ADAPTER_MQTT_PORT:-1883}
+      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-tcp://supermq-clients:7001}
+      SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL:-tcp://supermq-channels:7003}
+      SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-tcp://supermq-domains:7002}
+      SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL:-tcp://supermq-rabbitmq:5672}
+    ports:
+      - "1883:1883"
+      - "8087:8080"
+    networks:
+      - fl-demo-http
+
   model-registry:
     build:
       context: ./model-registry
@@ -25,7 +273,6 @@ services:
     networks:
       - fl-demo-http
 
-  # Local Data Store (stores client datasets)
   local-data-store:
     build:
       context: ./local-data-store
@@ -40,7 +287,6 @@ services:
     networks:
       - fl-demo-http
 
-  # Aggregator Service (separate component for aggregation)
   aggregator:
     build:
       context: ./aggregator
@@ -52,7 +298,6 @@ services:
     networks:
       - fl-demo-http
 
-  # FL Coordinator (receives updates, aggregates, stores models)
   coordinator-http:
     build:
       context: ./coordinator-http
@@ -60,22 +305,20 @@ services:
     depends_on:
       - model-registry
       - aggregator
-      - mqtt
+      - supermq-mqtt
     ports:
       - "8080:8080"
     environment:
       - COORDINATOR_PORT=8080
       - MODEL_REGISTRY_URL=http://model-registry:8081
       - AGGREGATOR_URL=http://aggregator:8082
-      - MQTT_BROKER=tcp://mqtt:1883
+      - MQTT_BROKER=tcp://supermq-mqtt:1883
       - MQTT_CLIENT_ID=fl-coordinator
     volumes:
       - fl-models:/tmp/fl-models
     networks:
       - fl-demo-http
 
-  # Propeller Manager (workload-agnostic orchestrator)
-  # Forwards FL updates to FL Coordinator, does NOT aggregate
   manager:
     build:
       context: ../..
@@ -83,7 +326,7 @@ services:
       args:
         SVC: manager
     depends_on:
-      - mqtt
+      - supermq-mqtt
       - coordinator-http
     ports:
       - "7070:7070"
@@ -92,20 +335,18 @@ services:
       - MANAGER_CHANNEL_ID=fl
       - MANAGER_CLIENT_ID=manager
       - MANAGER_CLIENT_KEY=manager-key
-      - MANAGER_MQTT_ADDRESS=tcp://mqtt:1883
+      - MANAGER_MQTT_ADDRESS=tcp://supermq-mqtt:1883
       - MANAGER_HTTP_HOST=0.0.0.0
-      # Forward FL updates to HTTP coordinator
       - FL_COORDINATOR_URL=http://coordinator-http:8080
     networks:
       - fl-demo-http
 
-  # Propeller Proplets (execute WASM training modules)
   proplet-1:
     build:
       context: ../..
       dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - mqtt
+      - supermq-mqtt
       - manager
       - local-data-store
     environment:
@@ -113,7 +354,7 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-1
       - PROPLET_CLIENT_KEY=proplet-1-key
-      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_MQTT_ADDRESS=tcp://supermq-mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
       - DATA_STORE_URL=http://local-data-store:8083
     networks:
@@ -126,7 +367,7 @@ services:
       context: ../..
       dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - mqtt
+      - supermq-mqtt
       - manager
       - local-data-store
     environment:
@@ -134,7 +375,7 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-2
       - PROPLET_CLIENT_KEY=proplet-2-key
-      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_MQTT_ADDRESS=tcp://supermq-mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
       - DATA_STORE_URL=http://local-data-store:8083
     networks:
@@ -147,7 +388,7 @@ services:
       context: ../..
       dockerfile: docker/Dockerfile.proplet
     depends_on:
-      - mqtt
+      - supermq-mqtt
       - manager
       - local-data-store
     environment:
@@ -155,7 +396,7 @@ services:
       - PROPLET_CHANNEL_ID=fl
       - PROPLET_CLIENT_ID=proplet-3
       - PROPLET_CLIENT_KEY=proplet-3-key
-      - PROPLET_MQTT_ADDRESS=tcp://mqtt:1883
+      - PROPLET_MQTT_ADDRESS=tcp://supermq-mqtt:1883
       - PROPLET_EXTERNAL_WASM_RUNTIME=/usr/local/bin/wasmtime
       - DATA_STORE_URL=http://local-data-store:8083
     networks:
@@ -166,6 +407,14 @@ services:
 volumes:
   fl-models:
   fl-datasets:
+  # SuperMQ volumes
+  supermq-spicedb-db:
+  supermq-auth-db:
+  supermq-domains-db:
+  supermq-clients-db:
+  supermq-channels-db:
+  supermq-rabbitmq:
+  supermq-nats:
 
 networks:
   fl-demo-http:

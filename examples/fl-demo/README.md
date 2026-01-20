@@ -1,4 +1,4 @@
-# FML Demo - Sample Federated Learning Application
+# Sample Federated Learning Application
 
 This is a **sample FML (Federated Machine Learning) application** demonstrating how to build federated learning on top of Propeller's generic orchestration capabilities.
 
@@ -13,7 +13,7 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 
 ## Components
 
-### 1. FML Coordinator (`coordinator/`)
+### 1. FML Coordinator
 
 - Subscribes to `fml/updates` (forwarded by Manager)
 - Tracks round state in memory
@@ -21,19 +21,20 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 - Writes aggregated models to `/tmp/fl-models/`
 - Publishes round completion to `fl/rounds/{round_id}/complete`
 
-### 2. Model Server (`model-server/`)
+### 2. Model Server
 
 - Lightweight MQTT-based model distribution
 - Publishes models to `fl/models/global_model_v{N}` topics
 - Subscribes to `fl/models/publish` to receive new models from coordinator
 - Stores models in `/tmp/fl-models/` for persistence
 
-### 3. Client Wasm (`client-wasm/`)
+### 3. Client Wasm
 
 - Reads `ROUND_ID`, `MODEL_URI` (MQTT topic), `HYPERPARAMS` from environment
 - Performs toy local training
 - Outputs JSON update in format:
 - **Works with both Rust proplet (Wasmtime) and embedded proplet (WAMR/Zephyr)**
+
   ```json
   {
     "round_id": "r-0001",
@@ -47,17 +48,18 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 ## Workflow
 
 1. **Round Start**: Coordinator (or external trigger) publishes to `fl/rounds/start`:
-```json
-{
-  "round_id": "r-0001",
-  "model_uri": "fl/models/global_model_v0",
-  "task_wasm_image": "oci://example/fl-client-wasm:latest",
-  "participants": ["proplet-1", "proplet-2", "proplet-3"],
-  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
-  "k_of_n": 3,
-  "timeout_s": 30
-}
-```
+
+   ```json
+   {
+     "round_id": "r-0001",
+     "model_uri": "fl/models/global_model_v0",
+     "task_wasm_image": "oci://example/fl-client-wasm:latest",
+     "participants": ["proplet-1", "proplet-2", "proplet-3"],
+     "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+     "k_of_n": 3,
+     "timeout_s": 30
+   }
+   ```
 
 2. **Manager**: Listens to `fl/rounds/start`, launches tasks for each participant (workload-agnostic)
 
@@ -75,6 +77,34 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 
 - Docker and Docker Compose
 - Propeller Manager and Proplet images built (or use published images)
+- **SuperMQ**: This demo uses SuperMQ instead of Mosquitto for MQTT communication
+
+### SuperMQ Setup
+
+This demo includes a minimal SuperMQ setup in `compose-http.yaml`. The SuperMQ services include:
+
+- **SpiceDB**: Authorization service
+- **Auth Service**: Authentication and authorization
+- **Domains Service**: Domain management
+- **Clients Service**: Client management
+- **Channels Service**: Channel management
+- **RabbitMQ**: Message broker
+- **NATS**: Message streaming
+- **MQTT Adapter**: MQTT protocol adapter (exposed on port 1883)
+
+#### Option 1: Use the included SuperMQ setup (default)
+
+- The compose file includes all necessary SuperMQ services
+- Set `SMQ_RELEASE_TAG` environment variable to specify SuperMQ version (defaults to `latest`)
+- Example: `SMQ_RELEASE_TAG=v0.18.1 docker compose up -d`
+
+#### Option 2: Use external SuperMQ instance
+
+- If you have SuperMQ running elsewhere, update the `MQTT_BROKER` addresses in the compose file
+- Or set environment variables to point to your external SuperMQ instance
+- Update `MANAGER_MQTT_ADDRESS` and `PROPLET_MQTT_ADDRESS` to point to your SuperMQ MQTT adapter
+
+> **Note**: For production deployments, use the full SuperMQ setup from `docker/compose.yaml` or your SuperMQ repository.
 
 ### Build Client Wasm
 
@@ -95,8 +125,8 @@ docker compose up -d
 Publish a round start message to MQTT:
 
 ```bash
-# Using mosquitto_pub (if installed)
-mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
+# Using mosquitto_pub (if installed) - connects to SuperMQ MQTT adapter
+mosquitto_pub -h localhost -p 1883 -t "fl/rounds/start" -m '{
   "round_id": "r-0001",
   "model_uri": "fl/models/global_model_v0",
   "task_wasm_image": "oci://example/fl-client-wasm:latest",
@@ -113,12 +143,33 @@ mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
 - Manager logs: `docker compose logs -f manager`
 - Check aggregated models: `docker compose exec model-server ls -la /tmp/fl-models/`
 
-## Key Design Principles
+### Optional: Using Test Scripts
 
-1. **Manager is workload-agnostic**: No FL-specific logic in Manager
-2. **Coordinator owns FL semantics**: All aggregation, round tracking, model versioning
-3. **Lightweight MQTT-based distribution**: Models distributed via MQTT topics (consistent with Propeller architecture)
-4. **Generic message forwarding**: Manager forwards updates verbatim
+The demo includes Python test scripts for automated testing:
+
+1. **Install Python dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run HTTP test script** (automates full workflow):
+
+   ```bash
+   python3 test-fl-http.py
+   ```
+
+3. **Run local test script** (uses local WASM file):
+
+   ```bash
+   python3 test-fl-local.py
+   ```
+
+Alternatively, you can use the Go demo script:
+
+```bash
+go run demo.go
+```
 
 ## Limitations (Demo Only)
 
@@ -128,11 +179,3 @@ mosquitto_pub -h localhost -t "fl/rounds/start" -m '{
 - Simple model format (JSON)
 - No large model support
 - No embedded FL state in task specs
-
-## Next Steps
-
-- Add persistence for round state
-- Implement secure aggregation
-- Add model versioning and rollback
-- Support multiple concurrent rounds
-- Add monitoring and metrics
