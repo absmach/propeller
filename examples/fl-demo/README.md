@@ -69,9 +69,7 @@ The script will:
 
 **Note**: If the domain already exists (route conflict), the script will use the existing domain.
 
-### Update Compose File
-
-The provisioning script automatically updates `compose.yaml` with the new client credentials, domain ID, and channel ID. A backup of the original file is created as `compose.yaml.bak`.
+The provisioning script also automatically updates `compose.yaml` with the new client credentials, domain ID, and channel ID. A backup of the original file is created as `compose.yaml.bak`.
 
 If you need to manually update the compose file, edit:
 
