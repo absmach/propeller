@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -69,7 +70,10 @@ func main() {
 	}
 
 	roundID := fmt.Sprintf("r-%d", time.Now().Unix())
-	participants := []string{"proplet-1", "proplet-2", "proplet-3"}
+	
+	// Get proplet CLIENT_IDs from environment variables (SuperMQ client IDs, not instance IDs)
+	participants := getParticipants()
+	fmt.Printf("\nUsing participants (CLIENT_IDs): %v\n", participants)
 
 	fmt.Printf("\n[Step 1] Configure experiment (Manager -> Coordinator)\n")
 	if err := configureExperiment(client, roundID, participants); err != nil {
@@ -403,4 +407,34 @@ func repeat(s string, n int) string {
 		result += s
 	}
 	return result
+}
+
+func getParticipants() []string {
+	// Get CLIENT_IDs from environment variables (SuperMQ client IDs, not instance IDs)
+	// Note: Environment variables should be exported from docker/.env before running
+	proplet1ID := os.Getenv("PROPLET_CLIENT_ID")
+	if proplet1ID == "" {
+		fmt.Println("Warning: PROPLET_CLIENT_ID not set")
+		fmt.Println("  Export it from docker/.env: export PROPLET_CLIENT_ID=$(grep '^PROPLET_CLIENT_ID=' docker/.env | tail -1 | cut -d '=' -f2)")
+		fmt.Println("  Using fallback 'proplet-1' (this will likely fail)")
+		proplet1ID = "proplet-1"
+	}
+
+	proplet2ID := os.Getenv("PROPLET_2_CLIENT_ID")
+	if proplet2ID == "" {
+		fmt.Println("Warning: PROPLET_2_CLIENT_ID not set")
+		fmt.Println("  Export it from docker/.env: export PROPLET_2_CLIENT_ID=$(grep '^PROPLET_2_CLIENT_ID=' docker/.env | cut -d '=' -f2)")
+		fmt.Println("  Using fallback 'proplet-2' (this will likely fail)")
+		proplet2ID = "proplet-2"
+	}
+
+	proplet3ID := os.Getenv("PROPLET_3_CLIENT_ID")
+	if proplet3ID == "" {
+		fmt.Println("Warning: PROPLET_3_CLIENT_ID not set")
+		fmt.Println("  Export it from docker/.env: export PROPLET_3_CLIENT_ID=$(grep '^PROPLET_3_CLIENT_ID=' docker/.env | cut -d '=' -f2)")
+		fmt.Println("  Using fallback 'proplet-3' (this will likely fail)")
+		proplet3ID = "proplet-3"
+	}
+
+	return []string{proplet1ID, proplet2ID, proplet3ID}
 }

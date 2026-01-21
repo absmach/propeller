@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+import os
 import requests
 import time
 import random
@@ -9,6 +10,63 @@ MANAGER_URL = "http://localhost:7070"
 COORDINATOR_URL = "http://localhost:8080"
 MODEL_REGISTRY_URL = "http://localhost:8081"
 AGGREGATOR_URL = "http://localhost:8082"
+
+# Get proplet CLIENT_IDs from environment variables or .env file (SuperMQ client IDs, not instance IDs)
+def get_participants():
+    """Get participant CLIENT_IDs from environment variables or docker/.env file."""
+    participants = []
+    
+    def get_env_var(var_name, fallback):
+        """Get environment variable, or read from docker/.env file if not set."""
+        value = os.getenv(var_name)
+        if value:
+            return value
+        
+        # Try reading from docker/.env file
+        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docker", ".env")
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith(f"{var_name}=") and not line.startswith('#'):
+                            # Handle quoted and unquoted values
+                            value = line.split('=', 1)[1].strip().strip('"').strip("'")
+                            if value and value != '""' and value != "''":
+                                return value
+            except Exception as e:
+                print(f"Warning: Could not read {env_file}: {e}")
+        
+        return None
+    
+    # proplet-1 uses PROPLET_CLIENT_ID
+    proplet_1_id = get_env_var("PROPLET_CLIENT_ID", "proplet-1")
+    if not proplet_1_id or proplet_1_id == "proplet-1":
+        print("Warning: PROPLET_CLIENT_ID not found in environment or docker/.env, using fallback 'proplet-1'")
+        print("  This will likely fail - ensure docker/.env has PROPLET_CLIENT_ID=<uuid>")
+        participants.append("proplet-1")
+    else:
+        participants.append(proplet_1_id)
+    
+    # proplet-2 uses PROPLET_2_CLIENT_ID
+    proplet_2_id = get_env_var("PROPLET_2_CLIENT_ID", "proplet-2")
+    if not proplet_2_id or proplet_2_id == "proplet-2":
+        print("Warning: PROPLET_2_CLIENT_ID not found in environment or docker/.env, using fallback 'proplet-2'")
+        print("  This will likely fail - ensure docker/.env has PROPLET_2_CLIENT_ID=<uuid>")
+        participants.append("proplet-2")
+    else:
+        participants.append(proplet_2_id)
+    
+    # proplet-3 uses PROPLET_3_CLIENT_ID
+    proplet_3_id = get_env_var("PROPLET_3_CLIENT_ID", "proplet-3")
+    if not proplet_3_id or proplet_3_id == "proplet-3":
+        print("Warning: PROPLET_3_CLIENT_ID not found in environment or docker/.env, using fallback 'proplet-3'")
+        print("  This will likely fail - ensure docker/.env has PROPLET_3_CLIENT_ID=<uuid>")
+        participants.append("proplet-3")
+    else:
+        participants.append(proplet_3_id)
+    
+    return participants
 
 def main():
     print("=" * 60)
@@ -61,11 +119,14 @@ def main():
     
     print("\n[Step 1] Configure experiment (Manager -> Coordinator)")
     round_id = f"r-{int(time.time())}"
+    participants = get_participants()
+    print(f"Using participants (CLIENT_IDs): {participants}")
+    
     experiment_config = {
         "experiment_id": f"exp-{round_id}",
         "round_id": round_id,
         "model_ref": "fl/models/global_model_v0",
-        "participants": ["proplet-1", "proplet-2", "proplet-3"],
+        "participants": participants,
         "hyperparams": {
             "epochs": 1,
             "lr": 0.01,

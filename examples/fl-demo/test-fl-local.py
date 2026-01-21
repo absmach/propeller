@@ -6,6 +6,7 @@ This script creates tasks directly via the manager HTTP API with base64-encoded 
 import json
 import base64
 import sys
+import os
 import requests
 import time
 from pathlib import Path
@@ -48,8 +49,34 @@ def main():
     wasm_b64 = base64.b64encode(wasm_data).decode('utf-8')
     print(f"WASM file encoded: {len(wasm_b64)} characters")
     
-    # Participants
-    participants = ["proplet-1", "proplet-2", "proplet-3"]
+    # Participants - use CLIENT_IDs from environment variables or docker/.env file (SuperMQ client IDs, not instance IDs)
+    def get_env_var(var_name, fallback):
+        """Get environment variable, or read from docker/.env file if not set."""
+        value = os.getenv(var_name)
+        if value:
+            return value
+        
+        # Try reading from docker/.env file
+        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docker", ".env")
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith(f"{var_name}=") and not line.startswith('#'):
+                            value = line.split('=', 1)[1].strip().strip('"').strip("'")
+                            if value and value != '""' and value != "''":
+                                return value
+            except Exception:
+                pass
+        
+        return fallback
+    
+    proplet_1_id = get_env_var("PROPLET_CLIENT_ID", "proplet-1")
+    proplet_2_id = get_env_var("PROPLET_2_CLIENT_ID", "proplet-2")
+    proplet_3_id = get_env_var("PROPLET_3_CLIENT_ID", "proplet-3")
+    participants = [proplet_1_id, proplet_2_id, proplet_3_id]
+    print(f"Using participants (CLIENT_IDs): {participants}")
     
     # Hyperparameters
     hyperparams = {
