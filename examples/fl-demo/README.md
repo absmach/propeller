@@ -125,28 +125,19 @@ curl -X POST http://localhost:8084/models \
 
 ### Option A: Using MQTT (via nginx)
 
-Publish a round start message to the MQTT topic:
+Publish a round start message to the MQTT topic. **MQTT connections require authentication** using client credentials:
 
 ```bash
-mosquitto_pub -h localhost -p 1883 -t "fl/rounds/start" -m '{
-  "round_id": "r-0001",
-  "model_uri": "fl/models/global_model_v0",
-  "task_wasm_image": "oci://example/fl-client-wasm:latest",
-  "participants": ["proplet-1", "proplet-2", "proplet-3"],
-  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
-  "k_of_n": 3,
-  "timeout_s": 30
-}'
-```
+# Get client credentials from compose.yaml or provisioning output
+# Use the manager client ID and key, or fl-coordinator client credentials
 
-> **Note**: MQTT connections go through nginx. The port is configured via `SMQ_NGINX_MQTT_PORT` in your `docker/.env` file (default: 1883).
-
-### Option B: Using HTTP API (Manager)
-
-```bash
-curl -X POST http://localhost:7070/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
+# Get credentials from compose.yaml (check MANAGER_CLIENT_ID and MANAGER_CLIENT_KEY)
+# Or use fl-coordinator client credentials from provisioning output
+mosquitto_pub -h localhost -p 1883 \
+  -u "<CLIENT_ID>" \
+  -P "<CLIENT_KEY>" \
+  -t "fl/rounds/start" \
+  -m '{
     "round_id": "r-0001",
     "model_uri": "fl/models/global_model_v0",
     "task_wasm_image": "oci://example/fl-client-wasm:latest",
@@ -157,9 +148,32 @@ curl -X POST http://localhost:7070/api/v1/tasks \
   }'
 ```
 
-### Option C: Using Python Test Script
+> **Note**:
+>
+> - MQTT connections go through nginx. The port is configured via `SMQ_NGINX_MQTT_PORT` in your `docker/.env` file (default: 1883).
+> - Use `-u` for client ID (username) and `-P` for client key (password).
+> - Get the current client ID and key from `compose.yaml` (MANAGER_CLIENT_ID and MANAGER_CLIENT_KEY) or from the provisioning script output.
 
-For a complete end-to-end test:
+### Option B: Using HTTP API (Manager)
+
+```bash
+curl -X POST http://localhost:7070/fl/experiments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "experiment_id": "exp-r-0001",
+    "round_id": "r-0001",
+    "model_ref": "fl/models/global_model_v0",
+    "participants": ["proplet-1", "proplet-2", "proplet-3"],
+    "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+    "k_of_n": 3,
+    "timeout_s": 60,
+    "task_wasm_image": "oci://example/fl-client-wasm:latest"
+  }'
+```
+
+### Option C: Using Python Test Script (Recommended)
+
+For a complete end-to-end test, use the Python script which handles the correct API format:
 
 ```bash
 cd examples/fl-demo
@@ -170,7 +184,16 @@ This script:
 
 - Verifies all services are running
 - Creates an initial model if needed
-- Configures an experiment
+- Configures an experiment via the Manager API
+- Simulates client training and updates
+- Waits for aggregation
+- Verifies the aggregated model
+
+This script:
+
+- Verifies all services are running
+- Creates an initial model if needed
+- Configures an experiment via the Manager API
 - Simulates client training and updates
 - Waits for aggregation
 - Verifies the aggregated model
