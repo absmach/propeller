@@ -105,24 +105,42 @@ Or set them as environment variables in your `docker/.env` file.
 
 ## Step 5: Restart Services After Provisioning
 
-Restart the manager and proplets to pick up the new credentials:
+**IMPORTANT**: After provisioning, you must restart the manager and proplets to pick up the new credentials. The provisioning script updates `compose.yaml` with the new client IDs, keys, and channel ID.
+
+From the repository root:
 
 ```bash
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager proplet proplet-2 proplet-3
 ```
 
+> **Note**: If services don't restart properly, you may need to recreate them:
+>
+> ```bash
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d manager proplet proplet-2 proplet-3
+> ```
+
 ### Verify Services Are Running
+
+From the repository root:
 
 ```bash
 # Check all containers
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps
 
-# Check manager health
+# Check manager health (wait a few seconds after restart)
 curl http://localhost:7070/health
 
 # Check manager MQTT connection
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep -i "connected\|mqtt"
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep -i "connected\|mqtt\|subscribe"
 ```
+
+> **Note**: If the manager health check fails, check the logs:
+> ```bash
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager
+> ```
+> Common issues:
+> - Manager not connecting to MQTT: Verify credentials match provisioning output
+> - Port 7070 not accessible: Ensure manager container is running and port is exposed
 
 ## Step 6: Initialize Model Registry
 
@@ -251,8 +269,35 @@ curl http://localhost:8084/models/1
 
 1. **Verify provisioning completed**: Check that the provisioning script ran successfully
 2. **Check credentials**: Ensure client IDs and keys in `compose.yaml` match the provisioning output
-3. **Restart services**: Restart manager and proplets after provisioning
-4. **Check logs**: `docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager`
+3. **Verify channel ID**: Ensure `MANAGER_CHANNEL_ID` and `PROPLET_CHANNEL_ID` match the new channel ID from provisioning
+4. **Restart services**: Restart manager and proplets after provisioning:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager proplet proplet-2 proplet-3
+   ```
+5. **Check logs**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager
+   ```
+6. **Verify MQTT adapter is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps mqtt-adapter
+   ```
+
+### Manager Health Endpoint Not Responding
+
+1. **Check if manager is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps manager
+   ```
+2. **Check manager logs for errors**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager --tail 50
+   ```
+3. **Verify port 7070 is exposed**: Check that the manager service has ports configured in `compose.yaml`
+4. **Restart manager**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager
+   ```
 
 ### Services Not Starting
 
