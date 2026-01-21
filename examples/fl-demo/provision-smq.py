@@ -7,6 +7,8 @@ import requests
 import json
 import sys
 import time
+import re
+from pathlib import Path
 
 # SuperMQ service URLs (from compose file)
 USERS_URL = "http://localhost:9002"
@@ -301,6 +303,108 @@ def connect_clients_to_channel(token, domain_id, client_ids, channel_id):
         return False
 
 
+def update_compose_file(compose_file, clients, domain_id, channel_id):
+    """Update compose.yaml with new client credentials."""
+    if not compose_file.exists():
+        print(f"Warning: Compose file not found: {compose_file}")
+        return False
+    
+    content = compose_file.read_text()
+    original_content = content
+    
+    # Map client names to their corresponding environment variable prefixes
+    client_mapping = {
+        'manager': {
+            'id_var': 'MANAGER_CLIENT_ID',
+            'key_var': 'MANAGER_CLIENT_KEY'
+        },
+        'proplet-1': {
+            'id_var': 'PROPLET_CLIENT_ID',
+            'key_var': 'PROPLET_CLIENT_KEY',
+            'section': 'proplet'  # The first proplet is just 'proplet' in compose file
+        },
+        'proplet-2': {
+            'id_var': 'PROPLET_CLIENT_ID',
+            'key_var': 'PROPLET_CLIENT_KEY',
+            'section': 'proplet-2'
+        },
+        'proplet-3': {
+            'id_var': 'PROPLET_CLIENT_ID',
+            'key_var': 'PROPLET_CLIENT_KEY',
+            'section': 'proplet-3'
+        }
+    }
+    
+    # Update domain ID if needed
+    domain_pattern = r'(MANAGER_DOMAIN_ID:\s*\${{MANAGER_DOMAIN_ID:-)([a-f0-9-]+)(}})'
+    def replace_domain(match):
+        return f"{match.group(1)}{domain_id}{match.group(3)}"
+    content = re.sub(domain_pattern, replace_domain, content)
+    
+    # Update all PROPLET_DOMAIN_ID occurrences
+    proplet_domain_pattern = r'(PROPLET_DOMAIN_ID:\s*\${{PROPLET_DOMAIN_ID:-)([a-f0-9-]+)(}})'
+    def replace_proplet_domain(match):
+        return f"{match.group(1)}{domain_id}{match.group(3)}"
+    content = re.sub(proplet_domain_pattern, replace_proplet_domain, content)
+    
+    # Update channel ID if needed
+    channel_pattern = r'(MANAGER_CHANNEL_ID:\s*\${{MANAGER_CHANNEL_ID:-)([a-f0-9-]+)(}})'
+    def replace_channel(match):
+        return f"{match.group(1)}{channel_id}{match.group(3)}"
+    content = re.sub(channel_pattern, replace_channel, content)
+    
+    # Update all PROPLET_CHANNEL_ID occurrences
+    proplet_channel_pattern = r'(PROPLET_CHANNEL_ID:\s*\${{PROPLET_CHANNEL_ID:-)([a-f0-9-]+)(}})'
+    def replace_proplet_channel(match):
+        return f"{match.group(1)}{channel_id}{match.group(3)}"
+    content = re.sub(proplet_channel_pattern, replace_proplet_channel, content)
+    
+    # Update client credentials
+    for client_name, client in clients.items():
+        if client_name not in client_mapping:
+            continue
+        
+        mapping = client_mapping[client_name]
+        id_var = mapping['id_var']
+        key_var = mapping['key_var']
+        
+        client_id = client.get("id")
+        client_key = client.get("credentials", {}).get("secret", "N/A")
+        
+        if not client_id or client_key == "N/A":
+            continue
+        
+        # Pattern to match the environment variable lines
+        # Match: MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID:-old-value}
+        id_pattern = rf'({id_var}:\s*\${{{id_var}:-)([a-f0-9-]+)(}})'
+        key_pattern = rf'({key_var}:\s*\${{{key_var}:-)([a-f0-9-]+)(}})'
+        
+        # Replace ID using a function to avoid regex group reference issues
+        def replace_id(match):
+            return f"{match.group(1)}{client_id}{match.group(3)}"
+        
+        # Replace Key using a function to avoid regex group reference issues
+        def replace_key(match):
+            return f"{match.group(1)}{client_key}{match.group(3)}"
+        
+        content = re.sub(id_pattern, replace_id, content)
+        content = re.sub(key_pattern, replace_key, content)
+    
+    if content != original_content:
+        # Create backup
+        backup_path = compose_file.with_suffix('.yaml.bak')
+        if backup_path.exists():
+            backup_path.unlink()  # Remove old backup
+        compose_file.rename(backup_path)
+        print(f"  Created backup: {backup_path.name}")
+        
+        # Write updated content
+        compose_file.write_text(content)
+        return True
+    
+    return False
+
+
 def main():
     print("=" * 60)
     print("SuperMQ Provisioning Script for FL Demo")
@@ -370,8 +474,17 @@ def main():
         print(f"    Key: {client_key}")
     
     print("\n✓ Provisioning completed successfully!")
-    print("\nNote: Update your compose file or environment variables with the")
-    print("      client IDs and keys shown above for MQTT authentication.")
+    
+    # Update compose.yaml with new credentials
+    compose_file = Path(__file__).parent / "compose.yaml"
+    if update_compose_file(compose_file, clients, domain_id, channel_id):
+        print("\n✓ Updated compose.yaml with new credentials")
+    else:
+        print("\n⚠ Could not update compose.yaml automatically")
+        print("   Please update it manually with the credentials shown above")
+    
+    print("\nNote: Restart services to apply new credentials:")
+    print("  docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager proplet proplet-2 proplet-3")
 
 
 if __name__ == "__main__":
