@@ -19,8 +19,8 @@ ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "12345678"
 
 # Demo configuration
-DOMAIN_NAME = "demo"
-DOMAIN_ROUTE = "demo"
+DOMAIN_NAME = "fl-demo"
+DOMAIN_ROUTE = "fl-demo"
 CHANNEL_NAME = "fl"
 CLIENT_NAMES = ["manager", "proplet-1", "proplet-2", "proplet-3", "fl-coordinator"]
 
@@ -51,7 +51,7 @@ def login():
     
     try:
         response = requests.post(
-            f"{USERS_URL}/tokens/issue",
+            f"{USERS_URL}/users/tokens/issue",
             json=login_data,
             headers={"Content-Type": "application/json"},
             timeout=10
@@ -138,10 +138,9 @@ def create_client(token, domain_id, client_name):
     
     try:
         response = requests.post(
-            f"{CLIENTS_URL}/clients",
+            f"{CLIENTS_URL}/{domain_id}/clients",
             json=client_data,
             headers=headers,
-            params={"domain_id": domain_id},
             timeout=10
         )
         
@@ -153,9 +152,9 @@ def create_client(token, domain_id, client_name):
             # Client already exists, try to get it
             print(f"  Client {client_name} already exists, fetching...")
             response = requests.get(
-                f"{CLIENTS_URL}/clients",
+                f"{CLIENTS_URL}/{domain_id}/clients",
                 headers=headers,
-                params={"domain_id": domain_id, "name": client_name},
+                params={"name": client_name},
                 timeout=10
             )
             response.raise_for_status()
@@ -190,10 +189,9 @@ def create_channel(token, domain_id):
     
     try:
         response = requests.post(
-            f"{CHANNELS_URL}/channels",
+            f"{CHANNELS_URL}/{domain_id}/channels",
             json=channel_data,
             headers=headers,
-            params={"domain_id": domain_id},
             timeout=10
         )
         
@@ -205,9 +203,9 @@ def create_channel(token, domain_id):
             # Channel already exists, try to get it
             print("Channel already exists, fetching...")
             response = requests.get(
-                f"{CHANNELS_URL}/channels",
+                f"{CHANNELS_URL}/{domain_id}/channels",
                 headers=headers,
-                params={"domain_id": domain_id, "name": CHANNEL_NAME},
+                params={"name": CHANNEL_NAME},
                 timeout=10
             )
             response.raise_for_status()
@@ -243,10 +241,9 @@ def connect_clients_to_channel(token, domain_id, client_ids, channel_id):
     
     try:
         response = requests.post(
-            f"{CHANNELS_URL}/connect",
+            f"{CHANNELS_URL}/{domain_id}/connect",
             json=connection_data,
             headers=headers,
-            params={"domain_id": domain_id},
             timeout=10
         )
         

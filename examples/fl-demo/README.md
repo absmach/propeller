@@ -292,6 +292,345 @@ docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-fil
 
 > **Note**: If you already have a `docker/.env` file, you can use it directly. If not, see the "SuperMQ Setup" section above for a minimal example `.env` file.
 
+> **IMPORTANT**: After starting services, you **must** provision SuperMQ resources (domain, channel, clients) before the manager and proplets can connect. See the "Testing the Production Setup" section below for provisioning instructions.
+
+## Testing the Production Setup
+
+This section provides comprehensive instructions for testing the FL demo with the production SuperMQ setup.
+
+### 0. Provision SuperMQ Resources (Required First Step)
+
+**IMPORTANT**: Before the manager and proplets can connect to MQTT, you must provision the necessary SuperMQ resources (domain, channel, and clients). This is a one-time setup step.
+
+#### Option A: Using the Provisioning Script (Recommended)
+
+1. **Install Python dependencies** (if not already installed):
+
+   ```bash
+   cd examples/fl-demo
+   pip install -r requirements.txt
+   ```
+
+2. **Run the provisioning script**:
+
+   ```bash
+   python3 provision-smq.py
+   ```
+
+   This script will:
+   - Create a domain named "fl-demo"
+   - Create clients: manager, proplet-1, proplet-2, proplet-3, fl-coordinator
+   - Create a channel named "fl"
+   - Display the client IDs and keys
+
+3. **Update the compose file** with the client credentials (if needed):
+
+   The script outputs client IDs and keys. The `examples/fl-demo/compose.yaml` file has been pre-configured with credentials from a provisioning run. If you provision again and get different IDs/keys, you need to update the compose file with the new values.
+
+   The credentials are set as defaults in the compose file:
+   - `MANAGER_CLIENT_ID` and `MANAGER_CLIENT_KEY`
+   - `PROPLET_CLIENT_ID` and `PROPLET_CLIENT_KEY` (for each proplet)
+
+   Alternatively, you can set these as environment variables in your `docker/.env` file to override the defaults.
+
+#### Option B: Using Propeller CLI
+
+Alternatively, you can use the Propeller CLI:
+
+```bash
+./build/cli provision
+```
+
+This will interactively guide you through creating the domain, channel, and clients.
+
+#### Verify Provisioning and Restart Services
+
+After provisioning, restart the manager and proplets to pick up the new credentials:
+
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager proplet proplet-2 proplet-3
+```
+
+Then verify the manager is connected:
+
+```bash
+# Check manager health
+curl http://localhost:7070/health
+
+# Check manager logs for MQTT connection
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep -i "connected\|mqtt"
+```
+
+If you see connection errors, verify:
+1. The domain ID in the compose file matches the domain ID from provisioning
+2. The client IDs and keys match what was created
+3. The clients are connected to the channel (the provisioning script should handle this, but you can verify via SuperMQ API)
+
+### 1. Verify Services Are Running
+
+First, verify that all services are up and running:
+
+```bash
+# Check all containers are running
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps
+
+# Check specific FL services
+docker ps --filter "name=fl-demo" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+docker ps --filter "name=propeller" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Expected containers:
+- `fl-demo-model-registry` (port 8084)
+- `fl-demo-aggregator` (port 8085)
+- `fl-demo-coordinator` (port 8086)
+- `fl-demo-local-data-store` (port 8083)
+- `propeller-manager` (port 7070)
+- `propeller-proplet`, `propeller-proplet-2`, `propeller-proplet-3`
+- All SuperMQ services (spicedb, auth, domains, clients, channels, mqtt-adapter, nginx, etc.)
+
+### 2. Check Service Health
+
+Verify that the FL services are healthy and accessible:
+
+```bash
+# Manager health check
+curl http://localhost:7070/health
+
+# Coordinator health check
+curl http://localhost:8086/health
+
+# Model Registry health check
+curl http://localhost:8084/health
+
+# Aggregator health check
+curl http://localhost:8085/health
+
+# Local Data Store health check
+curl http://localhost:8083/health
+```
+
+All should return HTTP 200 status.
+
+### 3. Verify MQTT Connectivity
+
+In the production setup, MQTT is accessed through nginx. Check the MQTT port:
+
+```bash
+# Check if nginx is exposing MQTT port (default: 1883)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps nginx
+
+# Test MQTT connection (if mosquitto clients are installed)
+mosquitto_pub -h localhost -p 1883 -t "test/topic" -m "test message"
+```
+
+> **Note**: The MQTT port is configured via `SMQ_NGINX_MQTT_PORT` in your `docker/.env` file. Default is 1883.
+
+### 4. Initialize Model Registry
+
+Before starting a round, ensure the model registry has an initial model:
+
+```bash
+# Check if model v0 exists
+curl http://localhost:8084/models/0
+
+# If it doesn't exist, create it
+curl -X POST http://localhost:8084/models \
+  -H "Content-Type: application/json" \
+  -d '{
+    "version": 0,
+    "model": {
+      "w": [0.0, 0.0, 0.0],
+      "b": 0.0
+    }
+  }'
+```
+
+### 5. Trigger a Federated Learning Round
+
+#### Option A: Using MQTT (via nginx)
+
+Publish a round start message to the MQTT topic:
+
+```bash
+mosquitto_pub -h localhost -p 1883 -t "fl/rounds/start" -m '{
+  "round_id": "r-0001",
+  "model_uri": "fl/models/global_model_v0",
+  "task_wasm_image": "oci://example/fl-client-wasm:latest",
+  "participants": ["proplet-1", "proplet-2", "proplet-3"],
+  "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+  "k_of_n": 3,
+  "timeout_s": 30
+}'
+```
+
+> **Note**: In the production setup, MQTT connections go through nginx. Make sure you're connecting to the port specified by `SMQ_NGINX_MQTT_PORT` (default: 1883).
+
+#### Option B: Using HTTP API (Manager)
+
+You can also trigger a round via the Manager's HTTP API:
+
+```bash
+curl -X POST http://localhost:7070/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "round_id": "r-0001",
+    "model_uri": "fl/models/global_model_v0",
+    "task_wasm_image": "oci://example/fl-client-wasm:latest",
+    "participants": ["proplet-1", "proplet-2", "proplet-3"],
+    "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
+    "k_of_n": 3,
+    "timeout_s": 30
+  }'
+```
+
+### 6. Monitor Round Progress
+
+#### View Logs
+
+```bash
+# Coordinator logs (shows aggregation progress)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f fl-demo-coordinator
+
+# Manager logs (shows task distribution)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-manager
+
+# Proplet logs (shows training execution)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-proplet
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-proplet-2
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-proplet-3
+```
+
+#### Check Round Status
+
+```bash
+# Check coordinator status
+curl http://localhost:8086/rounds/r-0001/status
+
+# Check if new model was created
+curl http://localhost:8084/models/1
+```
+
+#### Verify Aggregated Models
+
+```bash
+# List all models in registry
+curl http://localhost:8084/models
+
+# Get specific model version
+curl http://localhost:8084/models/1 | jq .
+
+# Check models inside container
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env exec fl-demo-model-registry ls -la /tmp/fl-models/
+```
+
+### 7. Using Test Scripts (Production Setup)
+
+The test scripts need to be updated for the production setup ports. Here's how to use them:
+
+#### Update Test Script Ports
+
+The test scripts (`test-fl-http.py` and `demo.go`) are configured for the minimal setup ports. For production setup, update the ports:
+
+**For `test-fl-http.py`:**
+```python
+MANAGER_URL = "http://localhost:7070"
+COORDINATOR_URL = "http://localhost:8086"  # Changed from 8080
+MODEL_REGISTRY_URL = "http://localhost:8084"  # Changed from 8081
+AGGREGATOR_URL = "http://localhost:8085"  # Changed from 8082
+```
+
+**For `demo.go`:**
+```go
+const (
+    ManagerURL       = "http://localhost:7070"
+    CoordinatorURL   = "http://localhost:8086"  // Changed from 8080
+    ModelRegistryURL = "http://localhost:8084"  // Changed from 8081
+    AggregatorURL    = "http://localhost:8085"  // Changed from 8082
+)
+```
+
+Then run:
+```bash
+# Python script
+cd examples/fl-demo
+python3 test-fl-http.py
+
+# Go script
+cd examples/fl-demo
+go run demo.go
+```
+
+### 8. Troubleshooting
+
+#### Services Not Starting
+
+```bash
+# Check container status
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps
+
+# Check logs for errors
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs [service-name]
+
+# Restart a specific service
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart [service-name]
+```
+
+#### MQTT Connection Issues
+
+```bash
+# Verify nginx is running and exposing MQTT port
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps nginx
+
+# Check nginx logs
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs nginx
+
+# Verify mqtt-adapter is running
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps mqtt-adapter
+
+# Check mqtt-adapter logs
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs mqtt-adapter
+```
+
+#### Proplets Not Receiving Tasks
+
+```bash
+# Verify proplets are connected to MQTT
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs propeller-proplet | grep -i "connected\|mqtt"
+
+# Check manager-proplet communication
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs propeller-manager | grep -i "proplet"
+
+# Verify domain and channel configuration
+# Check that MANAGER_DOMAIN_ID and MANAGER_CHANNEL_ID match PROPLET_DOMAIN_ID and PROPLET_CHANNEL_ID
+```
+
+#### Model Not Aggregating
+
+```bash
+# Check coordinator logs for aggregation
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs fl-demo-coordinator | grep -i "aggregat\|update"
+
+# Verify aggregator is accessible
+curl http://localhost:8085/health
+
+# Check if updates are being received
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs fl-demo-coordinator | grep -i "update"
+```
+
+### 9. Clean Up
+
+To stop and remove all containers:
+
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env down
+```
+
+To also remove volumes (this will delete all models and data):
+
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env down -v
+```
+
 ### Trigger a Round
 
 Publish a round start message to MQTT:
@@ -311,13 +650,21 @@ mosquitto_pub -h localhost -p 1883 -t "fl/rounds/start" -m '{
 
 ### Monitor Progress
 
+**For minimal setup (compose-http.yaml):**
 - Coordinator logs: `docker compose -f compose-http.yaml logs -f coordinator`
 - Manager logs: `docker compose -f compose-http.yaml logs -f manager`
-- Check aggregated models: `docker compose -f compose-http.yaml exec model-server ls -la /tmp/fl-models/`
+- Check aggregated models: `docker compose -f compose-http.yaml exec model-registry ls -la /tmp/fl-models/`
+
+**For production setup:**
+- Coordinator logs: `docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f fl-demo-coordinator`
+- Manager logs: `docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-manager`
+- Check aggregated models: `docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env exec fl-demo-model-registry ls -la /tmp/fl-models/`
 
 ### Optional: Using Test Scripts
 
-The demo includes Python test scripts for automated testing:
+The demo includes Python and Go test scripts for automated testing. **Note**: These scripts are configured for the minimal setup ports by default.
+
+**For minimal setup (compose-http.yaml):**
 
 1. **Install Python dependencies** (from `examples/fl-demo` directory):
 
@@ -342,6 +689,69 @@ Alternatively, you can use the Go demo script:
 ```bash
 go run demo.go
 ```
+
+**For production setup:**
+
+The test scripts need to be updated with the correct ports (see "Testing the Production Setup" section above for details):
+- Manager: `http://localhost:7070`
+- Coordinator: `http://localhost:8086` (instead of 8080)
+- Model Registry: `http://localhost:8084` (instead of 8081)
+- Aggregator: `http://localhost:8085` (instead of 8082)
+
+After updating the ports in the scripts, run them the same way as above.
+
+## Quick Reference: Production Setup
+
+### Service Ports
+
+| Service            | Port | URL                      |
+| ------------------ | ---- | ------------------------ |
+| Manager            | 7070 | `http://localhost:7070`  |
+| Coordinator        | 8086 | `http://localhost:8086`  |
+| Model Registry     | 8084 | `http://localhost:8084`  |
+| Aggregator         | 8085 | `http://localhost:8085`  |
+| Local Data Store   | 8083 | `http://localhost:8083`  |
+| MQTT (via nginx)   | 1883 | `tcp://localhost:1883`  |
+
+### Common Commands
+
+```bash
+# Start services
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
+
+# Stop services
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env down
+
+# View logs
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f [service-name]
+
+# Check status
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps
+
+# Restart a service
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart [service-name]
+```
+
+### Health Check URLs
+
+```bash
+curl http://localhost:7070/health  # Manager
+curl http://localhost:8086/health  # Coordinator
+curl http://localhost:8084/health  # Model Registry
+curl http://localhost:8085/health  # Aggregator
+curl http://localhost:8083/health  # Local Data Store
+```
+
+### Container Names
+
+- `fl-demo-model-registry`
+- `fl-demo-aggregator`
+- `fl-demo-coordinator`
+- `fl-demo-local-data-store`
+- `propeller-manager`
+- `propeller-proplet`, `propeller-proplet-2`, `propeller-proplet-3`
+- `supermq-nginx` (MQTT gateway)
+- `supermq-mqtt` (MQTT adapter)
 
 ## Limitations (Demo Only)
 
