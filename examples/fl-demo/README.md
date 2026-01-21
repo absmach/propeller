@@ -113,8 +113,20 @@ From the repository root:
 ```bash
 cd examples/fl-demo/client-wasm
 GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go
-cd ..
+cd ../../..
 ```
+
+### Generate Auth Keys
+
+SuperMQ auth service requires an EdDSA key file. Generate it before starting services:
+
+From the `examples/fl-demo` directory:
+
+```bash
+./generate-auth-key.sh
+```
+
+This will create a key file at `keys/active.key` that will be mounted into the auth service.
 
 ### Start Services
 

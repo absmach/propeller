@@ -15,6 +15,20 @@ services:
       POSTGRES_DB: ${SMQ_SPICEDB_DB_NAME:-spicedb}
     volumes:
       - supermq-spicedb-db:/var/lib/postgresql/data
+    command: ["postgres", "-c", "track_commit_timestamp=on"]
+    networks:
+      - fl-demo-http
+
+  supermq-spicedb-migrate:
+    image: docker.io/authzed/spicedb:v1.37.0
+    container_name: fl-demo-spicedb-migrate
+    command: "migrate head"
+    restart: "on-failure"
+    environment:
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: "postgres://${SMQ_SPICEDB_DB_USER:-spicedb}:${SMQ_SPICEDB_DB_PASS:-spicedb}@supermq-spicedb-db:5432/${SMQ_SPICEDB_DB_NAME:-spicedb}?sslmode=disable"
+    depends_on:
+      - supermq-spicedb-db
     networks:
       - fl-demo-http
 
@@ -23,7 +37,7 @@ services:
     container_name: fl-demo-spicedb
     command: "serve"
     depends_on:
-      - supermq-spicedb-db
+      - supermq-spicedb-migrate
     environment:
       SPICEDB_GRPC_PRESHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
       SPICEDB_DATASTORE_ENGINE: postgres
@@ -56,7 +70,9 @@ services:
     container_name: fl-demo-auth
     depends_on:
       - supermq-auth-db
+      - supermq-auth-redis
       - supermq-spicedb
+    restart: on-failure
     environment:
       SMQ_AUTH_LOG_LEVEL: ${SMQ_AUTH_LOG_LEVEL:-info}
       SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
@@ -64,7 +80,7 @@ services:
       SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
       SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
       SMQ_AUTH_HTTP_HOST: ${SMQ_AUTH_HTTP_HOST:-0.0.0.0}
-      SMQ_AUTH_HTTP_PORT: ${SMQ_AUTH_HTTP_PORT:-9002}
+      SMQ_AUTH_HTTP_PORT: ${SMQ_AUTH_HTTP_PORT:-9001}
       SMQ_AUTH_GRPC_HOST: ${SMQ_AUTH_GRPC_HOST:-0.0.0.0}
       SMQ_AUTH_GRPC_PORT: ${SMQ_AUTH_GRPC_PORT:-7001}
       SMQ_AUTH_DB_HOST: ${SMQ_AUTH_DB_HOST:-supermq-auth-db}
@@ -73,13 +89,19 @@ services:
       SMQ_AUTH_DB_PASS: ${SMQ_AUTH_DB_PASS:-auth}
       SMQ_AUTH_DB_NAME: ${SMQ_AUTH_DB_NAME:-auth}
       SMQ_AUTH_DB_SSL_MODE: disable
-      SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL:-redis://supermq-auth-redis:6379}
+      SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL:-redis://supermq-auth-redis:6379/0}
       SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_AUTH_KEYS_ACTIVE_KEY_PATH: ${SMQ_AUTH_KEYS_ACTIVE_KEY_PATH:-/keys/active.key}
+      SMQ_ES_URL: ${SMQ_ES_URL:-nats://supermq-nats:4222}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL:-}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO:-0.0}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY:-false}
     ports:
-      - "${SMQ_AUTH_HTTP_PORT:-9002}:${SMQ_AUTH_HTTP_PORT:-9002}"
+      - "${SMQ_AUTH_HTTP_PORT:-9001}:${SMQ_AUTH_HTTP_PORT:-9001}"
       - "${SMQ_AUTH_GRPC_PORT:-7001}:${SMQ_AUTH_GRPC_PORT:-7001}"
     volumes:
       - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      - ./keys:/keys:ro
     networks:
       - fl-demo-http
 
@@ -106,28 +128,42 @@ services:
     container_name: fl-demo-domains
     depends_on:
       - supermq-domains-db
+      - supermq-domains-redis
       - supermq-auth
+    restart: on-failure
     environment:
       SMQ_DOMAINS_LOG_LEVEL: ${SMQ_DOMAINS_LOG_LEVEL:-info}
       SMQ_DOMAINS_HTTP_HOST: ${SMQ_DOMAINS_HTTP_HOST:-0.0.0.0}
       SMQ_DOMAINS_HTTP_PORT: ${SMQ_DOMAINS_HTTP_PORT:-9003}
       SMQ_DOMAINS_GRPC_HOST: ${SMQ_DOMAINS_GRPC_HOST:-0.0.0.0}
-      SMQ_DOMAINS_GRPC_PORT: ${SMQ_DOMAINS_GRPC_PORT:-7002}
+      SMQ_DOMAINS_GRPC_PORT: ${SMQ_DOMAINS_GRPC_PORT:-7003}
       SMQ_DOMAINS_DB_HOST: ${SMQ_DOMAINS_DB_HOST:-supermq-domains-db}
       SMQ_DOMAINS_DB_PORT: ${SMQ_DOMAINS_DB_PORT:-5432}
       SMQ_DOMAINS_DB_USER: ${SMQ_DOMAINS_DB_USER:-domains}
       SMQ_DOMAINS_DB_PASS: ${SMQ_DOMAINS_DB_PASS:-domains}
       SMQ_DOMAINS_DB_NAME: ${SMQ_DOMAINS_DB_NAME:-domains}
       SMQ_DOMAINS_DB_SSL_MODE: disable
-      SMQ_DOMAINS_CACHE_URL: ${SMQ_DOMAINS_CACHE_URL:-redis://supermq-domains-redis:6379}
-      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_DOMAINS_CACHE_URL: ${SMQ_DOMAINS_CACHE_URL:-redis://supermq-domains-redis:6379/0}
+      SMQ_DOMAINS_CACHE_KEY_DURATION: ${SMQ_DOMAINS_CACHE_KEY_DURATION:-10m}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-supermq-auth:7001}
+      SMQ_AUTH_GRPC_TIMEOUT: ${SMQ_AUTH_GRPC_TIMEOUT:-300s}
       SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
+      SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST:-supermq-spicedb}
+      SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
       SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      SMQ_ES_URL: ${SMQ_ES_URL:-nats://supermq-nats:4222}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL:-}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO:-0.0}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY:-false}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER:-true}
+      SMQ_PERMISSIONS_FILE: ${SMQ_PERMISSIONS_FILE:-/permission.yaml}
     ports:
       - "${SMQ_DOMAINS_HTTP_PORT:-9003}:${SMQ_DOMAINS_HTTP_PORT:-9003}"
-      - "${SMQ_DOMAINS_GRPC_PORT:-7002}:${SMQ_DOMAINS_GRPC_PORT:-7002}"
+      - "${SMQ_DOMAINS_GRPC_PORT:-7003}:${SMQ_DOMAINS_GRPC_PORT:-7003}"
     volumes:
       - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      - ./permission.yaml:/permission.yaml:ro
     networks:
       - fl-demo-http
 
@@ -154,28 +190,46 @@ services:
     container_name: fl-demo-clients
     depends_on:
       - supermq-clients-db
+      - supermq-clients-redis
       - supermq-auth
+    restart: on-failure
     environment:
       SMQ_CLIENTS_LOG_LEVEL: ${SMQ_CLIENTS_LOG_LEVEL:-info}
       SMQ_CLIENTS_HTTP_HOST: ${SMQ_CLIENTS_HTTP_HOST:-0.0.0.0}
       SMQ_CLIENTS_HTTP_PORT: ${SMQ_CLIENTS_HTTP_PORT:-9006}
       SMQ_CLIENTS_GRPC_HOST: ${SMQ_CLIENTS_GRPC_HOST:-0.0.0.0}
-      SMQ_CLIENTS_GRPC_PORT: ${SMQ_CLIENTS_GRPC_PORT:-7004}
+      SMQ_CLIENTS_GRPC_PORT: ${SMQ_CLIENTS_GRPC_PORT:-7006}
       SMQ_CLIENTS_DB_HOST: ${SMQ_CLIENTS_DB_HOST:-supermq-clients-db}
       SMQ_CLIENTS_DB_PORT: ${SMQ_CLIENTS_DB_PORT:-5432}
       SMQ_CLIENTS_DB_USER: ${SMQ_CLIENTS_DB_USER:-clients}
       SMQ_CLIENTS_DB_PASS: ${SMQ_CLIENTS_DB_PASS:-clients}
       SMQ_CLIENTS_DB_NAME: ${SMQ_CLIENTS_DB_NAME:-clients}
       SMQ_CLIENTS_DB_SSL_MODE: disable
-      SMQ_CLIENTS_CACHE_URL: ${SMQ_CLIENTS_CACHE_URL:-redis://supermq-clients-redis:6379}
-      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_CLIENTS_CACHE_URL: ${SMQ_CLIENTS_CACHE_URL:-redis://supermq-clients-redis:6379/0}
+      SMQ_CLIENTS_CACHE_KEY_DURATION: ${SMQ_CLIENTS_CACHE_KEY_DURATION:-10m}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-supermq-auth:7001}
+      SMQ_AUTH_GRPC_TIMEOUT: ${SMQ_AUTH_GRPC_TIMEOUT:-300s}
       SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL:-supermq-channels:7005}
+      SMQ_CHANNELS_GRPC_TIMEOUT: ${SMQ_CHANNELS_GRPC_TIMEOUT:-300s}
+      SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-supermq-domains:7003}
+      SMQ_DOMAINS_GRPC_TIMEOUT: ${SMQ_DOMAINS_GRPC_TIMEOUT:-300s}
+      SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
+      SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST:-supermq-spicedb}
+      SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
       SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      SMQ_ES_URL: ${SMQ_ES_URL:-nats://supermq-nats:4222}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL:-}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO:-0.0}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY:-false}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER:-true}
+      SMQ_PERMISSIONS_FILE: ${SMQ_PERMISSIONS_FILE:-/permission.yaml}
     ports:
       - "${SMQ_CLIENTS_HTTP_PORT:-9006}:${SMQ_CLIENTS_HTTP_PORT:-9006}"
-      - "${SMQ_CLIENTS_GRPC_PORT:-7004}:${SMQ_CLIENTS_GRPC_PORT:-7004}"
+      - "${SMQ_CLIENTS_GRPC_PORT:-7006}:${SMQ_CLIENTS_GRPC_PORT:-7006}"
     volumes:
       - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      - ./permission.yaml:/permission.yaml:ro
     networks:
       - fl-demo-http
 
@@ -202,28 +256,46 @@ services:
     container_name: fl-demo-channels
     depends_on:
       - supermq-channels-db
+      - supermq-channels-redis
       - supermq-auth
+    restart: on-failure
     environment:
       SMQ_CHANNELS_LOG_LEVEL: ${SMQ_CHANNELS_LOG_LEVEL:-info}
       SMQ_CHANNELS_HTTP_HOST: ${SMQ_CHANNELS_HTTP_HOST:-0.0.0.0}
       SMQ_CHANNELS_HTTP_PORT: ${SMQ_CHANNELS_HTTP_PORT:-9005}
       SMQ_CHANNELS_GRPC_HOST: ${SMQ_CHANNELS_GRPC_HOST:-0.0.0.0}
-      SMQ_CHANNELS_GRPC_PORT: ${SMQ_CHANNELS_GRPC_PORT:-7003}
+      SMQ_CHANNELS_GRPC_PORT: ${SMQ_CHANNELS_GRPC_PORT:-7005}
       SMQ_CHANNELS_DB_HOST: ${SMQ_CHANNELS_DB_HOST:-supermq-channels-db}
       SMQ_CHANNELS_DB_PORT: ${SMQ_CHANNELS_DB_PORT:-5432}
       SMQ_CHANNELS_DB_USER: ${SMQ_CHANNELS_DB_USER:-channels}
       SMQ_CHANNELS_DB_PASS: ${SMQ_CHANNELS_DB_PASS:-channels}
       SMQ_CHANNELS_DB_NAME: ${SMQ_CHANNELS_DB_NAME:-channels}
       SMQ_CHANNELS_DB_SSL_MODE: disable
-      SMQ_CHANNELS_CACHE_URL: ${SMQ_CHANNELS_CACHE_URL:-redis://supermq-channels-redis:6379}
-      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_CHANNELS_CACHE_URL: ${SMQ_CHANNELS_CACHE_URL:-redis://supermq-channels-redis:6379/0}
+      SMQ_CHANNELS_CACHE_KEY_DURATION: ${SMQ_CHANNELS_CACHE_KEY_DURATION:-10m}
+      SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-supermq-auth:7001}
+      SMQ_AUTH_GRPC_TIMEOUT: ${SMQ_AUTH_GRPC_TIMEOUT:-300s}
       SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-supermq-clients:7006}
+      SMQ_CLIENTS_GRPC_TIMEOUT: ${SMQ_CLIENTS_GRPC_TIMEOUT:-300s}
+      SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-supermq-domains:7003}
+      SMQ_DOMAINS_GRPC_TIMEOUT: ${SMQ_DOMAINS_GRPC_TIMEOUT:-300s}
+      SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
+      SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST:-supermq-spicedb}
+      SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
       SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      SMQ_ES_URL: ${SMQ_ES_URL:-nats://supermq-nats:4222}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL:-}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO:-0.0}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY:-false}
+      SMQ_ALLOW_UNVERIFIED_USER: ${SMQ_ALLOW_UNVERIFIED_USER:-true}
+      SMQ_PERMISSIONS_FILE: ${SMQ_PERMISSIONS_FILE:-/permission.yaml}
     ports:
       - "${SMQ_CHANNELS_HTTP_PORT:-9005}:${SMQ_CHANNELS_HTTP_PORT:-9005}"
-      - "${SMQ_CHANNELS_GRPC_PORT:-7003}:${SMQ_CHANNELS_GRPC_PORT:-7003}"
+      - "${SMQ_CHANNELS_GRPC_PORT:-7005}:${SMQ_CHANNELS_GRPC_PORT:-7005}"
     volumes:
       - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
+      - ./permission.yaml:/permission.yaml:ro
     networks:
       - fl-demo-http
 
@@ -238,19 +310,28 @@ services:
     ports:
       - "${SMQ_RABBITMQ_PORT:-5672}:${SMQ_RABBITMQ_PORT:-5672}"
       - "${SMQ_RABBITMQ_HTTP_PORT:-15672}:${SMQ_RABBITMQ_HTTP_PORT:-15672}"
+      - "${SMQ_RABBITMQ_WS_PORT:-15675}:${SMQ_RABBITMQ_WS_PORT:-15675}"
     volumes:
       - supermq-rabbitmq:/var/lib/rabbitmq
+      - ../../docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ../../docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/10-defaults.conf:ro
     networks:
       - fl-demo-http
 
   supermq-nats:
     image: docker.io/nats:2.12.0-alpine3.22
     container_name: fl-demo-nats
+    command: "--config=/etc/nats/nats.conf"
+    environment:
+      - SMQ_NATS_PORT=${SMQ_NATS_PORT:-4222}
+      - SMQ_NATS_HTTP_PORT=${SMQ_NATS_HTTP_PORT:-8222}
+      - SMQ_NATS_JETSTREAM_KEY=${SMQ_NATS_JETSTREAM_KEY:-u7wFoAPgXpDueXOFldBnXDh4xjnSOyEJ2Cb8Z5SZvGLzIZ3U4exWhhoIBZHzuNvh}
     ports:
       - "${SMQ_NATS_PORT:-4222}:${SMQ_NATS_PORT:-4222}"
       - "${SMQ_NATS_HTTP_PORT:-8222}:${SMQ_NATS_HTTP_PORT:-8222}"
     volumes:
       - supermq-nats:/data
+      - ../../docker/nats/nats.conf:/etc/nats/nats.conf:ro
     networks:
       - fl-demo-http
 
@@ -259,16 +340,34 @@ services:
     container_name: fl-demo-supermq-mqtt
     depends_on:
       - supermq-clients
+      - supermq-channels
+      - supermq-domains
       - supermq-rabbitmq
       - supermq-nats
     restart: on-failure
     environment:
       SMQ_MQTT_ADAPTER_LOG_LEVEL: ${SMQ_MQTT_ADAPTER_LOG_LEVEL:-info}
       SMQ_MQTT_ADAPTER_MQTT_PORT: ${SMQ_MQTT_ADAPTER_MQTT_PORT:-1883}
-      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-tcp://supermq-clients:7004}
-      SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL:-tcp://supermq-channels:7003}
-      SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-tcp://supermq-domains:7002}
+      SMQ_MQTT_ADAPTER_WS_PORT: ${SMQ_MQTT_ADAPTER_WS_PORT:-8080}
+      SMQ_MQTT_ADAPTER_MQTT_TARGET_HOST: ${SMQ_MQTT_ADAPTER_MQTT_TARGET_HOST:-supermq-rabbitmq}
+      SMQ_MQTT_ADAPTER_MQTT_TARGET_PORT: ${SMQ_MQTT_ADAPTER_MQTT_TARGET_PORT:-1883}
+      SMQ_MQTT_ADAPTER_MQTT_TARGET_USERNAME: ${SMQ_MQTT_ADAPTER_MQTT_TARGET_USERNAME:-guest}
+      SMQ_MQTT_ADAPTER_MQTT_TARGET_PASSWORD: ${SMQ_MQTT_ADAPTER_MQTT_TARGET_PASSWORD:-guest}
+      SMQ_MQTT_ADAPTER_MQTT_QOS: ${SMQ_MQTT_ADAPTER_MQTT_QOS:-0}
+      SMQ_MQTT_ADAPTER_WS_TARGET_HOST: ${SMQ_MQTT_ADAPTER_WS_TARGET_HOST:-supermq-rabbitmq}
+      SMQ_MQTT_ADAPTER_WS_TARGET_PORT: ${SMQ_MQTT_ADAPTER_WS_TARGET_PORT:-15675}
+      SMQ_MQTT_ADAPTER_WS_TARGET_PATH: ${SMQ_MQTT_ADAPTER_WS_TARGET_PATH:-/ws}
+      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-supermq-clients:7006}
+      SMQ_CLIENTS_GRPC_TIMEOUT: ${SMQ_CLIENTS_GRPC_TIMEOUT:-300s}
+      SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL:-supermq-channels:7005}
+      SMQ_CHANNELS_GRPC_TIMEOUT: ${SMQ_CHANNELS_GRPC_TIMEOUT:-300s}
+      SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-supermq-domains:7003}
+      SMQ_DOMAINS_GRPC_TIMEOUT: ${SMQ_DOMAINS_GRPC_TIMEOUT:-300s}
       SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL:-nats://supermq-nats:4222}
+      SMQ_ES_URL: ${SMQ_ES_URL:-nats://supermq-nats:4222}
+      SMQ_JAEGER_URL: ${SMQ_JAEGER_URL:-}
+      SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO:-0.0}
+      SMQ_SEND_TELEMETRY: ${SMQ_SEND_TELEMETRY:-false}
     ports:
       - "1883:1883"
       - "8087:8080"
