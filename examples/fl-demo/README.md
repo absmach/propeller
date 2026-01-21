@@ -10,23 +10,42 @@ This guide covers running the production-grade Federated Learning (FL) demo appl
 
 ## Step 1: Prepare Environment
 
+All commands in this guide should be run from the repository root (`/propeller`).
+
 ### Generate Auth Keys (if needed)
 
+From the repository root:
+
 ```bash
-cd examples/fl-demo
-./generate-auth-key.sh
-cd ../..
+(cd examples/fl-demo && ./generate-auth-key.sh)
 ```
 
 ### Build Client WASM
 
+From the repository root:
+
 ```bash
-cd examples/fl-demo/client-wasm
-GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go
-cd ../../..
+(cd examples/fl-demo/client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go)
 ```
 
-## Step 2: Start Services
+## Step 2: Build Images
+
+**IMPORTANT**: Manager and proplet must be built from source as the pre-built images don't include FL endpoints.
+
+From the repository root:
+
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env build manager proplet proplet-2 proplet-3
+```
+
+This builds:
+
+- `propeller-manager:local` - Manager with FL endpoints
+- `propeller-proplet:local` - Proplet with FL endpoints (used by all proplet instances)
+
+> **Note**: Building these images may take several minutes, especially the Rust-based proplet. Subsequent builds will be faster due to Docker layer caching.
+
+## Step 3: Start Services
 
 From the repository root:
 
@@ -34,13 +53,19 @@ From the repository root:
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
 ```
 
+> **Alternative**: You can combine building and starting in one command:
+>
+> ```bash
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d --build
+> ```
+
 This starts:
 
 - Full SuperMQ production stack (Auth, Domains, Clients, Channels, RabbitMQ, NATS, MQTT Adapter, Nginx)
 - FL-specific services (Model Registry, Aggregator, Local Data Store, Coordinator)
 - Propeller services (Manager, Proplets)
 
-## Step 3: Provision SuperMQ Resources
+## Step 4: Provision SuperMQ Resources
 
 **IMPORTANT**: Before the manager and proplets can connect to MQTT, you must provision the necessary SuperMQ resources (domain, channel, and clients).
 
@@ -55,9 +80,7 @@ This starts:
 From the repository root:
 
 ```bash
-cd examples/fl-demo
-python3 provision-smq.py
-cd ../..
+(cd examples/fl-demo && python3 provision-smq.py)
 ```
 
 The script will:
@@ -80,7 +103,7 @@ If you need to manually update the compose file, edit:
 
 Or set them as environment variables in your `docker/.env` file.
 
-## Step 4: Restart Services After Provisioning
+## Step 5: Restart Services After Provisioning
 
 Restart the manager and proplets to pick up the new credentials:
 
@@ -101,7 +124,7 @@ curl http://localhost:7070/health
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep -i "connected\|mqtt"
 ```
 
-## Step 5: Initialize Model Registry
+## Step 6: Initialize Model Registry
 
 Before starting a round, ensure the model registry has an initial model:
 
@@ -121,7 +144,7 @@ curl -X POST http://localhost:8084/models \
   }'
 ```
 
-## Step 6: Trigger a Federated Learning Round
+## Step 7: Trigger a Federated Learning Round
 
 ### Option A: Using MQTT (via nginx)
 
@@ -156,6 +179,13 @@ mosquitto_pub -h localhost -p 1883 \
 
 ### Option B: Using HTTP API (Manager)
 
+> **Note**: If you get a 404 error, ensure the manager was built from source (see Step 2). You can rebuild and restart:
+>
+> ```bash
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env build manager
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d manager
+> ```
+
 ```bash
 curl -X POST http://localhost:7070/fl/experiments \
   -H "Content-Type: application/json" \
@@ -175,9 +205,10 @@ curl -X POST http://localhost:7070/fl/experiments \
 
 For a complete end-to-end test, use the Python script which handles the correct API format:
 
+From the repository root:
+
 ```bash
-cd examples/fl-demo
-python3 test-fl-http.py
+(cd examples/fl-demo && python3 test-fl-http.py)
 ```
 
 This script:
@@ -189,16 +220,7 @@ This script:
 - Waits for aggregation
 - Verifies the aggregated model
 
-This script:
-
-- Verifies all services are running
-- Creates an initial model if needed
-- Configures an experiment via the Manager API
-- Simulates client training and updates
-- Waits for aggregation
-- Verifies the aggregated model
-
-## Step 7: Monitor Round Progress
+## Step 8: Monitor Round Progress
 
 ### View Logs
 
