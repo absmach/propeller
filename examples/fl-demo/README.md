@@ -35,13 +35,14 @@ From the repository root:
 From the repository root:
 
 ```bash
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env build manager proplet proplet-2 proplet-3
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env build manager proplet proplet-2 proplet-3 coordinator-http
 ```
 
 This builds:
 
 - `propeller-manager:local` - Manager with FL endpoints
 - `propeller-proplet:local` - Proplet with FL endpoints (used by all proplet instances)
+- `supermq-coordinator-http` - Coordinator with MQTT authentication support
 
 > **Note**: Building these images may take several minutes, especially the Rust-based proplet. Subsequent builds will be faster due to Docker layer caching.
 
@@ -105,18 +106,24 @@ Or set them as environment variables in your `docker/.env` file.
 
 ## Step 5: Restart Services After Provisioning
 
-**IMPORTANT**: After provisioning, you must restart the manager and proplets to pick up the new credentials. The provisioning script updates `compose.yaml` with the new client IDs, keys, and channel ID.
+**IMPORTANT**: After provisioning, you must restart the manager, coordinator, and proplets to pick up the new credentials. The provisioning script updates `compose.yaml` with the new client IDs, keys, and channel ID.
 
 From the repository root:
 
 ```bash
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager proplet proplet-2 proplet-3
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart manager coordinator-http proplet proplet-2 proplet-3
 ```
 
-> **Note**: If services don't restart properly, you may need to recreate them:
+> **Note**: If services don't restart properly, or if the manager container exited, you need to recreate them:
 >
 > ```bash
-> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d manager proplet proplet-2 proplet-3
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d manager coordinator-http proplet proplet-2 proplet-3
+> ```
+>
+> **Important**: After recreating, wait a few seconds for services to start, then verify they're running:
+>
+> ```bash
+> docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps manager coordinator-http proplet proplet-2 proplet-3
 > ```
 
 ### Verify Services Are Running
@@ -132,15 +139,27 @@ curl http://localhost:7070/health
 
 # Check manager MQTT connection
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep -i "connected\|mqtt\|subscribe"
+
+# Check coordinator is running and accessible
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps coordinator-http
+curl http://localhost:8086/health
+
+# Verify proplet is using correct channel ID (should show new channel ID, not old one)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet | grep -i "channel\|subscribe" | head -5
 ```
 
 > **Note**: If the manager health check fails, check the logs:
+>
 > ```bash
 > docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager
 > ```
+>
 > Common issues:
+>
 > - Manager not connecting to MQTT: Verify credentials match provisioning output
 > - Port 7070 not accessible: Ensure manager container is running and port is exposed
+> - Coordinator connection refused: Ensure coordinator-http service is running (`docker compose ps coordinator-http`)
+> - Proplet using old channel ID: Restart proplet containers to pick up new channel ID from compose.yaml
 
 ## Step 6: Initialize Model Registry
 
@@ -289,6 +308,48 @@ curl http://localhost:8084/models/1
    ```bash
    docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps mqtt-adapter
    ```
+
+### Coordinator Connection Refused
+
+If you see `"connection refused"` when manager tries to connect to coordinator:
+
+1. **Rebuild coordinator** (if you just updated the code):
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env build coordinator-http
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d coordinator-http
+   ```
+2. **Check if coordinator is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps coordinator-http
+   ```
+3. **Check coordinator logs**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs coordinator-http --tail 50
+   ```
+4. **Verify coordinator MQTT credentials**: Ensure `COORDINATOR_CLIENT_ID` and `COORDINATOR_CLIENT_KEY` are set in `compose.yaml` (updated by provisioning script)
+5. **Restart coordinator if needed**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart coordinator-http
+   ```
+6. **Verify coordinator health** (external port is 8086):
+   ```bash
+   curl http://localhost:8086/health
+   ```
+
+### Proplet Using Old Channel ID
+
+If proplet logs show the old channel ID (`f8abb6ef-0cb9-4171-91d8-6d899ae5fe9f`) in MQTT topics instead of the new one:
+
+1. **Verify compose.yaml has new channel ID**: Check that `PROPLET_CHANNEL_ID` matches provisioning output (should be `20e82209-7913-434c-8966-ebae03759997`)
+2. **Restart all proplet instances** to pick up new channel ID:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart proplet proplet-2 proplet-3
+   ```
+3. **Verify new channel ID is being used**: Check logs for the new channel ID in topic names:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet | grep -i "subscribe\|channel" | head -5
+   ```
+   The topic should contain the new channel ID: `m/.../c/20e82209-7913-434c-8966-ebae03759997/...`
 
 ### Manager Health Endpoint Not Responding
 

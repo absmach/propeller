@@ -101,11 +101,19 @@ func main() {
 	if mqttClientID == "" {
 		mqttClientID = "fl-coordinator"
 	}
+	mqttUsername := os.Getenv("MQTT_USERNAME")
+	mqttPassword := os.Getenv("MQTT_PASSWORD")
 
 	if mqttBroker != "" {
 		opts := mqtt.NewClientOptions()
 		opts.AddBroker(mqttBroker)
 		opts.SetClientID(mqttClientID)
+		if mqttUsername != "" {
+			opts.SetUsername(mqttUsername)
+		}
+		if mqttPassword != "" {
+			opts.SetPassword(mqttPassword)
+		}
 		opts.SetAutoReconnect(true)
 		opts.SetConnectRetry(true)
 		opts.SetConnectRetryInterval(5 * time.Second)

@@ -332,29 +332,37 @@ def update_compose_file(compose_file, clients, domain_id, channel_id):
             'id_var': 'PROPLET_CLIENT_ID',
             'key_var': 'PROPLET_CLIENT_KEY',
             'section': 'proplet-3'
+        },
+        'fl-coordinator': {
+            'id_var': 'COORDINATOR_CLIENT_ID',
+            'key_var': 'COORDINATOR_CLIENT_KEY'
         }
     }
     
     # Update domain ID if needed
-    domain_pattern = r'(MANAGER_DOMAIN_ID:\s*\${{MANAGER_DOMAIN_ID:-)([a-f0-9-]+)(}})'
+    # Pattern matches: MANAGER_DOMAIN_ID: ${MANAGER_DOMAIN_ID:-old-domain-id}
+    domain_pattern = r'(MANAGER_DOMAIN_ID:\s*\$\{MANAGER_DOMAIN_ID:-)([a-f0-9-]+)(\})'
     def replace_domain(match):
         return f"{match.group(1)}{domain_id}{match.group(3)}"
     content = re.sub(domain_pattern, replace_domain, content)
     
     # Update all PROPLET_DOMAIN_ID occurrences
-    proplet_domain_pattern = r'(PROPLET_DOMAIN_ID:\s*\${{PROPLET_DOMAIN_ID:-)([a-f0-9-]+)(}})'
+    # Pattern matches: PROPLET_DOMAIN_ID: ${PROPLET_DOMAIN_ID:-old-domain-id}
+    proplet_domain_pattern = r'(PROPLET_DOMAIN_ID:\s*\$\{PROPLET_DOMAIN_ID:-)([a-f0-9-]+)(\})'
     def replace_proplet_domain(match):
         return f"{match.group(1)}{domain_id}{match.group(3)}"
     content = re.sub(proplet_domain_pattern, replace_proplet_domain, content)
     
     # Update channel ID if needed
-    channel_pattern = r'(MANAGER_CHANNEL_ID:\s*\${{MANAGER_CHANNEL_ID:-)([a-f0-9-]+)(}})'
+    # Pattern matches: MANAGER_CHANNEL_ID: ${MANAGER_CHANNEL_ID:-old-channel-id}
+    channel_pattern = r'(MANAGER_CHANNEL_ID:\s*\$\{MANAGER_CHANNEL_ID:-)([a-f0-9-]+)(\})'
     def replace_channel(match):
         return f"{match.group(1)}{channel_id}{match.group(3)}"
     content = re.sub(channel_pattern, replace_channel, content)
     
     # Update all PROPLET_CHANNEL_ID occurrences
-    proplet_channel_pattern = r'(PROPLET_CHANNEL_ID:\s*\${{PROPLET_CHANNEL_ID:-)([a-f0-9-]+)(}})'
+    # Pattern matches: PROPLET_CHANNEL_ID: ${PROPLET_CHANNEL_ID:-old-channel-id}
+    proplet_channel_pattern = r'(PROPLET_CHANNEL_ID:\s*\$\{PROPLET_CHANNEL_ID:-)([a-f0-9-]+)(\})'
     def replace_proplet_channel(match):
         return f"{match.group(1)}{channel_id}{match.group(3)}"
     content = re.sub(proplet_channel_pattern, replace_proplet_channel, content)
@@ -376,8 +384,8 @@ def update_compose_file(compose_file, clients, domain_id, channel_id):
         
         # Pattern to match the environment variable lines
         # Match: MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID:-old-value}
-        id_pattern = rf'({id_var}:\s*\${{{id_var}:-)([a-f0-9-]+)(}})'
-        key_pattern = rf'({key_var}:\s*\${{{key_var}:-)([a-f0-9-]+)(}})'
+        id_pattern = rf'({id_var}:\s*\$\{{{id_var}:-)([a-f0-9-]+)(\}})'
+        key_pattern = rf'({key_var}:\s*\$\{{{key_var}:-)([a-f0-9-]+)(\}})'
         
         # Replace ID using a function to avoid regex group reference issues
         def replace_id(match):
@@ -389,6 +397,29 @@ def update_compose_file(compose_file, clients, domain_id, channel_id):
         
         content = re.sub(id_pattern, replace_id, content)
         content = re.sub(key_pattern, replace_key, content)
+    
+    # Update coordinator credentials if fl-coordinator client exists
+    if 'fl-coordinator' in clients:
+        coordinator_client = clients['fl-coordinator']
+        coordinator_id = coordinator_client.get("id")
+        coordinator_key = coordinator_client.get("credentials", {}).get("secret", "N/A")
+        
+        if coordinator_id and coordinator_key != "N/A":
+            # Update COORDINATOR_CLIENT_ID in MQTT_CLIENT_ID and MQTT_USERNAME
+            # Pattern matches: MQTT_CLIENT_ID: ${COORDINATOR_CLIENT_ID:-fl-coordinator}
+            coordinator_id_pattern = r'(MQTT_CLIENT_ID:\s*\$\{COORDINATOR_CLIENT_ID:-)([^}]+)(\})'
+            coordinator_username_pattern = r'(MQTT_USERNAME:\s*\$\{COORDINATOR_CLIENT_ID:-)([^}]+)(\})'
+            coordinator_key_pattern = r'(MQTT_PASSWORD:\s*\$\{COORDINATOR_CLIENT_KEY:-)([^}]*)(\})'
+            
+            def replace_coordinator_id(match):
+                return f"{match.group(1)}{coordinator_id}{match.group(3)}"
+            
+            def replace_coordinator_key(match):
+                return f"{match.group(1)}{coordinator_key}{match.group(3)}"
+            
+            content = re.sub(coordinator_id_pattern, replace_coordinator_id, content)
+            content = re.sub(coordinator_username_pattern, replace_coordinator_id, content)
+            content = re.sub(coordinator_key_pattern, replace_coordinator_key, content)
     
     if content != original_content:
         # Create backup
