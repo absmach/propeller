@@ -263,7 +263,9 @@ SuperMQ auth service requires an EdDSA key file. Generate it before starting ser
 From the `examples/fl-demo` directory:
 
 ```bash
+cd examples/fl-demo
 ./generate-auth-key.sh
+cd ../..
 ```
 
 This will create a key file at `keys/active.key` that will be mounted into the auth service.

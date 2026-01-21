@@ -71,13 +71,47 @@ def login():
         return None
 
 
+def get_existing_domain(token):
+    """Check if domain already exists by route."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        # List all domains and check if route exists
+        response = requests.get(
+            f"{DOMAINS_URL}/domains",
+            headers=headers,
+            timeout=10
+        )
+        response.raise_for_status()
+        domains_data = response.json()
+        domains_list = domains_data.get("domains", [])
+        
+        for d in domains_list:
+            if d.get("route") == DOMAIN_ROUTE or d.get("name") == DOMAIN_NAME:
+                print(f"✓ Found existing domain: {d.get('id')} (route: {d.get('route')})")
+                return d
+        return None
+    except requests.exceptions.RequestException as e:
+        # If we can't list domains, continue and try to create
+        return None
+
+
 def create_domain(token):
     """Create or get domain."""
     print("\n=== Creating Domain ===")
+    
+    # First, check if domain already exists
+    existing_domain = get_existing_domain(token)
+    if existing_domain:
+        return existing_domain
+    
+    # Domain data - note: "permission" is not a valid field in the API
     domain_data = {
         "name": DOMAIN_NAME,
-        "route": DOMAIN_ROUTE,
-        "permission": "admin"
+        "route": DOMAIN_ROUTE
     }
     
     headers = {
@@ -98,20 +132,26 @@ def create_domain(token):
             domain = response.json()
             print(f"✓ Domain created: {domain.get('id')}")
             return domain
+        elif response.status_code == 400:
+            # Check if it's a "route not available" error
+            error_text = response.text.lower()
+            if "route not available" in error_text or "route" in error_text:
+                print("Route already exists, fetching existing domain...")
+                # Try to get the existing domain
+                existing = get_existing_domain(token)
+                if existing:
+                    return existing
+                print("✗ Route exists but could not retrieve domain")
+                return None
+            else:
+                print(f"✗ Bad request: {response.text}")
+                return None
         elif response.status_code == 409:
-            # Domain already exists, try to get it
-            print("Domain already exists, fetching...")
-            response = requests.get(
-                f"{DOMAINS_URL}/domains",
-                headers=headers,
-                timeout=10
-            )
-            response.raise_for_status()
-            domains = response.json().get("domains", [])
-            for d in domains:
-                if d.get("name") == DOMAIN_NAME or d.get("route") == DOMAIN_ROUTE:
-                    print(f"✓ Using existing domain: {d.get('id')}")
-                    return d
+            # Domain already exists (ID conflict)
+            print("Domain ID already exists, fetching...")
+            existing = get_existing_domain(token)
+            if existing:
+                return existing
             print("✗ Domain exists but could not retrieve it")
             return None
         else:
@@ -228,6 +268,8 @@ def create_channel(token, domain_id):
 def connect_clients_to_channel(token, domain_id, client_ids, channel_id):
     """Connect clients to channel."""
     print("\n=== Connecting Clients to Channel ===")
+    # Note: The API expects channel_ids and client_ids (with underscores)
+    # and types must be valid connection types
     connection_data = {
         "client_ids": client_ids,
         "channel_ids": [channel_id],
@@ -241,7 +283,7 @@ def connect_clients_to_channel(token, domain_id, client_ids, channel_id):
     
     try:
         response = requests.post(
-            f"{CHANNELS_URL}/{domain_id}/connect",
+            f"{CHANNELS_URL}/{domain_id}/channels/connect",
             json=connection_data,
             headers=headers,
             timeout=10
