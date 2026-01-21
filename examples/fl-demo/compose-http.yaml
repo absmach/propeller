@@ -62,6 +62,7 @@ services:
       SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY:-secret}
       SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST:-supermq-spicedb}
       SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT:-50051}
+      SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
       SMQ_AUTH_HTTP_HOST: ${SMQ_AUTH_HTTP_HOST:-0.0.0.0}
       SMQ_AUTH_HTTP_PORT: ${SMQ_AUTH_HTTP_PORT:-9002}
       SMQ_AUTH_GRPC_HOST: ${SMQ_AUTH_GRPC_HOST:-0.0.0.0}
@@ -73,9 +74,12 @@ services:
       SMQ_AUTH_DB_NAME: ${SMQ_AUTH_DB_NAME:-auth}
       SMQ_AUTH_DB_SSL_MODE: disable
       SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL:-redis://supermq-auth-redis:6379}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
     ports:
       - "${SMQ_AUTH_HTTP_PORT:-9002}:${SMQ_AUTH_HTTP_PORT:-9002}"
       - "${SMQ_AUTH_GRPC_PORT:-7001}:${SMQ_AUTH_GRPC_PORT:-7001}"
+    volumes:
+      - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     networks:
       - fl-demo-http
 
@@ -117,9 +121,13 @@ services:
       SMQ_DOMAINS_DB_SSL_MODE: disable
       SMQ_DOMAINS_CACHE_URL: ${SMQ_DOMAINS_CACHE_URL:-redis://supermq-domains-redis:6379}
       SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     ports:
       - "${SMQ_DOMAINS_HTTP_PORT:-9003}:${SMQ_DOMAINS_HTTP_PORT:-9003}"
       - "${SMQ_DOMAINS_GRPC_PORT:-7002}:${SMQ_DOMAINS_GRPC_PORT:-7002}"
+    volumes:
+      - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     networks:
       - fl-demo-http
 
@@ -152,7 +160,7 @@ services:
       SMQ_CLIENTS_HTTP_HOST: ${SMQ_CLIENTS_HTTP_HOST:-0.0.0.0}
       SMQ_CLIENTS_HTTP_PORT: ${SMQ_CLIENTS_HTTP_PORT:-9006}
       SMQ_CLIENTS_GRPC_HOST: ${SMQ_CLIENTS_GRPC_HOST:-0.0.0.0}
-      SMQ_CLIENTS_GRPC_PORT: ${SMQ_CLIENTS_GRPC_PORT:-7001}
+      SMQ_CLIENTS_GRPC_PORT: ${SMQ_CLIENTS_GRPC_PORT:-7004}
       SMQ_CLIENTS_DB_HOST: ${SMQ_CLIENTS_DB_HOST:-supermq-clients-db}
       SMQ_CLIENTS_DB_PORT: ${SMQ_CLIENTS_DB_PORT:-5432}
       SMQ_CLIENTS_DB_USER: ${SMQ_CLIENTS_DB_USER:-clients}
@@ -161,9 +169,13 @@ services:
       SMQ_CLIENTS_DB_SSL_MODE: disable
       SMQ_CLIENTS_CACHE_URL: ${SMQ_CLIENTS_CACHE_URL:-redis://supermq-clients-redis:6379}
       SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     ports:
       - "${SMQ_CLIENTS_HTTP_PORT:-9006}:${SMQ_CLIENTS_HTTP_PORT:-9006}"
-      - "${SMQ_CLIENTS_GRPC_PORT:-7001}:${SMQ_CLIENTS_GRPC_PORT:-7001}"
+      - "${SMQ_CLIENTS_GRPC_PORT:-7004}:${SMQ_CLIENTS_GRPC_PORT:-7004}"
+    volumes:
+      - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     networks:
       - fl-demo-http
 
@@ -205,9 +217,13 @@ services:
       SMQ_CHANNELS_DB_SSL_MODE: disable
       SMQ_CHANNELS_CACHE_URL: ${SMQ_CHANNELS_CACHE_URL:-redis://supermq-channels-redis:6379}
       SMQ_AUTH_GRPC_URL: ${SMQ_AUTH_GRPC_URL:-tcp://supermq-auth:7001}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM:-EdDSA}
+      SMQ_SPICEDB_SCHEMA_FILE: ${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     ports:
       - "${SMQ_CHANNELS_HTTP_PORT:-9005}:${SMQ_CHANNELS_HTTP_PORT:-9005}"
       - "${SMQ_CHANNELS_GRPC_PORT:-7003}:${SMQ_CHANNELS_GRPC_PORT:-7003}"
+    volumes:
+      - ../../docker/spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE:-/schema.zed}
     networks:
       - fl-demo-http
 
@@ -249,10 +265,10 @@ services:
     environment:
       SMQ_MQTT_ADAPTER_LOG_LEVEL: ${SMQ_MQTT_ADAPTER_LOG_LEVEL:-info}
       SMQ_MQTT_ADAPTER_MQTT_PORT: ${SMQ_MQTT_ADAPTER_MQTT_PORT:-1883}
-      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-tcp://supermq-clients:7001}
+      SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL:-tcp://supermq-clients:7004}
       SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL:-tcp://supermq-channels:7003}
       SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL:-tcp://supermq-domains:7002}
-      SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL:-tcp://supermq-rabbitmq:5672}
+      SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL:-nats://supermq-nats:4222}
     ports:
       - "1883:1883"
       - "8087:8080"

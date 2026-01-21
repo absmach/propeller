@@ -96,7 +96,7 @@ This demo includes a minimal SuperMQ setup in `compose-http.yaml`. The SuperMQ s
 
 - The compose file includes all necessary SuperMQ services
 - Set `SMQ_RELEASE_TAG` environment variable to specify SuperMQ version (defaults to `latest`)
-- Example: `SMQ_RELEASE_TAG=v0.18.1 docker compose up -d`
+- Example: `SMQ_RELEASE_TAG=v0.18.1 docker compose -f compose-http.yaml up -d`
 
 #### Option 2: Use external SuperMQ instance
 
@@ -108,16 +108,27 @@ This demo includes a minimal SuperMQ setup in `compose-http.yaml`. The SuperMQ s
 
 ### Build Client Wasm
 
+From the repository root:
+
 ```bash
 cd examples/fl-demo/client-wasm
 GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go
+cd ..
 ```
 
 ### Start Services
 
+From the repository root:
+
 ```bash
 cd examples/fl-demo
-docker compose up -d
+docker compose -f compose-http.yaml up -d
+```
+
+Or if you're already in the `examples/fl-demo` directory:
+
+```bash
+docker compose -f compose-http.yaml up -d
 ```
 
 ### Trigger a Round
@@ -139,15 +150,15 @@ mosquitto_pub -h localhost -p 1883 -t "fl/rounds/start" -m '{
 
 ### Monitor Progress
 
-- Coordinator logs: `docker compose logs -f coordinator`
-- Manager logs: `docker compose logs -f manager`
-- Check aggregated models: `docker compose exec model-server ls -la /tmp/fl-models/`
+- Coordinator logs: `docker compose -f compose-http.yaml logs -f coordinator`
+- Manager logs: `docker compose -f compose-http.yaml logs -f manager`
+- Check aggregated models: `docker compose -f compose-http.yaml exec model-server ls -la /tmp/fl-models/`
 
 ### Optional: Using Test Scripts
 
 The demo includes Python test scripts for automated testing:
 
-1. **Install Python dependencies**:
+1. **Install Python dependencies** (from `examples/fl-demo` directory):
 
    ```bash
    pip install -r requirements.txt
