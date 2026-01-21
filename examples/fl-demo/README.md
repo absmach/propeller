@@ -81,7 +81,11 @@ Propeller remains **workload-agnostic**. This demo shows how to build FL as an e
 
 ### SuperMQ Setup
 
-This demo includes a minimal SuperMQ setup in `compose-http.yaml`. The SuperMQ services include:
+This demo supports three ways to set up SuperMQ:
+
+#### Option 1: Use the included minimal SuperMQ setup (default, for quick demos)
+
+The `compose-http.yaml` file includes a minimal SuperMQ setup with all necessary services:
 
 - **SpiceDB**: Authorization service
 - **Auth Service**: Authentication and authorization
@@ -92,19 +96,153 @@ This demo includes a minimal SuperMQ setup in `compose-http.yaml`. The SuperMQ s
 - **NATS**: Message streaming
 - **MQTT Adapter**: MQTT protocol adapter (exposed on port 1883)
 
-#### Option 1: Use the included SuperMQ setup (default)
+**Usage:**
+```bash
+cd examples/fl-demo
+SMQ_RELEASE_TAG=v0.18.1 docker compose -f compose-http.yaml up -d
+```
 
-- The compose file includes all necessary SuperMQ services
-- Set `SMQ_RELEASE_TAG` environment variable to specify SuperMQ version (defaults to `latest`)
-- Example: `SMQ_RELEASE_TAG=v0.18.1 docker compose -f compose-http.yaml up -d`
+#### Option 2: Use the production SuperMQ setup (recommended for production)
 
-#### Option 2: Use external SuperMQ instance
+Use the full production SuperMQ setup from `docker/compose.yaml` with the FL demo extension.
+
+**Prerequisites:**
+
+The base `docker/compose.yaml` file requires a `docker/.env` file with SuperMQ environment variables. This is a requirement of the base SuperMQ setup (the nginx service explicitly references it), not something added by the FL demo.
+
+**If you already have `docker/.env`:**
+
+If you already have a `docker/.env` file (e.g., from a previous SuperMQ setup), you can use it directly - no changes needed! Just run:
+
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
+```
+
+**If you need to create `docker/.env`:**
+
+If you don't have a `docker/.env` file yet, create one with SuperMQ environment variables. Here's a minimal example based on the defaults used in `compose-http.yaml`:
+
+```bash
+# SuperMQ Release Tag
+SMQ_RELEASE_TAG=latest
+
+# SpiceDB Configuration
+SMQ_SPICEDB_PRE_SHARED_KEY=secret
+SMQ_SPICEDB_DATASTORE_ENGINE=postgres
+SMQ_SPICEDB_DB_USER=spicedb
+SMQ_SPICEDB_DB_PASS=spicedb
+SMQ_SPICEDB_DB_NAME=spicedb
+SMQ_SPICEDB_DB_PORT=5432
+SMQ_SPICEDB_HOST=spicedb
+SMQ_SPICEDB_PORT=50051
+SMQ_SPICEDB_SCHEMA_FILE=./spicedb/schema.zed
+
+# Auth Service
+SMQ_AUTH_DB_USER=auth
+SMQ_AUTH_DB_PASS=auth
+SMQ_AUTH_DB_NAME=auth
+SMQ_AUTH_DB_PORT=5432
+SMQ_AUTH_HTTP_PORT=9001
+SMQ_AUTH_GRPC_PORT=7001
+SMQ_AUTH_SECRET_KEY=your-secret-key-here
+SMQ_AUTH_CACHE_URL=redis://supermq-auth-redis:6379/0
+
+# Domains Service
+SMQ_DOMAINS_DB_USER=domains
+SMQ_DOMAINS_DB_PASS=domains
+SMQ_DOMAINS_DB_NAME=domains
+SMQ_DOMAINS_DB_PORT=5432
+SMQ_DOMAINS_HTTP_PORT=9003
+SMQ_DOMAINS_GRPC_PORT=7003
+SMQ_DOMAINS_CACHE_URL=redis://supermq-domains-redis:6379/0
+
+# Clients Service
+SMQ_CLIENTS_DB_USER=clients
+SMQ_CLIENTS_DB_PASS=clients
+SMQ_CLIENTS_DB_NAME=clients
+SMQ_CLIENTS_DB_PORT=5432
+SMQ_CLIENTS_HTTP_PORT=9006
+SMQ_CLIENTS_GRPC_PORT=7006
+SMQ_CLIENTS_CACHE_URL=redis://supermq-clients-redis:6379/0
+
+# Channels Service
+SMQ_CHANNELS_DB_USER=channels
+SMQ_CHANNELS_DB_PASS=channels
+SMQ_CHANNELS_DB_NAME=channels
+SMQ_CHANNELS_DB_PORT=5432
+SMQ_CHANNELS_HTTP_PORT=9005
+SMQ_CHANNELS_GRPC_PORT=7005
+SMQ_CHANNELS_CACHE_URL=redis://supermq-channels-redis:6379/0
+
+# RabbitMQ
+SMQ_RABBITMQ_COOKIE=secret
+SMQ_RABBITMQ_USER=guest
+SMQ_RABBITMQ_PASS=guest
+SMQ_RABBITMQ_VHOST=/
+SMQ_RABBITMQ_PORT=5672
+SMQ_RABBITMQ_HTTP_PORT=15672
+SMQ_RABBITMQ_WS_PORT=15675
+
+# NATS
+SMQ_NATS_PORT=4222
+SMQ_NATS_HTTP_PORT=8222
+SMQ_NATS_JETSTREAM_KEY=u7wFoAPgXpDueXOFldBnXDh4xjnSOyEJ2Cb8Z5SZvGLzIZ3U4exWhhoIBZHzuNvh
+
+# MQTT Adapter
+SMQ_MQTT_ADAPTER_MQTT_PORT=1883
+SMQ_MQTT_ADAPTER_WS_PORT=8080
+SMQ_MQTT_ADAPTER_MQTT_TARGET_HOST=rabbitmq
+SMQ_MQTT_ADAPTER_MQTT_TARGET_PORT=1883
+SMQ_MQTT_ADAPTER_MQTT_TARGET_USERNAME=guest
+SMQ_MQTT_ADAPTER_MQTT_TARGET_PASSWORD=guest
+SMQ_MQTT_ADAPTER_WS_TARGET_HOST=rabbitmq
+SMQ_MQTT_ADAPTER_WS_TARGET_PORT=15675
+
+# Event Store
+SMQ_ES_URL=nats://supermq-nats:4222
+SMQ_MESSAGE_BROKER_URL=nats://supermq-nats:4222
+
+# Service URLs (gRPC)
+SMQ_AUTH_GRPC_URL=auth:7001
+SMQ_DOMAINS_GRPC_URL=domains:7003
+SMQ_CLIENTS_GRPC_URL=clients:7006
+SMQ_CHANNELS_GRPC_URL=channels:7005
+
+# Other required variables (set to empty or defaults as needed)
+SMQ_ALLOW_UNVERIFIED_USER=true
+SMQ_SEND_TELEMETRY=false
+SMQ_JAEGER_URL=
+SMQ_JAEGER_TRACE_RATIO=0.0
+```
+
+> **Note**: This is a minimal example. For production, you should:
+> - Use strong, unique passwords and keys
+> - Configure proper SSL/TLS certificates
+> - Set up proper authentication and authorization
+> - Refer to the SuperMQ documentation for the complete list of variables and production best practices
+
+**Usage (from repository root):**
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
+```
+
+**To build and start:**
+```bash
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d --build
+```
+
+This approach:
+- Uses the full production SuperMQ stack with all services (Users, Groups, Notifications, HTTP/WS/CoAP adapters, Nginx, etc.)
+- Extends the base setup with FL-specific services
+- Allows you to leverage production-grade SuperMQ features
+
+> **Tip**: If you want to avoid creating a `.env` file, use Option 1 (`compose-http.yaml`) which includes defaults for all variables.
+
+#### Option 3: Use external SuperMQ instance
 
 - If you have SuperMQ running elsewhere, update the `MQTT_BROKER` addresses in the compose file
 - Or set environment variables to point to your external SuperMQ instance
 - Update `MANAGER_MQTT_ADDRESS` and `PROPLET_MQTT_ADDRESS` to point to your SuperMQ MQTT adapter
-
-> **Note**: For production deployments, use the full SuperMQ setup from `docker/compose.yaml` or your SuperMQ repository.
 
 ### Build Client Wasm
 
@@ -120,6 +258,8 @@ cd ../../..
 
 SuperMQ auth service requires an EdDSA key file. Generate it before starting services:
 
+**For minimal setup (compose-http.yaml):**
+
 From the `examples/fl-demo` directory:
 
 ```bash
@@ -128,20 +268,29 @@ From the `examples/fl-demo` directory:
 
 This will create a key file at `keys/active.key` that will be mounted into the auth service.
 
+**For production setup:**
+
+The production SuperMQ setup uses the auth service from the base compose file. Ensure your `docker/.env` file includes the necessary auth configuration. If you need to generate keys, refer to the SuperMQ documentation or use the same script and mount the keys appropriately in your production setup.
+
 ### Start Services
+
+**For quick demo (minimal SuperMQ setup):**
+
+From the `examples/fl-demo` directory:
+
+```bash
+docker compose -f compose-http.yaml up -d
+```
+
+**For production setup (full SuperMQ stack):**
 
 From the repository root:
 
 ```bash
-cd examples/fl-demo
-docker compose -f compose-http.yaml up -d
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
 ```
 
-Or if you're already in the `examples/fl-demo` directory:
-
-```bash
-docker compose -f compose-http.yaml up -d
-```
+> **Note**: If you already have a `docker/.env` file, you can use it directly. If not, see the "SuperMQ Setup" section above for a minimal example `.env` file.
 
 ### Trigger a Round
 
