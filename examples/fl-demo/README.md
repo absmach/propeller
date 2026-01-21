@@ -374,7 +374,9 @@ echo "PROPLET_2_CLIENT_ID=$PROPLET_2_CLIENT_ID"
 echo "PROPLET_3_CLIENT_ID=$PROPLET_3_CLIENT_ID"
 
 # Configure experiment with CLIENT_IDs and GHCR WASM image
-# Replace YOUR_GITHUB_USERNAME with your actual GitHub username
+# IMPORTANT: Replace jeffmboya with your actual GitHub username (lowercase)
+# GHCR repository names are case-sensitive - use the EXACT same name you used when pushing
+# Example: If you pushed to ghcr.io/jeffmboya/fl-client-wasm:latest, use that exact name here
 curl -X POST http://localhost:7070/fl/experiments \
   -H "Content-Type: application/json" \
   -d "{
@@ -385,7 +387,7 @@ curl -X POST http://localhost:7070/fl/experiments \
     \"hyperparams\": {\"epochs\": 1, \"lr\": 0.01, \"batch_size\": 16},
     \"k_of_n\": 3,
     \"timeout_s\": 60,
-    \"task_wasm_image\": \"ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest\"
+    \"task_wasm_image\": \"ghcr.io/jeffmboya/fl-client-wasm:latest\"
   }"
 
 # Expected response:
@@ -393,7 +395,7 @@ curl -X POST http://localhost:7070/fl/experiments \
 
 # Verify proplets are requesting the WASM from GHCR:
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "Requesting binary from registry"
-# Should show: "Requesting binary from registry: ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest"
+# Should show: "Requesting binary from registry: ghcr.io/jeffmboya/fl-client-wasm:latest"
 ```
 
 > **CRITICAL**: The `participants` array **MUST** use SuperMQ CLIENT_IDs (UUIDs from your `docker/.env` file), **NOT** instance IDs like `"proplet-1"`, `"proplet-2"`, `"proplet-3"`.
@@ -448,6 +450,7 @@ docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-fil
 
 # If you see warnings like "skipping participant: proplet not found" with "proplet-1", 
 # it means you used instance IDs instead of CLIENT_IDs - see Troubleshooting section.
+```
 
 **2. Verify proplets are requesting WASM from GHCR:**
 
@@ -653,6 +656,208 @@ If you see this error in manager logs:
    You should see 3 "launched task" messages with UUID proplet_ids, not warnings about "proplet not found".
 
 **Why this happens**: Proplets register themselves with their SuperMQ CLIENT_ID (UUID), not their instance ID. The manager looks up proplets by the ID they registered with, so you must use CLIENT_IDs in the participants array.
+
+### "Round timeout exceeded" with 0 updates - WASM Not Executing
+
+If you see this in coordinator logs:
+```
+WARN Round timeout exceeded round_id=r-1769011931 timeout_s=60 updates=0
+```
+
+And proplet logs show `"Requesting binary from registry: ghcr.io/..."` but no execution, the issue is that **the proxy service is not fetching and serving the WASM binary**.
+
+**Root Cause**: The proxy service must:
+1. Be running and connected to MQTT
+2. Be subscribed to the `registry/proplet` topic (where proplets request binaries)
+3. Have authentication configured for GHCR (**REQUIRED** - GHCR packages are private by default)
+4. Fetch the binary from GHCR and chunk it
+5. Publish chunks to `registry/server` topic (where proplets receive them)
+
+**Common Issues**:
+- **"Channel full, dropping container request"**: Fixed in latest code - channel buffer increased to handle concurrent requests
+- **"403 Forbidden"**: Authentication not configured - see Solution #3 below
+- **"failed to fetch container"**: Check authentication and repository name (case-sensitive)
+
+**Diagnosis Steps**:
+
+1. **Check if proxy service is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps proxy
+   ```
+   Should show `propeller-proxy` container running.
+
+2. **Check proxy logs for errors**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proxy --tail 50
+   ```
+   Look for:
+   - Connection errors
+   - "failed to fetch container" errors
+   - Authentication errors
+   - "Received container request" messages (good sign)
+
+3. **Verify proxy is subscribed to registry topic**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proxy | grep -i "subscribe\|registry"
+   ```
+   Should show subscription to `registry/proplet` topic.
+
+4. **Check if proxy received binary requests**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proxy | grep -i "container request\|app_name"
+   ```
+   Should show requests for `ghcr.io/jeffmboya/fl-client-wasm:latest`.
+
+5. **Check if proplets are receiving chunks**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "chunk\|assembled\|binary"
+   ```
+   Should show "Assembled binary" messages if chunks are being received.
+
+**Solution**:
+
+1. **Check for case sensitivity issues**:
+   
+   If you see errors like:
+   ```
+   "failed to create repository for ghcr.io/JeffMboya/fl-client-wasm:latest: invalid reference: invalid repository \"JeffMboya/fl-client-wasm\""
+   ```
+   
+   This means the repository name in your `task_wasm_image` doesn't match the exact name you used when pushing to GHCR. GHCR repository names are **case-sensitive**.
+   
+   **Fix**: Use the **exact same repository name** (including case) that you used when pushing:
+   ```bash
+   # If you pushed to: ghcr.io/jeffmboya/fl-client-wasm:latest (lowercase)
+   # Then use: ghcr.io/jeffmboya/fl-client-wasm:latest (same case)
+   # NOT: ghcr.io/JeffMboya/fl-client-wasm:latest (capitalized)
+   ```
+   
+   To verify what you pushed, check your push command output or your GHCR repository page.
+
+2. **Ensure proxy service is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d proxy
+   ```
+
+3. **Configure GHCR authentication** (REQUIRED for private packages):
+   
+   **IMPORTANT**: GHCR packages are **private by default**, so you **must** configure authentication. If you see `403 Forbidden` errors in proxy logs, authentication is missing or incorrect.
+   
+   **For GHCR with Personal Access Token (PAT)**, use username + password:
+   
+   Add to your `docker/.env` file:
+   ```bash
+   # GHCR Authentication for Proxy (REQUIRED for private packages)
+   PROXY_AUTHENTICATE=true
+   PROXY_REGISTRY_URL=ghcr.io
+   PROXY_REGISTRY_USERNAME=jeffmboya  # Your GitHub username (lowercase, case-sensitive!)
+   PROXY_REGISTRY_PASSWORD=ghp_xxxxx  # Your GitHub PAT token with read:packages permission
+   ```
+   
+   **Important Notes**: 
+   - **Username + Password is required for GHCR** - use your GitHub username (lowercase) and a PAT token as the password
+   - Make sure your GitHub username is **lowercase** (GHCR is case-sensitive)
+   - Ensure your PAT has `read:packages` permission
+   - To create a PAT: GitHub Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token → Select `read:packages` scope
+   - If you see `403 Forbidden` errors, verify:
+     - `PROXY_AUTHENTICATE=true` is set
+     - Username is lowercase and matches your GitHub username exactly
+     - PAT token has `read:packages` permission
+     - Repository name matches exactly (case-sensitive)
+
+3. **Verify proxy has correct domain/channel IDs**:
+   ```bash
+   grep -E '^(PROXY_DOMAIN_ID|PROXY_CHANNEL_ID|PROXY_CLIENT_ID|PROXY_CLIENT_KEY)=' docker/.env
+   ```
+   These should match your manager/proplet domain and channel IDs.
+
+4. **Fix authentication configuration**:
+   
+   If you see `403 Forbidden` errors in proxy logs, check your authentication setup:
+   
+   - **If using username/password**: Set `PROXY_REGISTRY_USERNAME` (lowercase) and `PROXY_REGISTRY_PASSWORD` (your PAT), and remove `PROXY_REGISTRY_TOKEN`
+   - **If using token only**: Set `PROXY_REGISTRY_TOKEN` (your PAT), and remove `PROXY_REGISTRY_USERNAME`
+   - **Do NOT set both** `PROXY_REGISTRY_USERNAME` and `PROXY_REGISTRY_TOKEN` at the same time
+   
+   Also ensure:
+   - Your GitHub username is **lowercase** (GHCR is case-sensitive)
+   - Your PAT has `read:packages` permission
+   - The repository name matches exactly (case-sensitive)
+
+5. **Restart proxy after configuration**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env stop proxy
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d proxy
+   ```
+   
+   **Note**: Use `up -d` instead of `restart` to ensure environment variables are reloaded.
+
+5. **Verify proxy can access GHCR**:
+   Check proxy logs for successful fetches:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proxy | grep -i "sent container chunk\|successfully sent all chunks"
+   ```
+
+**Note**: If your GHCR package is **public**, you may not need authentication. However, GHCR packages are private by default, so you'll likely need to configure authentication.
+
+### Proxy Service Configuration Error
+
+If you see `"failed to load TOML configuration: stat config.toml: no such file or directory"` in proxy logs, the proxy service is missing required environment variables.
+
+**Root Cause**: The proxy service requires environment variables to be set. If they're not set, it tries to load from `config.toml` (which doesn't exist), causing it to crash loop.
+
+**Solution**:
+
+1. **Add proxy configuration to `docker/.env`**:
+
+   ```bash
+   # Proxy Service Configuration (for WASM binary fetching)
+   # Use the same domain and channel as manager/proplet
+   PROXY_DOMAIN_ID=0793165b-f742-420e-a8ba-694c5b6e7e94
+   PROXY_CHANNEL_ID=e5ce767e-76e9-4f74-9c90-95ac904ed0b0
+   
+   # Provision a client for proxy (or reuse manager client for testing)
+   # Option 1: Use manager client credentials (for quick testing)
+   PROXY_CLIENT_ID=ab6eba0a-c598-459b-b3e8-f800b147efe3
+   PROXY_CLIENT_KEY=b0f71208-5073-4276-b204-cb37e4c1ea62
+   
+   # Option 2: Provision a separate client for proxy (recommended for production)
+   # Run: python3 examples/fl-demo/provision-smq.py
+   # Then use the new client ID and key here
+   
+   # GHCR Configuration (for fetching WASM binaries)
+   PROXY_REGISTRY_URL=ghcr.io
+   PROXY_AUTHENTICATE=true
+   PROXY_REGISTRY_USERNAME=jeffmboya
+   PROXY_REGISTRY_TOKEN=<your_github_token>
+   
+   # Optional: Proxy settings
+   PROXY_LOG_LEVEL=info
+   PROXY_MQTT_ADDRESS=tcp://mqtt-adapter:1883
+   PROXY_CHUNK_SIZE=512000
+   ```
+
+2. **Restart proxy service**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart proxy
+   ```
+
+3. **Verify proxy is running**:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env ps proxy
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proxy --tail 20
+   ```
+   
+   Should show successful connection, not TOML errors.
+
+4. **Test proxy can fetch from GHCR**:
+   After proplets request a binary, check proxy logs for:
+   ```
+   Received container request app_name=ghcr.io/jeffmboya/fl-client-wasm:latest
+   sent container chunk to MQTT stream
+   ```
+
+**Quick Fix**: For testing, you can reuse the manager's client credentials for the proxy. For production, provision a separate client for the proxy service.
 
 ## Quick Reference
 
