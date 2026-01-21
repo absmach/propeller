@@ -479,6 +479,37 @@ After a successful round, you should see:
 4. **Coordinator logs**: "Round complete: received k_of_n updates" and "Aggregated model stored"
 5. **Model Registry**: New model version 1 with aggregated weights
 
+### Verifying Weight Updates (w)
+
+The FL client implements logistic regression training that should update both weights `w` and bias `b`. To verify that weights are being updated correctly:
+
+```bash
+# 1. Check initial model (should have w=[0,0,0] and b=0)
+curl http://localhost:8084/models/0
+# Expected: {"w":[0,0,0],"b":0}
+
+# 2. After running a round, check the aggregated model
+curl http://localhost:8084/models/1
+# Expected: {"w":[<non-zero>,<non-zero>,<non-zero>],"b":<non-zero>}
+# The w values should NOT all be zero after training
+
+# 3. Check proplet logs for debug output showing weight updates
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep "DEBUG:"
+# Should show:
+# - "DEBUG: Initial model - w: [0.000000, 0.000000, 0.000000], b: 0.000000"
+# - "DEBUG: First sample - x: [<values>], y: <0 or 1>"
+# - "DEBUG: Final model after training - w: [<non-zero>,<non-zero>,<non-zero>], b: <non-zero>"
+
+# 4. Verify the update payload contains non-zero weights
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep "DEBUG: Update payload"
+# The update payload should show w values that are not all zeros
+```
+
+**Troubleshooting**: If `w` remains `[0,0,0]` after training:
+- Check proplet logs for "DEBUG:" messages to see if weights are being updated during training
+- Verify that datasets contain valid `x` and `y` values (see "Verifying Step 5: Dataset Loading")
+- Ensure the wasm client was rebuilt after code changes: `cd examples/fl-demo/client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go`
+
 ## Verifying Step 5: Dataset Loading from Local Data Store
 
 **Purpose**: Verify that proplets successfully fetch datasets from Local Data Store (Step 5 in the sequence diagram) instead of falling back to synthetic data.

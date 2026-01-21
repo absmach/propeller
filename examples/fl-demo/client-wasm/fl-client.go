@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"time"
@@ -130,39 +131,120 @@ func main() {
 		}
 	}
 
+	// Extract and convert weights from JSON ([]interface{} -> []float64)
+	var weights []float64
+	if wInterface, ok := model["w"]; ok {
+		if wSlice, ok := wInterface.([]interface{}); ok {
+			weights = make([]float64, len(wSlice))
+			for i, v := range wSlice {
+				if f, ok := v.(float64); ok {
+					weights[i] = f
+				}
+			}
+		} else if wSlice, ok := wInterface.([]float64); ok {
+			weights = make([]float64, len(wSlice))
+			copy(weights, wSlice)
+		} else {
+			weights = []float64{0.0, 0.0, 0.0}
+		}
+	} else {
+		weights = []float64{0.0, 0.0, 0.0}
+	}
+
+	// Extract bias
+	var bias float64
+	if bInterface, ok := model["b"]; ok {
+		if b, ok := bInterface.(float64); ok {
+			bias = b
+		}
+	}
+
+	// Debug: Log initial model state
+	if len(dataset) > 0 {
+		firstSample := dataset[0]
+		if x, ok := firstSample["x"].([]interface{}); ok && len(x) >= 3 {
+			if y, ok := firstSample["y"].(float64); ok {
+				fmt.Fprintf(os.Stderr, "DEBUG: Initial model - w: [%.6f, %.6f, %.6f], b: %.6f\n", 
+					weights[0], weights[1], weights[2], bias)
+				fmt.Fprintf(os.Stderr, "DEBUG: First sample - x: [%.3f, %.3f, %.3f], y: %.0f\n",
+					x[0].(float64), x[1].(float64), x[2].(float64), y)
+			}
+		}
+	}
+
 	rand.Seed(time.Now().UnixNano())
-	weights := model["w"].([]float64)
 	
+	// Logistic regression training with SGD
 	for epoch := 0; epoch < epochs; epoch++ {
+		// Shuffle dataset
 		for i := len(dataset) - 1; i > 0; i-- {
 			j := rand.Intn(i + 1)
 			dataset[i], dataset[j] = dataset[j], dataset[i]
 		}
 
+		// Process in batches (or all at once if batch_size is large)
 		for batchStart := 0; batchStart < len(dataset); batchStart += batchSize {
 			batchEnd := batchStart + batchSize
 			if batchEnd > len(dataset) {
 				batchEnd = len(dataset)
 			}
 
+			// Process each sample in the batch
 			for i := batchStart; i < batchEnd; i++ {
 				sample := dataset[i]
-				if x, ok := sample["x"].([]interface{}); ok {
-					for j := range weights {
-						if j < len(x) {
-							if xVal, ok := x[j].(float64); ok {
-								gradient := (xVal - 0.5) * 0.1
-								weights[j] += lr * gradient
-							}
-						}
+				xInterface, xOk := sample["x"].([]interface{})
+				yInterface, yOk := sample["y"].(float64)
+				
+				if !xOk || !yOk {
+					continue
+				}
+
+				// Convert x to []float64
+				x := make([]float64, len(xInterface))
+				for j, v := range xInterface {
+					if f, ok := v.(float64); ok {
+						x[j] = f
 					}
 				}
+
+				// Compute prediction: z = w·x + b
+				z := bias
+				for j := 0; j < len(weights) && j < len(x); j++ {
+					z += weights[j] * x[j]
+				}
+
+				// Sigmoid: p = 1/(1+exp(-z))
+				// Clamp z to prevent overflow
+				if z > 20 {
+					z = 20
+				} else if z < -20 {
+					z = -20
+				}
+				p := 1.0 / (1.0 + math.Exp(-z))
+
+				// Error: err = p - y
+				err := p - yInterface
+
+				// Update weights: w[i] -= lr * err * x[i]
+				for j := 0; j < len(weights) && j < len(x); j++ {
+					weights[j] -= lr * err * x[j]
+				}
+
+				// Update bias: b -= lr * err
+				bias -= lr * err
 			}
 		}
-
-		bias := model["b"].(float64)
-		model["b"] = bias + lr*(rand.Float64()-0.5)*0.1
 	}
+
+	// Update model map with trained weights and bias
+	weightsSlice := make([]float64, len(weights))
+	copy(weightsSlice, weights)
+	model["w"] = weightsSlice
+	model["b"] = bias
+
+	// Debug: Log final model state
+	fmt.Fprintf(os.Stderr, "DEBUG: Final model after training - w: [%.6f, %.6f, %.6f], b: %.6f\n",
+		weights[0], weights[1], weights[2], bias)
 
 	update := map[string]interface{}{
 		"round_id":       roundID,
@@ -188,6 +270,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to marshal update: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Debug: Log the update payload being sent
+	fmt.Fprintf(os.Stderr, "DEBUG: Update payload (first 500 chars): %s\n", 
+		func() string {
+			s := string(updateJSON)
+			if len(s) > 500 {
+				return s[:500] + "..."
+			}
+			return s
+		}())
 
 	fmt.Print(string(updateJSON))
 }
