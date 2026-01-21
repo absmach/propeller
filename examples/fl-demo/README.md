@@ -479,6 +479,122 @@ After a successful round, you should see:
 4. **Coordinator logs**: "Round complete: received k_of_n updates" and "Aggregated model stored"
 5. **Model Registry**: New model version 1 with aggregated weights
 
+## Verifying Step 5: Dataset Loading from Local Data Store
+
+**Purpose**: Verify that proplets successfully fetch datasets from Local Data Store (Step 5 in the sequence diagram) instead of falling back to synthetic data.
+
+### Prerequisites
+
+Before running an FL round, ensure that:
+1. Local Data Store service is running
+2. Participant UUIDs are set in `docker/.env` (PROPLET_CLIENT_ID, PROPLET_2_CLIENT_ID, PROPLET_3_CLIENT_ID)
+3. Datasets have been auto-seeded on Local Data Store startup
+
+### Verify Datasets Are Available
+
+Check that datasets exist for each participant UUID:
+
+```bash
+# Extract participant UUIDs from docker/.env
+export PROPLET_CLIENT_ID=$(grep '^PROPLET_CLIENT_ID=' docker/.env | grep -v '=""' | tail -1 | cut -d '=' -f2 | tr -d '"')
+export PROPLET_2_CLIENT_ID=$(grep '^PROPLET_2_CLIENT_ID=' docker/.env | cut -d '=' -f2 | tr -d '"')
+export PROPLET_3_CLIENT_ID=$(grep '^PROPLET_3_CLIENT_ID=' docker/.env | cut -d '=' -f2 | tr -d '"')
+
+# Verify each dataset is accessible
+echo "Checking dataset for proplet-1 (UUID: $PROPLET_CLIENT_ID)..."
+curl -s http://localhost:8083/datasets/$PROPLET_CLIENT_ID | jq '.schema, .proplet_id, .size' || echo "❌ Dataset not found"
+
+echo "Checking dataset for proplet-2 (UUID: $PROPLET_2_CLIENT_ID)..."
+curl -s http://localhost:8083/datasets/$PROPLET_2_CLIENT_ID | jq '.schema, .proplet_id, .size' || echo "❌ Dataset not found"
+
+echo "Checking dataset for proplet-3 (UUID: $PROPLET_3_CLIENT_ID)..."
+curl -s http://localhost:8083/datasets/$PROPLET_3_CLIENT_ID | jq '.schema, .proplet_id, .size' || echo "❌ Dataset not found"
+```
+
+**Expected output**: Each curl should return a JSON object with:
+- `"schema": "fl-demo-dataset-v1"`
+- `"proplet_id": "<uuid>"`
+- `"size": 64` (or similar number of samples)
+
+### Verify Dataset Loading During FL Round
+
+After starting an FL round, check proplet logs to confirm datasets are being fetched:
+
+```bash
+# Check proplet-1 logs for successful dataset fetch
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet | grep -i "dataset"
+
+# Check all proplet logs
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "dataset"
+```
+
+**Success indicators** (should see these messages):
+- ✅ `"Fetching dataset from Local Data Store: http://local-data-store:8083/datasets/<uuid>"`
+- ✅ `"Successfully fetched dataset with <N> samples and passed to client"`
+- ✅ `"Loaded dataset with <N> samples from Local Data Store"` (in WASM client logs)
+
+**Failure indicators** (should NOT see these):
+- ❌ `"HTTP 404 Not Found (will use synthetic data)"`
+- ❌ `"Failed to fetch dataset from Local Data Store"`
+- ❌ `"DATASET_DATA not available, using synthetic data"`
+
+### Verify Local Data Store Logs
+
+Check Local Data Store service logs to confirm datasets are being served:
+
+```bash
+# Check Local Data Store logs
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs local-data-store | grep -i "dataset"
+```
+
+**Expected logs**:
+- `"Dataset seeded"` (on startup, for each participant UUID)
+- `"Dataset served"` (when a proplet requests a dataset)
+- `"Dataset missing"` should NOT appear for participant UUIDs
+
+### Troubleshooting
+
+If datasets are missing:
+
+1. **Check environment variables**: Ensure `PROPLET_CLIENT_ID`, `PROPLET_2_CLIENT_ID`, `PROPLET_3_CLIENT_ID` are set in `docker/.env` and passed to `local-data-store` service.
+
+2. **Restart Local Data Store**: Datasets are auto-seeded on startup:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env restart local-data-store
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs local-data-store | grep -i "seeded"
+   ```
+
+3. **Manually verify dataset files**: Check that dataset files exist in the volume:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env exec local-data-store ls -la /data/datasets/
+   ```
+
+4. **Check dataset format**: Verify the dataset JSON structure:
+   ```bash
+   docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env exec local-data-store cat /data/datasets/$PROPLET_CLIENT_ID.json | jq '.schema, .proplet_id, .size'
+   ```
+
+### Dataset Format
+
+The Local Data Store returns datasets in the following format:
+
+```json
+{
+  "schema": "fl-demo-dataset-v1",
+  "proplet_id": "<uuid>",
+  "data": [
+    {"x": [0.1, 0.2, 0.3], "y": 0},
+    {"x": [0.4, 0.5, 0.6], "y": 1},
+    ...
+  ],
+  "size": 64
+}
+```
+
+This format is compatible with the WASM client which expects:
+- `data`: Array of samples, each with `x` (feature vector) and `y` (label)
+- `size`: Number of samples (optional, can be inferred from data length)
+
 ## Step 9: Monitor Round Progress
 
 **Optional**: Use these commands to monitor round progress in real-time.

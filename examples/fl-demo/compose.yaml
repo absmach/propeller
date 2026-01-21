@@ -56,10 +56,16 @@ services:
     ports:
       - "8083:8083"
     volumes:
-      - fl-datasets:/tmp/fl-datasets
+      - fl-datasets:/data/datasets
     environment:
-      DATA_DIR: /tmp/fl-datasets
+      DATA_DIR: /data/datasets
       DATA_STORE_PORT: "8083"
+      # Pass participant UUIDs for auto-seeding
+      PROPLET_CLIENT_ID: ${PROPLET_CLIENT_ID}
+      PROPLET_2_CLIENT_ID: ${PROPLET_2_CLIENT_ID}
+      PROPLET_3_CLIENT_ID: ${PROPLET_3_CLIENT_ID}
+      # Alternative: use FL_DATASET_PARTICIPANTS="uuid1,uuid2,uuid3" if preferred
+      FL_DATASET_PARTICIPANTS: ${FL_DATASET_PARTICIPANTS:-}
     networks:
       - supermq-base-net
     restart: on-failure
