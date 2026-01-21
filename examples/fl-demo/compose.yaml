@@ -17,6 +17,21 @@ services:
   # FL-specific services
   # ============================================================================
 
+  # Local OCI registry for serving WASM binaries
+  # This allows using local WASM files without pushing to external registries
+  local-registry:
+    image: registry:2
+    container_name: fl-demo-local-registry
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    volumes:
+      - local-registry-data:/var/lib/registry
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
   model-registry:
     build:
       context: ../examples/fl-demo/model-registry
@@ -149,10 +164,13 @@ services:
       PROPLET_CLIENT_KEY: ${PROPLET_CLIENT_KEY}
       PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
       DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
     depends_on:
       - mqtt-adapter
       - manager
       - local-data-store
+      - model-registry
     healthcheck:
       disable: true
 
@@ -174,6 +192,7 @@ services:
       - mqtt-adapter
       - manager
       - local-data-store
+      - model-registry
     environment:
       PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL:-info}
       PROPLET_INSTANCE_ID: proplet-2
@@ -187,6 +206,8 @@ services:
       PROPLET_CLIENT_KEY: ${PROPLET_2_CLIENT_KEY}
       PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
       DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
     networks:
       - supermq-base-net
     healthcheck:
@@ -206,6 +227,7 @@ services:
       - mqtt-adapter
       - manager
       - local-data-store
+      - model-registry
     environment:
       PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL:-info}
       PROPLET_INSTANCE_ID: proplet-3
@@ -219,6 +241,8 @@ services:
       PROPLET_CLIENT_KEY: ${PROPLET_3_CLIENT_KEY}
       PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
       DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
     networks:
       - supermq-base-net
     healthcheck:
@@ -236,3 +260,4 @@ services:
 volumes:
   fl-models:
   fl-datasets:
+  local-registry-data:

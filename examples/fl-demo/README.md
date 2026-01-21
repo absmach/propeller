@@ -44,6 +44,124 @@ From the repository root:
 (cd examples/fl-demo/client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go)
 ```
 
+### Push WASM to Registry
+
+You can push the WASM binary to either GitHub Container Registry (GHCR) or a local registry. **GHCR is recommended** as it's simpler and doesn't require running a local registry service.
+
+**Option A: Push to GitHub Container Registry (GHCR) - Recommended**
+
+```bash
+# 1. Build the WASM file (if not already built)
+(cd examples/fl-demo/client-wasm && GOOS=wasip1 GOARCH=wasm go build -o fl-client.wasm fl-client.go)
+
+# 2. Create a GitHub Personal Access Token (PAT) with 'write:packages' permission
+#    Go to: https://github.com/settings/tokens
+#    Create token with 'write:packages' scope
+#    Export it: export GITHUB_TOKEN=your_token_here
+
+# 3. Login to GHCR
+echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+
+# 4. Push to GHCR using ORAS (via Docker - no ORAS installation needed)
+#    Using the latest ORAS version from ghcr.io/oras-project/oras
+docker run --rm \
+  -v $(pwd)/examples/fl-demo/client-wasm:/workspace \
+  -w /workspace \
+  -e ORAS_USER=YOUR_GITHUB_USERNAME \
+  -e ORAS_PASSWORD=$GITHUB_TOKEN \
+  ghcr.io/oras-project/oras:v1.3.0 \
+  push ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest \
+  fl-client.wasm:application/wasm
+```
+
+Replace `YOUR_GITHUB_USERNAME` with your GitHub username. After pushing, you should see output like:
+
+```
+Pushed [registry] ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest
+ArtifactType: application/vnd.unknown.artifact.v1
+Digest: sha256:...
+```
+
+Then use `ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest` as your `task_wasm_image` in experiment configurations.
+
+**Option B: Push to Local Registry**
+
+The compose file includes a local OCI registry service. Since the proxy service runs inside Docker, use the registry's service name `local-registry:5000` (not `localhost:5000`) in your `task_wasm_image`.
+
+**Push from host** (use `localhost:5000`):
+
+**Option 1: Using ORAS via Docker (No Installation Required)**
+
+```bash
+# Push WASM to local registry using ORAS Docker image
+docker run --rm \
+  -v $(pwd)/examples/fl-demo/client-wasm:/workspace \
+  -w /workspace \
+  --network host \
+  ghcr.io/oras-project/oras:latest \
+  push localhost:5000/fl-client-wasm:latest \
+  fl-client.wasm:application/wasm
+
+# Verify it's there
+docker run --rm \
+  --network host \
+  ghcr.io/oras-project/oras:latest \
+  manifest fetch localhost:5000/fl-client-wasm:latest
+```
+
+**Option 2: Install ORAS CLI (if you prefer)**
+
+```bash
+# Install ORAS: https://oras.land/docs/installation
+# Then use:
+oras push localhost:5000/fl-client-wasm:latest \
+  examples/fl-demo/client-wasm/fl-client.wasm:application/wasm
+```
+
+**Option 3: Using Docker Buildx (Alternative)**
+
+```bash
+# Create a simple OCI artifact using Docker
+cd examples/fl-demo/client-wasm
+docker buildx build --platform=linux/amd64 \
+  --output=type=registry,registry.insecure=true \
+  -t localhost:5000/fl-client-wasm:latest \
+  -f - <<EOF
+FROM scratch
+COPY fl-client.wasm /fl-client.wasm
+EOF
+```
+
+**Important**: When configuring experiments, use `local-registry:5000/fl-client-wasm:latest` (the Docker service name) as your `task_wasm_image`, not `localhost:5000`. The proxy service runs inside Docker and needs to use the service name to reach the registry.
+
+> **Note**: The proxy service needs to be able to access the local registry. If the proxy is running in Docker, it should use `local-registry:5000` (the service name) instead of `localhost:5000`. However, since the `task_wasm_image` is passed through to proplets which then request from the proxy, you may need to ensure the proxy can resolve `localhost:5000` or configure it to use the service name. For simplicity, you can also expose the registry on the host network or configure Docker to allow insecure registries.
+
+**Quick Push to GHCR (Using Docker with ORAS)**:
+
+```bash
+# From repository root - push WASM to GHCR
+# First, login to GHCR: docker login ghcr.io
+# Then push using Docker config (no need for GITHUB_TOKEN env var):
+docker run --rm \
+  -v "$(pwd)/examples/fl-demo/client-wasm:/workspace" \
+  -w /workspace \
+  -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+  ghcr.io/oras-project/oras:v1.3.0 \
+  push ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest \
+  fl-client.wasm:application/wasm
+```
+
+Replace `YOUR_GITHUB_USERNAME` with your GitHub username. The `-v "$HOME/.docker/config.json:/root/.docker/config.json:ro"` flag uses your Docker login credentials from `docker login ghcr.io`, so you don't need to set environment variables.
+
+After pushing, you should see:
+```
+Pushed [registry] ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest
+ArtifactType: application/vnd.unknown.artifact.v1
+Digest: sha256:...
+```
+
+Then use `ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest` as your `task_wasm_image` in experiment configurations.
+
 ## Step 2: Build Images
 
 **IMPORTANT**: Manager and proplet must be built from source as the pre-built images don't include FL endpoints.
@@ -216,7 +334,7 @@ mosquitto_pub -h localhost -p 1883 \
   -m '{
     "round_id": "r-0001",
     "model_uri": "fl/models/global_model_v0",
-    "task_wasm_image": "oci://example/fl-client-wasm:latest",
+    "task_wasm_image": "ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest",
     "participants": ["<PROPLET_CLIENT_ID>", "<PROPLET_2_CLIENT_ID>", "<PROPLET_3_CLIENT_ID>"],
     "hyperparams": {"epochs": 1, "lr": 0.01, "batch_size": 16},
     "k_of_n": 3,
@@ -255,7 +373,8 @@ echo "PROPLET_CLIENT_ID=$PROPLET_CLIENT_ID"
 echo "PROPLET_2_CLIENT_ID=$PROPLET_2_CLIENT_ID"
 echo "PROPLET_3_CLIENT_ID=$PROPLET_3_CLIENT_ID"
 
-# Configure experiment with CLIENT_IDs
+# Configure experiment with CLIENT_IDs and GHCR WASM image
+# Replace YOUR_GITHUB_USERNAME with your actual GitHub username
 curl -X POST http://localhost:7070/fl/experiments \
   -H "Content-Type: application/json" \
   -d "{
@@ -266,8 +385,15 @@ curl -X POST http://localhost:7070/fl/experiments \
     \"hyperparams\": {\"epochs\": 1, \"lr\": 0.01, \"batch_size\": 16},
     \"k_of_n\": 3,
     \"timeout_s\": 60,
-    \"task_wasm_image\": \"oci://example/fl-client-wasm:latest\"
+    \"task_wasm_image\": \"ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest\"
   }"
+
+# Expected response:
+# {"experiment_id":"exp-r-...","round_id":"r-...","status":"configured"}
+
+# Verify proplets are requesting the WASM from GHCR:
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "Requesting binary from registry"
+# Should show: "Requesting binary from registry: ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest"
 ```
 
 > **CRITICAL**: The `participants` array **MUST** use SuperMQ CLIENT_IDs (UUIDs from your `docker/.env` file), **NOT** instance IDs like `"proplet-1"`, `"proplet-2"`, `"proplet-3"`.
@@ -309,6 +435,8 @@ This script:
 
 After configuring an experiment, verify it worked correctly:
 
+**1. Check experiment was configured:**
+
 ```bash
 # Check manager logs - should see "launched task" messages with UUID proplet_ids
 docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs manager | grep "launched task"
@@ -320,6 +448,23 @@ docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-fil
 
 # If you see warnings like "skipping participant: proplet not found" with "proplet-1", 
 # it means you used instance IDs instead of CLIENT_IDs - see Troubleshooting section.
+
+**2. Verify proplets are requesting WASM from GHCR:**
+
+```bash
+# Check proplet logs for WASM binary requests
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "Requesting binary from registry"
+
+# Expected output (should show your GHCR URL):
+# INFO Requesting binary from registry: ghcr.io/YOUR_GITHUB_USERNAME/fl-client-wasm:latest
+```
+
+**3. Check if WASM is being executed:**
+
+```bash
+# Look for execution logs (fetching model, dataset, training)
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs proplet proplet-2 proplet-3 | grep -i "executing\|fetching\|model\|dataset\|training"
+```
 ```
 
 ## Step 8: Monitor Round Progress
