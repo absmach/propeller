@@ -191,12 +191,9 @@ services:
       disable: true
 
   # ============================================================================
-  # Expose MQTT port for external clients (extend from base)
+  # Note: In production setup, nginx handles MQTT port exposure
+  # mqtt-adapter is accessed internally via nginx, so no need to expose ports here
   # ============================================================================
-
-  mqtt-adapter:
-    ports:
-      - "${SMQ_MQTT_ADAPTER_MQTT_PORT:-1883}:${SMQ_MQTT_ADAPTER_MQTT_PORT:-1883}"
 
 # ============================================================================
 # FL-specific volumes
