@@ -242,16 +242,23 @@ This script:
 
 ### View Logs
 
+From the repository root:
+
 ```bash
 # Coordinator logs (shows aggregation progress)
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f fl-demo-coordinator
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f coordinator-http
 
 # Manager logs (shows task distribution)
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-manager
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f manager
 
 # Proplet logs (shows training execution)
-docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f propeller-proplet
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f proplet
+
+# All proplet instances
+docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env logs -f proplet proplet-2 proplet-3
 ```
+
+> **Note**: Use service names (e.g., `manager`, `proplet`, `coordinator-http`), not container names, when using `docker compose logs`.
 
 ### Check Round Status
 
