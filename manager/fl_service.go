@@ -58,7 +58,8 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 		"hyperparams":     config.Hyperparams,
 	}
 
-	if err := svc.pubsub.Publish(ctx, "fl/rounds/start", roundStartMsg); err != nil {
+	topic := svc.baseTopic + "/fl/rounds/start"
+	if err := svc.pubsub.Publish(ctx, topic, roundStartMsg); err != nil {
 		svc.logger.WarnContext(ctx, "Failed to trigger round start after configuration",
 			"round_id", config.RoundID, "error", err)
 	} else {

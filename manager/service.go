@@ -320,7 +320,8 @@ func (svc *service) Subscribe(ctx context.Context) error {
 		return err
 	}
 
-	if err := svc.pubsub.Subscribe(ctx, "fl/rounds/start", svc.handleRoundStart(ctx)); err != nil {
+	flRoundStartTopic := svc.baseTopic + "/fl/rounds/start"
+	if err := svc.pubsub.Subscribe(ctx, flRoundStartTopic, svc.handleRoundStart(ctx)); err != nil {
 		return err
 	}
 
