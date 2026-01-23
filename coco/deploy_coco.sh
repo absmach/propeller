@@ -11,6 +11,7 @@ K8S_DIR="$SCRIPT_DIR"
 # Configuration
 IMAGE_NAME="ghcr.io/absmach/propeller/proplet"
 IMAGE_TAG="latest"
+# Define RUNTIME_CLASS with the runtime class you want to use with CoCo (e.g., kata, ccruntime)
 RUNTIME_CLASS=${RUNTIME_CLASS:-kata}
 
 echo "=== Proplet CoCo Deployment ==="
