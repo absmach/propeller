@@ -1,6 +1,9 @@
 pub mod host;
 pub mod wasmtime_runtime;
 
+#[cfg(feature = "tee")]
+pub mod tee_runtime;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;

@@ -50,6 +50,8 @@ pub struct PropletService {
     proplet: Arc<Mutex<Proplet>>,
     pubsub: PubSub,
     runtime: Arc<dyn Runtime>,
+    #[cfg(feature = "tee")]
+    tee_runtime: Option<Arc<dyn Runtime>>,
     chunk_assembly: Arc<Mutex<HashMap<String, ChunkAssemblyState>>>,
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
     monitor: Arc<SystemMonitor>,
@@ -67,6 +69,8 @@ impl PropletService {
             proplet: Arc::new(Mutex::new(proplet)),
             pubsub,
             runtime,
+            #[cfg(feature = "tee")]
+            tee_runtime: None,
             chunk_assembly: Arc::new(Mutex::new(HashMap::new())),
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
             monitor,
@@ -76,6 +80,40 @@ impl PropletService {
         service.start_chunk_expiry_task();
 
         service
+    }
+
+    #[cfg(feature = "tee")]
+    pub fn with_tee_runtime(
+        config: PropletConfig,
+        pubsub: PubSub,
+        runtime: Arc<dyn Runtime>,
+        tee_runtime: Arc<dyn Runtime>,
+    ) -> Self {
+        let proplet = Proplet::new(config.instance_id.clone(), "proplet".to_string());
+        let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
+        let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
+
+        let service = Self {
+            config,
+            proplet: Arc::new(Mutex::new(proplet)),
+            pubsub,
+            runtime,
+            tee_runtime: Some(tee_runtime),
+            chunk_assembly: Arc::new(Mutex::new(HashMap::new())),
+            running_tasks: Arc::new(Mutex::new(HashMap::new())),
+            monitor,
+            metrics_collector,
+        };
+
+        service.start_chunk_expiry_task();
+
+        service
+    }
+
+    #[cfg(feature = "tee")]
+    #[allow(dead_code)]
+    pub fn set_tee_runtime(&mut self, tee_runtime: Arc<dyn Runtime>) {
+        self.tee_runtime = Some(tee_runtime);
     }
 
     fn start_chunk_expiry_task(&self) {
@@ -316,6 +354,39 @@ impl PropletService {
 
         info!("Received start command for task: {}", req.id);
 
+        #[cfg(feature = "tee")]
+        let runtime = if req.encrypted {
+            if let Some(ref tee_runtime) = self.tee_runtime {
+                tee_runtime.clone()
+            } else {
+                error!("TEE runtime not available but encrypted workload requested");
+                self.publish_result(
+                    &req.id,
+                    Vec::new(),
+                    Some("TEE runtime not available".to_string()),
+                )
+                .await?;
+                return Err(anyhow::anyhow!("TEE runtime not available"));
+            }
+        } else {
+            self.runtime.clone()
+        };
+
+        #[cfg(not(feature = "tee"))]
+        let runtime = {
+            if req.encrypted {
+                error!("TEE support not compiled in but encrypted workload requested");
+                self.publish_result(
+                    &req.id,
+                    Vec::new(),
+                    Some("TEE support not compiled in".to_string()),
+                )
+                .await?;
+                return Err(anyhow::anyhow!("TEE support not compiled in"));
+            }
+            self.runtime.clone()
+        };
+
         {
             let mut tasks = self.running_tasks.lock().await;
             tasks.insert(req.id.clone(), TaskState::Running);
@@ -337,17 +408,22 @@ impl PropletService {
                 }
             }
         } else if !req.image_url.is_empty() {
-            info!("Requesting binary from registry: {}", req.image_url);
-            self.request_binary_from_registry(&req.image_url).await?;
+            if req.encrypted {
+                info!("Encrypted workload with image_url: {}", req.image_url);
+                Vec::new()
+            } else {
+                info!("Requesting binary from registry: {}", req.image_url);
+                self.request_binary_from_registry(&req.image_url).await?;
 
-            match self.wait_for_binary(&req.image_url).await {
-                Ok(binary) => binary,
-                Err(e) => {
-                    error!("Failed to get binary for task {}: {}", req.id, e);
-                    self.running_tasks.lock().await.remove(&req.id);
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
-                    return Err(e);
+                match self.wait_for_binary(&req.image_url).await {
+                    Ok(binary) => binary,
+                    Err(e) => {
+                        error!("Failed to get binary for task {}: {}", req.id, e);
+                        self.running_tasks.lock().await.remove(&req.id);
+                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                            .await?;
+                        return Err(e);
+                    }
                 }
             }
         } else {
@@ -367,7 +443,6 @@ impl PropletService {
             }
         });
 
-        let runtime = self.runtime.clone();
         let pubsub = self.pubsub.clone();
         let running_tasks = self.running_tasks.clone();
         let monitor = self.monitor.clone();
@@ -382,6 +457,12 @@ impl PropletService {
         let cli_args = req.cli_args.clone();
         let inputs = req.inputs.clone();
 
+        let image_url = if req.encrypted && !req.image_url.is_empty() {
+            Some(req.image_url.clone())
+        } else {
+            None
+        };
+
         let export_metrics = monitoring_profile.enabled && monitoring_profile.export_to_mqtt;
 
         tokio::spawn(async move {
@@ -390,6 +471,11 @@ impl PropletService {
             };
 
             info!("Executing task {} in spawned task", task_id);
+
+            let mut cli_args = cli_args;
+            if let Some(ref img_url) = image_url {
+                cli_args.insert(0, img_url.clone());
+            }
 
             let config = StartConfig {
                 id: task_id.clone(),
@@ -401,7 +487,6 @@ impl PropletService {
                 args: inputs,
             };
 
-            // Start monitoring setup (if enabled)
             if export_metrics {
                 if let Err(e) = monitor
                     .start_monitoring(&task_id, monitoring_profile.clone())
@@ -411,7 +496,6 @@ impl PropletService {
                 }
             }
 
-            // Spawn the monitoring attachment in a separate task to run concurrently
             let monitor_handle = if export_metrics {
                 let monitor_clone = monitor.clone();
                 let runtime_clone = runtime.clone();

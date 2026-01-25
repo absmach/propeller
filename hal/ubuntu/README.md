@@ -47,7 +47,7 @@ export PROPLET_CLIENT_ID="your-client-id"
 export PROPLET_CLIENT_KEY="your-client-key"
 export PROPLET_CHANNEL_ID="your-channel-id"
 export PROPLET_MQTT_ADDRESS="tcp://mqtt.example.com:1883"
-export KBS_URL="https://kbs.example.com"
+export KBS_URL="http://10.0.2.2:8082"
 
 # Build the CVM image (only needs to be done once)
 sudo ./qemu.sh build
@@ -74,29 +74,27 @@ sudo ENABLE_CVM=sev ./qemu.sh
 sudo ENABLE_CVM=none ./qemu.sh
 ```
 
-
 ## Configuration
 
 ### Required Environment Variables
 
-| Variable             | Description               | Example               |
-|----------------------|---------------------------|-----------------------|
-| `PROPLET_DOMAIN_ID`  | SuperMQ domain identifier | `my-domain-123`       |
-| `PROPLET_CLIENT_ID`  | Unique client identifier  | `proplet-worker-01`   |
-| `PROPLET_CLIENT_KEY` | Authentication key        | `secret-key-here`     |
-| `PROPLET_CHANNEL_ID` | Communication channel ID  | `channel-456`         |
+| Variable             | Description               | Example             |
+| -------------------- | ------------------------- | ------------------- |
+| `PROPLET_DOMAIN_ID`  | SuperMQ domain identifier | `my-domain-123`     |
+| `PROPLET_CLIENT_ID`  | Unique client identifier  | `proplet-worker-01` |
+| `PROPLET_CLIENT_KEY` | Authentication key        | `secret-key-here`   |
+| `PROPLET_CHANNEL_ID` | Communication channel ID  | `channel-456`       |
 
 ### Optional Environment Variables
 
-| Variable               | Description                  | Default                   |
-|------------------------|------------------------------|---------------------------|
-| `PROPLET_MQTT_ADDRESS` | MQTT broker address          | `tcp://localhost:1883`    |
-| `KBS_URL`              | Key Broker Service URL       | `https://kbs.example.com` |
-| `KBS_PORT`             | KBS port                     | `8080`                    |
-| `ENABLE_CVM`           | CVM mode (auto/tdx/sev/none) | `auto`                    |
-| `RAM`                  | VM memory                    | `8192M`                   |
-| `CPU`                  | CPU cores                    | `4`                       |
-| `DISK_SIZE`            | Disk size                    | `40G`                     |
+| Variable               | Description                  | Default                |
+| ---------------------- | ---------------------------- | ---------------------- |
+| `PROPLET_MQTT_ADDRESS` | MQTT broker address          | `tcp://localhost:1883` |
+| `KBS_URL`              | Key Broker Service URL       | `http://10.0.2.2:8082` |
+| `ENABLE_CVM`           | CVM mode (auto/tdx/sev/none) | `auto`                 |
+| `RAM`                  | VM memory                    | `8192M`                |
+| `CPU`                  | CPU cores                    | `4`                    |
+| `DISK_SIZE`            | Disk size                    | `40G`                  |
 
 ## What the Script Does
 
@@ -112,6 +110,7 @@ sudo ENABLE_CVM=none ./qemu.sh
 4. **Creates Seed Image**: Packages cloud-init configs into an ISO image
 
 The cloud-init configuration will install and build (on first boot):
+
 - Rust toolchain
 - Wasmtime runtime
 - Attestation Agent
@@ -146,8 +145,10 @@ sudo journalctl -u proplet -f
 ## Network Ports
 
 The VM exposes:
+
 - **Port 2222**: SSH (forwarded from guest port 22)
-- **Port 50002**: Attestation Agent API (forwarded from guest port 50002)
+- **Port 50010**: Attestation Agent API (forwarded from guest port 50010)
+- **Port 50011**: CoCo Keyprovider (forwarded from guest port 50011)
 
 ## Files Created
 
@@ -249,7 +250,11 @@ The VM includes:
 │  ┌──────────────┐      ┌────────────────┐   │
 │  │ Attestation  │      │    Wasmtime    │   │
 │  │    Agent     │      │   (Runtime)    │   │
-│  │ (port 50002) │      └────────────────┘   │
+│  │ (port 50010) │      └────────────────┘   │
+│  │              │               ▲           │
+│  │ CoCo         │               │           │
+│  │ Keyprovider  │               │           │
+│  │ (port 50011) │               │           │
 │  └──────────────┘               ▲           │
 │         │                       │           │
 │         │                       │           │

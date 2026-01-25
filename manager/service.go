@@ -192,6 +192,8 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		"cli_args":           t.CLIArgs,
 		"daemon":             t.Daemon,
 		"env":                t.Env,
+		"encrypted":          t.Encrypted,
+		"kbs_resource_path":  t.KBSResourcePath,
 		"monitoring_profile": t.MonitoringProfile,
 	}
 
