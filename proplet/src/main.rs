@@ -4,6 +4,8 @@ mod monitoring;
 mod mqtt;
 mod runtime;
 mod service;
+#[cfg(feature = "tee")]
+mod tee_detection;
 mod types;
 
 use crate::config::PropletConfig;
@@ -17,6 +19,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
+
+#[cfg(feature = "tee")]
+use crate::runtime::tee_runtime::TeeWasmRuntime;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -78,6 +83,22 @@ async fn main() -> Result<()> {
         Arc::new(WasmtimeRuntime::new()?)
     };
 
+    #[cfg(feature = "tee")]
+    let service = if config.tee_enabled {
+        match TeeWasmRuntime::new(&config).await {
+            Ok(tee_runtime) => Arc::new(PropletService::with_tee_runtime(
+                config.clone(),
+                pubsub,
+                runtime,
+                Arc::new(tee_runtime),
+            )),
+            Err(_) => Arc::new(PropletService::new(config.clone(), pubsub, runtime)),
+        }
+    } else {
+        Arc::new(PropletService::new(config.clone(), pubsub, runtime))
+    };
+
+    #[cfg(not(feature = "tee"))]
     let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
 
     let shutdown_handle = tokio::spawn(async move {

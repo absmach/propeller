@@ -7,6 +7,9 @@ use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
 
+#[cfg(feature = "tee")]
+use crate::tee_detection;
+
 const DEFAULT_CONFIG_PATH: &str = "config.toml";
 const DEFAULT_CONFIG_SECTION: &str = "proplet";
 
@@ -39,6 +42,16 @@ pub struct PropletConfig {
     pub k8s_namespace: Option<String>,
     pub external_wasm_runtime: Option<String>,
     pub enable_monitoring: bool,
+    #[cfg(feature = "tee")]
+    pub tee_enabled: bool,
+    #[cfg(feature = "tee")]
+    pub kbs_uri: Option<String>,
+    #[cfg(feature = "tee")]
+    pub aa_config_path: Option<String>,
+    #[cfg(feature = "tee")]
+    pub layer_store_path: String,
+    #[cfg(feature = "tee")]
+    pub pull_concurrent_limit: usize,
 }
 
 impl Default for PropletConfig {
@@ -62,6 +75,16 @@ impl Default for PropletConfig {
             k8s_namespace: None,
             external_wasm_runtime: None,
             enable_monitoring: true,
+            #[cfg(feature = "tee")]
+            tee_enabled: false,
+            #[cfg(feature = "tee")]
+            kbs_uri: None,
+            #[cfg(feature = "tee")]
+            aa_config_path: None,
+            #[cfg(feature = "tee")]
+            layer_store_path: "/tmp/proplet/layers".to_string(),
+            #[cfg(feature = "tee")]
+            pull_concurrent_limit: 4,
         }
     }
 }
@@ -98,6 +121,17 @@ impl PropletConfig {
                 Err(e) => {
                     return Err(format!("config file '{config_path}' not accessible: {e}").into());
                 }
+            }
+        }
+
+        #[cfg(feature = "tee")]
+        {
+            let tee_detection = tee_detection::detect_tee();
+
+            config.tee_enabled = tee_detection.is_tee();
+
+            if config.tee_enabled && config.kbs_uri.is_none() {
+                return Err("KBS URI must be configured when TEE is detected. Set PROPLET_KBS_URI environment variable.".into());
             }
         }
 
@@ -215,6 +249,27 @@ impl PropletConfig {
             config.enable_monitoring = val.to_lowercase() == "true" || val == "1";
         }
 
+        #[cfg(feature = "tee")]
+        {
+            if let Ok(val) = env::var("PROPLET_KBS_URI") {
+                config.kbs_uri = if val.is_empty() { None } else { Some(val) };
+            }
+
+            if let Ok(val) = env::var("PROPLET_AA_CONFIG_PATH") {
+                config.aa_config_path = if val.is_empty() { None } else { Some(val) };
+            }
+
+            if let Ok(val) = env::var("PROPLET_LAYER_STORE_PATH") {
+                config.layer_store_path = val;
+            }
+
+            if let Ok(val) = env::var("PROPLET_PULL_CONCURRENT_LIMIT") {
+                if let Ok(limit) = val.parse() {
+                    config.pull_concurrent_limit = limit;
+                }
+            }
+        }
+
         config
     }
 
@@ -263,6 +318,14 @@ mod tests {
         assert!(config.client_key.is_empty());
         assert!(config.k8s_namespace.is_none());
         assert!(config.external_wasm_runtime.is_none());
+
+        #[cfg(feature = "tee")]
+        {
+            assert!(!config.tee_enabled);
+            assert!(config.kbs_uri.is_none());
+            assert!(config.aa_config_path.is_none());
+            assert_eq!(config.layer_store_path, "/tmp/proplet/layers");
+        }
     }
 
     #[test]
