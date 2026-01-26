@@ -13,10 +13,13 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 
 	var aggregatedW []float64
 	var aggregatedB float64
+	// Use int64 for totalSamples to prevent integer overflow on 32-bit systems
+	// when aggregating updates from many clients with large sample counts.
+	// update.NumSamples is int (32-bit on 32-bit systems), so we cast to int64.
 	var totalSamples int64
 
 	if len(updates) > 0 && updates[0].Update != nil {
-		if w, ok := updates[0].Update["w"].([]interface{}); ok {
+		if w, ok := updates[0].Update["w"].([]any); ok {
 			aggregatedW = make([]float64, len(w))
 		}
 	}
@@ -27,9 +30,10 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 		}
 
 		weight := float64(update.NumSamples)
+		// Explicitly cast to int64 to prevent overflow when summing many updates
 		totalSamples += int64(update.NumSamples)
 
-		if w, ok := update.Update["w"].([]interface{}); ok {
+		if w, ok := update.Update["w"].([]any); ok {
 			for i, v := range w {
 				if f, ok := v.(float64); ok {
 					if i < len(aggregatedW) {
@@ -53,14 +57,14 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 	}
 
 	return Model{
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"w": aggregatedW,
 			"b": aggregatedB,
 		},
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"total_samples": totalSamples,
-			"num_updates":    len(updates),
-			"algorithm":      "FedAvg",
+			"num_updates":   len(updates),
+			"algorithm":     "FedAvg",
 		},
 	}, nil
 }

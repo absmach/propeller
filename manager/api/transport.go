@@ -126,10 +126,10 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		), "configure-experiment").ServeHTTP)
 
 		// GET /task - Forward task request to FL Coordinator
-		// 
+		//
 		// IMPORTANT: Clients MUST call FL Coordinator directly (Step 3 in workflow diagram)
 		// This endpoint exists ONLY for compatibility/MQTT forwarding scenarios
-		// 
+		//
 		// Correct client flow: Client → FL Coordinator (GET /task)
 		// NOT: Client → Manager → FL Coordinator
 		r.Get("/task", otelhttp.NewHandler(kithttp.NewServer(

@@ -13,25 +13,25 @@ type RoundState struct {
 }
 
 type Update struct {
-	RoundID      string                 `json:"round_id"`
-	PropletID    string                 `json:"proplet_id"`
-	BaseModelURI string                 `json:"base_model_uri"`
-	NumSamples   int                    `json:"num_samples"`
-	Metrics      map[string]interface{} `json:"metrics"`
-	Update       map[string]interface{} `json:"update"`
-	ReceivedAt   time.Time              `json:"received_at,omitempty"`
+	RoundID      string         `json:"round_id"`
+	PropletID    string         `json:"proplet_id"`
+	BaseModelURI string         `json:"base_model_uri"`
+	NumSamples   int            `json:"num_samples"`
+	Metrics      map[string]any `json:"metrics"`
+	Update       map[string]any `json:"update"`
+	ReceivedAt   time.Time      `json:"received_at"`
 }
 
 type Task struct {
-	RoundID    string                 `json:"round_id"`
-	ModelRef   string                 `json:"model_ref"`
-	Config     map[string]interface{} `json:"config"`
-	Hyperparams map[string]interface{} `json:"hyperparams,omitempty"`
+	RoundID     string         `json:"round_id"`
+	ModelRef    string         `json:"model_ref"`
+	Config      map[string]any `json:"config"`
+	Hyperparams map[string]any `json:"hyperparams,omitempty"`
 }
 
 type Model struct {
-	Data     map[string]interface{} `json:"data"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Data     map[string]any `json:"data"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type Aggregator interface {

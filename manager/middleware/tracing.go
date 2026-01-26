@@ -147,7 +147,7 @@ func (tm *tracing) Subscribe(ctx context.Context) (err error) {
 	return tm.svc.Subscribe(ctx)
 }
 
-// FL Orchestration methods
+// ConfigureExperiment implements the FL orchestration method for tracing middleware.
 func (tm *tracing) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) (err error) {
 	ctx, span := tm.tracer.Start(ctx, "configure-experiment", trace.WithAttributes(
 		attribute.String("experiment_id", config.ExperimentID),
@@ -158,7 +158,7 @@ func (tm *tracing) ConfigureExperiment(ctx context.Context, config manager.Exper
 	return tm.svc.ConfigureExperiment(ctx, config)
 }
 
-// FL Coordination methods
+// GetFLTask implements the FL coordination method for tracing middleware.
 func (tm *tracing) GetFLTask(ctx context.Context, roundID, propletID string) (resp manager.FLTask, err error) {
 	ctx, span := tm.tracer.Start(ctx, "get-fl-task", trace.WithAttributes(
 		attribute.String("round_id", roundID),
@@ -196,4 +196,3 @@ func (tm *tracing) GetRoundStatus(ctx context.Context, roundID string) (resp man
 
 	return tm.svc.GetRoundStatus(ctx, roundID)
 }
-

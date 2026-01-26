@@ -580,18 +580,20 @@ impl PropletService {
                 None
             };
 
-            // Use environment variables with fallback to Docker service names for demo compatibility
-            // This allows deployment in different environments (K8s, bare metal, etc.)
-            let coordinator_url = env.get("COORDINATOR_URL")
-                .cloned()
-                .or_else(|| std::env::var("COORDINATOR_URL").ok())
-                .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
-            let model_registry_url = env.get("MODEL_REGISTRY_URL")
-                .cloned()
-                .or_else(|| std::env::var("MODEL_REGISTRY_URL").ok())
-                .unwrap_or_else(|| "http://model-registry:8081".to_string());
-            
+            // Fetch model if MODEL_URI is present (FML task)
+            // Use environment variables only - no fallbacks, must be set in .env file
             if let Some(model_uri) = env.get("MODEL_URI") {
+                let model_registry_url = match env.get("MODEL_REGISTRY_URL")
+                    .cloned()
+                    .or_else(|| std::env::var("MODEL_REGISTRY_URL").ok())
+                {
+                    Some(url) => url,
+                    None => {
+                        error!("MODEL_REGISTRY_URL not set. Must be provided via environment variable in .env file.");
+                        return;
+                    }
+                };
+                
                 let model_version = extract_model_version_from_uri(model_uri);
                 let model_url = format!("{}/models/{}", model_registry_url, model_version);
                 
@@ -614,38 +616,48 @@ impl PropletService {
                 }
             }
 
+            // Fetch dataset if this is an FML task
+            // Use environment variables only - no fallbacks, must be set in .env file
             let dataset_proplet_id = env.get("PROPLET_ID")
                 .cloned()
                 .unwrap_or_else(|| {
                     warn!("PROPLET_ID not in environment, using proplet_id from config: {}", proplet_id);
                     proplet_id.clone()
                 });
-            // Use environment variables with fallback to Docker service names for demo compatibility
-            let data_store_url = env.get("DATA_STORE_URL")
+            
+            let data_store_url = match env.get("DATA_STORE_URL")
                 .cloned()
                 .or_else(|| std::env::var("DATA_STORE_URL").ok())
-                .unwrap_or_else(|| "http://local-data-store:8083".to_string());
+            {
+                Some(url) => url,
+                None => {
+                    warn!("DATA_STORE_URL not set. Dataset fetching will be skipped. Set it in .env file to enable dataset fetching.");
+                    String::new() // Empty string to skip dataset fetching
+                }
+            };
             
-            let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
-            info!("Fetching dataset from Local Data Store: {}", dataset_url);
-            match http_client.get(&dataset_url).send().await {
-                Ok(response) if response.status().is_success() => {
-                    if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
-                        if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
-                            env.insert("DATASET_DATA".to_string(), dataset_str);
-                            if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
-                                info!("Successfully fetched dataset with {} samples and passed to client", size);
-                            } else {
-                                info!("Successfully fetched dataset and passed to client");
+            if !data_store_url.is_empty() {
+                let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
+                info!("Fetching dataset from Local Data Store: {}", dataset_url);
+                match http_client.get(&dataset_url).send().await {
+                    Ok(response) if response.status().is_success() => {
+                        if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
+                            if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
+                                env.insert("DATASET_DATA".to_string(), dataset_str);
+                                if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
+                                    info!("Successfully fetched dataset with {} samples and passed to client", size);
+                                } else {
+                                    info!("Successfully fetched dataset and passed to client");
+                                }
                             }
                         }
                     }
-                }
-                Ok(response) => {
-                    warn!("Failed to fetch dataset: HTTP {} (will use synthetic data)", response.status());
-                }
-                Err(e) => {
-                    warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
+                    Ok(response) => {
+                        warn!("Failed to fetch dataset: HTTP {} (will use synthetic data)", response.status());
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
+                    }
                 }
             }
 
@@ -676,6 +688,19 @@ impl PropletService {
             };
 
             if let Some(round_id) = env.get("ROUND_ID") {
+                // COORDINATOR_URL is required for FML tasks (when ROUND_ID is present)
+                // Use environment variables only - no fallbacks, must be set in .env file
+                let coordinator_url = match env.get("COORDINATOR_URL")
+                    .cloned()
+                    .or_else(|| std::env::var("COORDINATOR_URL").ok())
+                {
+                    Some(url) => url,
+                    None => {
+                        error!("COORDINATOR_URL not set. Must be provided via environment variable in .env file for FML tasks.");
+                        return;
+                    }
+                };
+                
                 if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
                     let update_url = format!("{}/update", coordinator_url);
                     

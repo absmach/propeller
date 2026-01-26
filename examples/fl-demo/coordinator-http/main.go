@@ -79,14 +79,18 @@ func main() {
 		port = p
 	}
 
-	modelRegistryURL = "http://model-registry:8081"
-	if url := os.Getenv("MODEL_REGISTRY_URL"); url != "" {
-		modelRegistryURL = url
+	// Use environment variables - no hardcoded defaults for deployment flexibility
+	// For Docker Compose, set these in compose.yaml or .env file
+	// For Kubernetes, use ConfigMaps or environment variables
+	// For bare metal, set system environment variables
+	modelRegistryURL = os.Getenv("MODEL_REGISTRY_URL")
+	if modelRegistryURL == "" {
+		log.Fatal("MODEL_REGISTRY_URL environment variable is required")
 	}
 
-	aggregatorURL = "http://aggregator:8082"
-	if url := os.Getenv("AGGREGATOR_URL"); url != "" {
-		aggregatorURL = url
+	aggregatorURL = os.Getenv("AGGREGATOR_URL")
+	if aggregatorURL == "" {
+		log.Fatal("AGGREGATOR_URL environment variable is required")
 	}
 
 	httpClient = &http.Client{

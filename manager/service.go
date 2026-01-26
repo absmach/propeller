@@ -495,6 +495,7 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	return nil
 }
 
+//nolint:gocognit // Complex function handles round start orchestration with multiple validation steps
 func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
 		go func() {
@@ -506,30 +507,35 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 			roundID, ok := msg["round_id"].(string)
 			if !ok || roundID == "" {
 				svc.logger.ErrorContext(roundCtx, "missing or invalid round_id")
+
 				return
 			}
 
 			// Check if context is already cancelled
 			if roundCtx.Err() != nil {
 				svc.logger.WarnContext(roundCtx, "context cancelled before processing round start", "round_id", roundID)
+
 				return
 			}
 
 			modelURI, ok := msg["model_uri"].(string)
 			if !ok || modelURI == "" {
 				svc.logger.ErrorContext(roundCtx, "missing or invalid model_uri")
+
 				return
 			}
 
 			taskWasmImage, ok := msg["task_wasm_image"].(string)
 			if !ok || taskWasmImage == "" {
 				svc.logger.ErrorContext(roundCtx, "missing or invalid task_wasm_image")
+
 				return
 			}
 
 			participantsRaw, ok := msg["participants"].([]any)
 			if !ok || len(participantsRaw) == 0 {
 				svc.logger.ErrorContext(roundCtx, "missing or invalid participants")
+
 				return
 			}
 
@@ -544,6 +550,7 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 
 			if len(participants) == 0 {
 				svc.logger.ErrorContext(roundCtx, "no valid participants")
+
 				return
 			}
 
@@ -552,6 +559,7 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 				select {
 				case <-roundCtx.Done():
 					svc.logger.WarnContext(roundCtx, "context cancelled during round processing", "round_id", roundID, "processed", len(participants))
+
 					return
 				default:
 				}
@@ -559,10 +567,12 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 				p, err := svc.GetProplet(roundCtx, propletID)
 				if err != nil {
 					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
+
 					continue
 				}
 				if !p.Alive {
 					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not alive", "proplet_id", propletID)
+
 					continue
 				}
 
@@ -590,18 +600,22 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 				if err != nil {
 					if roundCtx.Err() != nil {
 						svc.logger.WarnContext(roundCtx, "context cancelled during task creation", "round_id", roundID, "proplet_id", propletID)
+
 						return
 					}
 					svc.logger.ErrorContext(roundCtx, "failed to create task for participant", "proplet_id", propletID, "error", err)
+
 					continue
 				}
 
 				if err := svc.StartTask(roundCtx, created.ID); err != nil {
 					if roundCtx.Err() != nil {
 						svc.logger.WarnContext(roundCtx, "context cancelled during task start", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
+
 						return
 					}
 					svc.logger.ErrorContext(roundCtx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
+
 					continue
 				}
 
@@ -809,6 +823,7 @@ func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID stri
 
 func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
+
 	return svc.tasksDB.Update(ctx, t.ID, *t)
 }
 
@@ -828,15 +843,14 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
+
 	return svc.pubsub.Publish(ctx, topic, payload)
 }
 
 func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {
-	newCount := int64(p.TaskCount) + delta
-	if newCount < 0 {
-		newCount = 0
-	}
+	newCount := max(int64(p.TaskCount)+delta, 0)
 	p.TaskCount = uint64(newCount)
+
 	return svc.propletsDB.Update(ctx, p.ID, p)
 }
 
@@ -844,5 +858,6 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	t.State = task.Running
 	t.StartTime = time.Now()
 	t.UpdatedAt = time.Now()
+
 	return svc.tasksDB.Update(ctx, t.ID, *t)
 }

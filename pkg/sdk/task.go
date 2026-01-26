@@ -11,20 +11,20 @@ import (
 const tasksEndpoint = "/tasks"
 
 type FLSpec struct {
-	JobID          string         `json:"job_id,omitempty"`
-	RoundID        uint64         `json:"round_id,omitempty"`
-	GlobalVersion  string         `json:"global_version,omitempty"`
-	MinParticipants uint64       `json:"min_participants,omitempty"`
-	RoundTimeoutSec uint64        `json:"round_timeout_sec,omitempty"`
-	ClientsPerRound uint64        `json:"clients_per_round,omitempty"`
-	TotalRounds    uint64         `json:"total_rounds,omitempty"`
-	Algorithm      string         `json:"algorithm,omitempty"`
-	UpdateFormat   string         `json:"update_format,omitempty"`
-	Hyperparams    map[string]any `json:"hyperparams,omitempty"`
-	ModelRef       string         `json:"model_ref,omitempty"`
-	LocalEpochs    uint64         `json:"local_epochs,omitempty"`
-	BatchSize      uint64         `json:"batch_size,omitempty"`
-	LearningRate   float64        `json:"learning_rate,omitempty"`
+	JobID           string         `json:"job_id,omitempty"`
+	RoundID         uint64         `json:"round_id,omitempty"`
+	GlobalVersion   string         `json:"global_version,omitempty"`
+	MinParticipants uint64         `json:"min_participants,omitempty"`
+	RoundTimeoutSec uint64         `json:"round_timeout_sec,omitempty"`
+	ClientsPerRound uint64         `json:"clients_per_round,omitempty"`
+	TotalRounds     uint64         `json:"total_rounds,omitempty"`
+	Algorithm       string         `json:"algorithm,omitempty"`
+	UpdateFormat    string         `json:"update_format,omitempty"`
+	Hyperparams     map[string]any `json:"hyperparams,omitempty"`
+	ModelRef        string         `json:"model_ref,omitempty"`
+	LocalEpochs     uint64         `json:"local_epochs,omitempty"`
+	BatchSize       uint64         `json:"batch_size,omitempty"`
+	LearningRate    float64        `json:"learning_rate,omitempty"`
 }
 
 type Task struct {
@@ -34,10 +34,10 @@ type Task struct {
 	State      uint8     `json:"state,omitempty"`
 	Mode       string    `json:"mode,omitempty"`
 	ImageURL   string    `json:"image_url,omitempty"`
-	StartTime  time.Time `json:"start_time,omitempty"`
-	FinishTime time.Time `json:"finish_time,omitempty"`
-	CreatedAt  time.Time `json:"created_at,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+	StartTime  time.Time `json:"start_time"`
+	FinishTime time.Time `json:"finish_time"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	FL         *FLSpec   `json:"fl,omitempty"`
 	Results    any       `json:"results,omitempty"`
 }

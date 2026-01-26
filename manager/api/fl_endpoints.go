@@ -69,6 +69,7 @@ func configureExperimentEndpoint(svc manager.Service) endpoint.Endpoint {
 		}, nil
 	}
 }
+
 func getFLTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(flTaskReq)
@@ -161,8 +162,9 @@ func decodeFLUpdateReq(_ context.Context, r *http.Request) (any, error) {
 func decodeFLUpdateCBORReq(_ context.Context, r *http.Request) (any, error) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/cbor" && contentType != "application/cbor-seq" {
+		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
 	}
-	
+
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, errors.Join(err, apiutil.ErrValidation)

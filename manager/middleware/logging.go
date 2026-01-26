@@ -287,7 +287,7 @@ func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
 	return lm.svc.Subscribe(ctx)
 }
 
-// FL Orchestration methods
+// ConfigureExperiment implements the FL orchestration method for logging middleware.
 func (lm *loggingMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) (err error) {
 	defer func(begin time.Time) {
 		args := []any{
@@ -298,6 +298,7 @@ func (lm *loggingMiddleware) ConfigureExperiment(ctx context.Context, config man
 		if err != nil {
 			args = append(args, slog.Any("error", err))
 			lm.logger.Warn("Configure experiment failed", args...)
+
 			return
 		}
 		lm.logger.Info("Configure experiment completed successfully", args...)
@@ -306,7 +307,7 @@ func (lm *loggingMiddleware) ConfigureExperiment(ctx context.Context, config man
 	return lm.svc.ConfigureExperiment(ctx, config)
 }
 
-// FL Coordination methods
+// GetFLTask implements the FL coordination method for logging middleware.
 func (lm *loggingMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (resp manager.FLTask, err error) {
 	defer func(begin time.Time) {
 		args := []any{
@@ -317,6 +318,7 @@ func (lm *loggingMiddleware) GetFLTask(ctx context.Context, roundID, propletID s
 		if err != nil {
 			args = append(args, slog.Any("error", err))
 			lm.logger.Warn("Get FL task failed", args...)
+
 			return
 		}
 		lm.logger.Info("Get FL task completed successfully", args...)
@@ -335,6 +337,7 @@ func (lm *loggingMiddleware) PostFLUpdate(ctx context.Context, update manager.FL
 		if err != nil {
 			args = append(args, slog.Any("error", err))
 			lm.logger.Warn("Post FL update failed", args...)
+
 			return
 		}
 		lm.logger.Info("Post FL update completed successfully", args...)
@@ -352,6 +355,7 @@ func (lm *loggingMiddleware) PostFLUpdateCBOR(ctx context.Context, updateData []
 		if err != nil {
 			args = append(args, slog.Any("error", err))
 			lm.logger.Warn("Post FL update CBOR failed", args...)
+
 			return
 		}
 		lm.logger.Info("Post FL update CBOR completed successfully", args...)
@@ -369,6 +373,7 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 		if err != nil {
 			args = append(args, slog.Any("error", err))
 			lm.logger.Warn("Get round status failed", args...)
+
 			return
 		}
 		lm.logger.Info("Get round status completed successfully", args...)
@@ -376,4 +381,3 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 
 	return lm.svc.GetRoundStatus(ctx, roundID)
 }
-

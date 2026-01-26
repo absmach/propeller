@@ -16,10 +16,10 @@ type PersistentStorage struct {
 }
 
 func NewPersistentStorage(roundsDir, modelsDir string) (*PersistentStorage, error) {
-	if err := os.MkdirAll(roundsDir, 0755); err != nil {
+	if err := os.MkdirAll(roundsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create rounds directory: %w", err)
 	}
-	if err := os.MkdirAll(modelsDir, 0755); err != nil {
+	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create models directory: %w", err)
 	}
 
@@ -45,7 +45,7 @@ func (ps *PersistentStorage) SaveRound(roundID string, state *RoundState) error 
 		return fmt.Errorf("failed to marshal round state: %w", err)
 	}
 
-	if err := os.WriteFile(roundFile, data, 0644); err != nil {
+	if err := os.WriteFile(roundFile, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write round file: %w", err)
 	}
 
@@ -109,7 +109,7 @@ func (ps *PersistentStorage) SaveModel(version int, model Model) error {
 		return fmt.Errorf("failed to marshal model: %w", err)
 	}
 
-	if err := os.WriteFile(modelFile, data, 0644); err != nil {
+	if err := os.WriteFile(modelFile, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write model file: %w", err)
 	}
 
@@ -164,23 +164,23 @@ func sanitizeRoundID(roundID string) string {
 	sanitized := strings.ReplaceAll(roundID, "..", "")
 	sanitized = strings.ReplaceAll(sanitized, "/", "")
 	sanitized = strings.ReplaceAll(sanitized, "\\", "")
-	
+
 	// Remove any remaining whitespace and control characters
 	sanitized = strings.TrimSpace(sanitized)
-	
+
 	// Only allow alphanumeric, hyphens, underscores, and dots (but not consecutive dots)
 	// This ensures the roundID is safe for use in filenames
 	var result strings.Builder
 	for _, r := range sanitized {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
-		   (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
 			result.WriteRune(r)
 		}
 	}
-	
+
 	final := result.String()
 	// Ensure no consecutive dots remain
 	final = strings.ReplaceAll(final, "..", "")
-	
+
 	return final
 }

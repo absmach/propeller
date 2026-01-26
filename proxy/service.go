@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	chunkBuffer        = 10
-	containerChanSize  = 100 // Increased buffer to handle concurrent requests from multiple proplets
+	chunkBuffer       = 10
+	containerChanSize = 100 // Increased buffer to handle concurrent requests from multiple proplets
 
 	connTimeout    = 10
 	reconnTimeout  = 1
@@ -62,6 +62,7 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 				s.fetchingMu.Unlock()
 				s.logger.Debug("already fetching container, skipping duplicate request",
 					slog.String("container", containerName))
+
 				continue
 			}
 
@@ -86,6 +87,7 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 					s.logger.Error("failed to fetch container",
 						slog.String("container", name),
 						slog.Any("error", err))
+
 					return
 				}
 
