@@ -138,8 +138,8 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
   }
 
   wasm_module_inst_t module_inst =
-      wasm_runtime_instantiate(module, 16 * 1024,
-                               16 * 1024,
+      wasm_runtime_instantiate(module, 16 * 1024, /* stack size */
+                               16 * 1024,         /* heap size */
                                error_buf, sizeof(error_buf));
   if (!module_inst)
   {
@@ -194,10 +194,8 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
   wasm_valkind_t result_types[result_count];
   wasm_func_get_result_types(func, module_inst, result_types);
 
-  /* Store module in global tracking only after successful validation */
   g_wasm_apps[slot].in_use = true;
-  strncpy(g_wasm_apps[slot].id, task_id, MAX_ID_LEN - 1);
-  g_wasm_apps[slot].id[MAX_ID_LEN - 1] = '\0';
+  strncpy(g_wasm_apps[slot].id, task_id, MAX_ID_LEN);
   g_wasm_apps[slot].module = module;
   g_wasm_apps[slot].module_inst = module_inst;
 

@@ -43,15 +43,10 @@ const (
 type TaskKind string
 
 const (
-	TaskKindStandard TaskKind = "standard"
-	// Deprecated: TaskKindFederated is deprecated. FL is now implemented as an external sample application.
-	// See examples/fl-demo/ for the new FML architecture.
+	TaskKindStandard  TaskKind = "standard"
 	TaskKindFederated TaskKind = "federated"
 )
 
-// Deprecated: FLSpec is deprecated. FL is now implemented as an external sample application.
-// Manager no longer handles FL-specific logic (aggregation, round management, etc.).
-// See examples/fl-demo/ for the new FML architecture where FL is handled by an external coordinator.
 type FLSpec struct {
 	JobID         string `json:"job_id"`
 	RoundID       uint64 `json:"round_id"`
