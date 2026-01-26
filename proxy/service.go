@@ -19,6 +19,8 @@ const (
 	disconnTimeout = 250
 	PubTopic       = "m/%s/c/%s/registry/server"
 	SubTopic       = "m/%s/c/%s/registry/proplet"
+
+	maxConcurrentFetches = 50 // Limit concurrent fetches to prevent resource exhaustion
 )
 
 type ProxyService struct {
@@ -31,6 +33,8 @@ type ProxyService struct {
 	dataChan      chan proplet.ChunkPayload
 	fetching      map[string]bool // Track ongoing fetches to avoid duplicates
 	fetchingMu    sync.Mutex      // Mutex to protect fetching map
+	activeFetches int             // Counter for active fetch goroutines
+	activeFetchMu sync.Mutex      // Mutex to protect activeFetches counter
 }
 
 func NewService(ctx context.Context, pubsub pkgmqtt.PubSub, domainID, channelID string, httpCfg HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
@@ -56,10 +60,26 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case containerName := <-s.containerChan:
+			// Check concurrent fetch limit
+			s.activeFetchMu.Lock()
+			if s.activeFetches >= maxConcurrentFetches {
+				s.activeFetchMu.Unlock()
+				s.logger.Debug("maximum concurrent fetches reached, queuing request",
+					slog.String("container", containerName),
+					slog.Int("max_concurrent", maxConcurrentFetches))
+
+				continue
+			}
+			s.activeFetches++
+			s.activeFetchMu.Unlock()
+
 			// Check if we're already fetching this container
 			s.fetchingMu.Lock()
 			if s.fetching[containerName] {
 				s.fetchingMu.Unlock()
+				s.activeFetchMu.Lock()
+				s.activeFetches--
+				s.activeFetchMu.Unlock()
 				s.logger.Debug("already fetching container, skipping duplicate request",
 					slog.String("container", containerName))
 
@@ -77,6 +97,11 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 					s.fetchingMu.Lock()
 					delete(s.fetching, name)
 					s.fetchingMu.Unlock()
+
+					// Decrement active fetch counter
+					s.activeFetchMu.Lock()
+					s.activeFetches--
+					s.activeFetchMu.Unlock()
 				}()
 
 				s.logger.Info("fetching container from registry",

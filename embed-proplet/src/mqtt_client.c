@@ -926,13 +926,28 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  char request[1024];
-  snprintf(request, sizeof(request),
+  /* Set socket receive timeout to prevent unbounded reads */
+  struct timeval tv;
+  tv.tv_sec = 30;
+  tv.tv_usec = 0;
+  ret = zsock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  if (ret < 0) {
+    LOG_WRN("Failed to set socket timeout: %d", ret);
+  }
+
+  char request[2048];
+  int request_len = snprintf(request, sizeof(request),
            "GET %s HTTP/1.1\r\n"
            "Host: %s\r\n"
            "Connection: close\r\n"
            "\r\n",
            path, host);
+
+  if (request_len < 0 || request_len >= (int)sizeof(request)) {
+    LOG_ERR("HTTP request too long or formatting error: %d", request_len);
+    zsock_close(sock);
+    return -1;
+  }
   
   ret = zsock_send(sock, request, strlen(request), 0);
   if (ret < 0) {
@@ -946,6 +961,7 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
   size_t content_length = 0;
   char header_buffer[1024] = {0};
   size_t header_buffer_len = 0;
+  int http_status_code = 0;
   
   while (total_received < buffer_size - 1) {
     char chunk[512];
@@ -968,6 +984,31 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
       if (header_end) {
         headers_complete = true;
         size_t header_len = (header_end - header_buffer) + 4;
+
+        /* Parse HTTP status code from first line */
+        char *status_line = header_buffer;
+        char *http_version_end = strchr(status_line, ' ');
+        if (http_version_end) {
+          char *status_code_start = http_version_end + 1;
+          char *status_code_end = strchr(status_code_start, ' ');
+          if (status_code_end) {
+            char status_code_str[16];
+            size_t code_len = status_code_end - status_code_start;
+            if (code_len < sizeof(status_code_str)) {
+              memcpy(status_code_str, status_code_start, code_len);
+              status_code_str[code_len] = '\0';
+              http_status_code = atoi(status_code_str);
+              LOG_INF("HTTP status code: %d", http_status_code);
+            }
+          }
+        }
+
+        /* Validate status code - only accept 2xx */
+        if (http_status_code < 200 || http_status_code >= 300) {
+          LOG_ERR("HTTP request failed with status: %d", http_status_code);
+          zsock_close(sock);
+          return -1;
+        }
         
         /* Calculate where body starts within current chunk */
         size_t body_start_in_chunk = 0;
