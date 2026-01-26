@@ -19,4 +19,3 @@ func score(input []float64) float64 {
 	}
 	return modelIntercept + input[0]*modelCoefficient0 + input[1]*modelCoefficient1
 }
-

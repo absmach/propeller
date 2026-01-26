@@ -22,13 +22,13 @@ type Model struct {
 }
 
 type ModelStore struct {
-	models map[int]Model
-	mu     sync.RWMutex
+	models    map[int]Model
+	mu        sync.RWMutex
 	modelsDir string
 }
 
 var store = &ModelStore{
-	models: make(map[int]Model),
+	models:    make(map[int]Model),
 	modelsDir: "/tmp/fl-models",
 }
 
@@ -37,7 +37,7 @@ func main() {
 		store.modelsDir = dir
 	}
 
-	if err := os.MkdirAll(store.modelsDir, 0755); err != nil {
+	if err := os.MkdirAll(store.modelsDir, 0o755); err != nil {
 		log.Fatalf("Failed to create models directory: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func main() {
 			"version": 0,
 		}
 		modelJSON, _ := json.MarshalIndent(defaultModel, "", "  ")
-		if err := os.WriteFile(defaultModelPath, modelJSON, 0644); err == nil {
+		if err := os.WriteFile(defaultModelPath, modelJSON, 0o644); err == nil {
 			store.mu.Lock()
 			store.models[0] = Model{Version: 0, Model: defaultModel}
 			store.mu.Unlock()
@@ -111,7 +111,7 @@ func postModelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(modelFile, modelJSON, 0644); err != nil {
+	if err := os.WriteFile(modelFile, modelJSON, 0o644); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to write model file: %v", err), http.StatusInternalServerError)
 		return
 	}

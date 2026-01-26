@@ -1,25 +1,20 @@
-use crate::runtime::{Runtime, RuntimeContext, StartConfig};
-use anyhow::Result;
+use crate::runtime::StartConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum MLBackend {
     #[serde(rename = "standard")]
     Standard,
     #[serde(rename = "tinyml")]
     TinyML,
     #[serde(rename = "auto")]
+    #[default]
     Auto,
 }
 
-impl Default for MLBackend {
-    fn default() -> Self {
-        MLBackend::Auto
-    }
-}
-
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FLTaskConfig {
     pub round_id: String,
@@ -29,8 +24,10 @@ pub struct FLTaskConfig {
     pub proplet_id: Option<String>,
 }
 
+#[allow(dead_code)]
 pub struct TaskHandler;
 
+#[allow(dead_code)]
 impl TaskHandler {
     pub fn parse_and_select_backend(
         task_config: &FLTaskConfig,
@@ -62,8 +59,14 @@ impl TaskHandler {
         );
 
         let start_config = StartConfig {
-            id: format!("fl-{}-{}", task_config.round_id, 
-                       task_config.proplet_id.as_ref().unwrap_or(&"unknown".to_string())),
+            id: format!(
+                "fl-{}-{}",
+                task_config.round_id,
+                task_config
+                    .proplet_id
+                    .as_ref()
+                    .unwrap_or(&"unknown".to_string())
+            ),
             function_name: "run".to_string(),
             daemon: false,
             wasm_binary: Vec::new(), // Will be set by caller
@@ -76,10 +79,7 @@ impl TaskHandler {
         (backend, start_config)
     }
 
-    fn select_backend_auto(
-        task_config: &FLTaskConfig,
-        env: &HashMap<String, String>,
-    ) -> MLBackend {
+    fn select_backend_auto(task_config: &FLTaskConfig, env: &HashMap<String, String>) -> MLBackend {
         if let Some(backend_str) = env.get("ML_BACKEND") {
             match backend_str.to_lowercase().as_str() {
                 "standard" => return MLBackend::Standard,
@@ -109,7 +109,7 @@ impl TaskHandler {
 
     pub fn get_backend_config(backend: &MLBackend) -> HashMap<String, String> {
         let mut config = HashMap::new();
-        
+
         match backend {
             MLBackend::Standard => {
                 config.insert("backend_type".to_string(), "standard".to_string());
@@ -121,10 +121,9 @@ impl TaskHandler {
                 config.insert("max_memory_mb".to_string(), "64".to_string());
                 config.insert("supports_gpu".to_string(), "false".to_string());
             }
-            MLBackend::Auto => {
-            }
+            MLBackend::Auto => {}
         }
-        
+
         config
     }
 }
@@ -140,7 +139,10 @@ mod tests {
             model_ref: "fl/models/global_model_v0".to_string(),
             hyperparams: Some({
                 let mut h = HashMap::new();
-                h.insert("batch_size".to_string(), serde_json::Value::Number(4.into()));
+                h.insert(
+                    "batch_size".to_string(),
+                    serde_json::Value::Number(4.into()),
+                );
                 h
             }),
             backend: None,
@@ -149,7 +151,7 @@ mod tests {
 
         let env = HashMap::new();
         let (backend, _) = TaskHandler::parse_and_select_backend(&task_config, &env);
-        
+
         assert_eq!(backend, MLBackend::TinyML);
     }
 
@@ -165,7 +167,7 @@ mod tests {
 
         let env = HashMap::new();
         let (backend, _) = TaskHandler::parse_and_select_backend(&task_config, &env);
-        
+
         assert_eq!(backend, MLBackend::Standard);
     }
 }

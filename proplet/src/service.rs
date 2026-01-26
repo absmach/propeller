@@ -5,13 +5,13 @@ use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
 use anyhow::{Context, Result};
+use reqwest::Client as HttpClient;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
-use reqwest::Client as HttpClient;
 
 #[derive(Debug)]
 struct ChunkAssemblyState {
@@ -399,7 +399,10 @@ impl PropletService {
         {
             let mut tasks = self.running_tasks.lock().await;
             if tasks.contains_key(&req.id) {
-                warn!("Task {} is already running, ignoring duplicate start command", req.id);
+                warn!(
+                    "Task {} is already running, ignoring duplicate start command",
+                    req.id
+                );
                 return Ok(());
             }
             tasks.insert(req.id.clone(), TaskState::Running);
@@ -467,12 +470,19 @@ impl PropletService {
         let task_name = req.name.clone();
         let mut env = req.env.unwrap_or_default();
         if !env.is_empty() {
-            info!("Received {} environment variables for task {}", env.len(), task_id);
+            info!(
+                "Received {} environment variables for task {}",
+                env.len(),
+                task_id
+            );
             for (key, value) in &env {
                 debug!("  {}={}", key, value);
             }
         } else {
-            warn!("No environment variables in start request for task {}", task_id);
+            warn!(
+                "No environment variables in start request for task {}",
+                task_id
+            );
         }
         let daemon = req.daemon;
         let cli_args = req.cli_args.clone();
@@ -583,7 +593,8 @@ impl PropletService {
             // Fetch model if MODEL_URI is present (FML task)
             // Use environment variables only - no fallbacks, must be set in .env file
             if let Some(model_uri) = env.get("MODEL_URI") {
-                let model_registry_url = match env.get("MODEL_REGISTRY_URL")
+                let model_registry_url = match env
+                    .get("MODEL_REGISTRY_URL")
                     .cloned()
                     .or_else(|| std::env::var("MODEL_REGISTRY_URL").ok())
                 {
@@ -593,17 +604,20 @@ impl PropletService {
                         return;
                     }
                 };
-                
+
                 let model_version = extract_model_version_from_uri(model_uri);
                 let model_url = format!("{}/models/{}", model_registry_url, model_version);
-                
+
                 info!("Fetching model from registry: {}", model_url);
                 match http_client.get(&model_url).send().await {
                     Ok(response) if response.status().is_success() => {
                         if let Ok(model_json) = response.json::<serde_json::Value>().await {
                             if let Ok(model_str) = serde_json::to_string(&model_json) {
                                 env.insert("MODEL_DATA".to_string(), model_str);
-                                info!("Successfully fetched model v{} and passed to client", model_version);
+                                info!(
+                                    "Successfully fetched model v{} and passed to client",
+                                    model_version
+                                );
                             }
                         }
                     }
@@ -618,14 +632,16 @@ impl PropletService {
 
             // Fetch dataset if this is an FML task
             // Use environment variables only - no fallbacks, must be set in .env file
-            let dataset_proplet_id = env.get("PROPLET_ID")
-                .cloned()
-                .unwrap_or_else(|| {
-                    warn!("PROPLET_ID not in environment, using proplet_id from config: {}", proplet_id);
-                    proplet_id.clone()
-                });
-            
-            let data_store_url = match env.get("DATA_STORE_URL")
+            let dataset_proplet_id = env.get("PROPLET_ID").cloned().unwrap_or_else(|| {
+                warn!(
+                    "PROPLET_ID not in environment, using proplet_id from config: {}",
+                    proplet_id
+                );
+                proplet_id.clone()
+            });
+
+            let data_store_url = match env
+                .get("DATA_STORE_URL")
                 .cloned()
                 .or_else(|| std::env::var("DATA_STORE_URL").ok())
             {
@@ -635,7 +651,7 @@ impl PropletService {
                     String::new() // Empty string to skip dataset fetching
                 }
             };
-            
+
             if !data_store_url.is_empty() {
                 let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
                 info!("Fetching dataset from Local Data Store: {}", dataset_url);
@@ -644,7 +660,9 @@ impl PropletService {
                         if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
                             if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
                                 env.insert("DATASET_DATA".to_string(), dataset_str);
-                                if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
+                                if let Some(size) =
+                                    dataset_json.get("size").and_then(|s| s.as_u64())
+                                {
                                     info!("Successfully fetched dataset with {} samples and passed to client", size);
                                 } else {
                                     info!("Successfully fetched dataset and passed to client");
@@ -653,7 +671,10 @@ impl PropletService {
                         }
                     }
                     Ok(response) => {
-                        warn!("Failed to fetch dataset: HTTP {} (will use synthetic data)", response.status());
+                        warn!(
+                            "Failed to fetch dataset: HTTP {} (will use synthetic data)",
+                            response.status()
+                        );
                     }
                     Err(e) => {
                         warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
@@ -690,7 +711,8 @@ impl PropletService {
             if let Some(round_id) = env.get("ROUND_ID") {
                 // COORDINATOR_URL is required for FML tasks (when ROUND_ID is present)
                 // Use environment variables only - no fallbacks, must be set in .env file
-                let coordinator_url = match env.get("COORDINATOR_URL")
+                let coordinator_url = match env
+                    .get("COORDINATOR_URL")
                     .cloned()
                     .or_else(|| std::env::var("COORDINATOR_URL").ok())
                 {
@@ -700,10 +722,10 @@ impl PropletService {
                         return;
                     }
                 };
-                
+
                 if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
                     let update_url = format!("{}/update", coordinator_url);
-                    
+
                     match http_client
                         .post(&update_url)
                         .json(&update_json)
@@ -735,7 +757,10 @@ impl PropletService {
                             if let Err(e) = pubsub.publish(&fl_topic, &update_json, qos).await {
                                 error!("Failed to publish FL update to {}: {}", fl_topic, e);
                             } else {
-                                info!("Successfully published FL update to coordinator via MQTT: {}", fl_topic);
+                                info!(
+                                    "Successfully published FL update to coordinator via MQTT: {}",
+                                    fl_topic
+                                );
                             }
                         }
                     }
@@ -749,13 +774,8 @@ impl PropletService {
 
             if req.mode.as_deref() == Some("train") && req.fl.is_some() {
                 let fl_spec = req.fl.as_ref().unwrap();
-                let update_envelope = build_fl_update_envelope(
-                    &task_id,
-                    &proplet_id,
-                    &result_str,
-                    fl_spec,
-                    &env,
-                );
+                let update_envelope =
+                    build_fl_update_envelope(&task_id, &proplet_id, &result_str, fl_spec, &env);
 
                 #[derive(serde::Serialize)]
                 struct FLResultMessage {
@@ -954,6 +974,7 @@ impl PropletService {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn build_fl_update_envelope(
         &self,
         task_id: &str,
@@ -965,9 +986,10 @@ impl PropletService {
         build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
     }
 
+    #[allow(dead_code)]
     fn parse_http_requests_from_stderr(stderr: &str) -> Vec<HttpRequest> {
         let mut requests = Vec::new();
-        
+
         for line in stderr.lines() {
             if let Some(json_str) = line.strip_prefix("MODEL_REQUEST:") {
                 if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
@@ -1002,10 +1024,11 @@ impl PropletService {
                 }
             }
         }
-        
+
         requests
     }
 
+    #[allow(dead_code)]
     async fn fetch_model_from_registry(&self, url: &str) -> Result<serde_json::Value> {
         info!("Fetching model from registry: {}", url);
         let response = self
@@ -1031,6 +1054,7 @@ impl PropletService {
         Ok(model)
     }
 
+    #[allow(dead_code)]
     async fn post_update_to_coordinator(
         &self,
         url: &str,
@@ -1056,6 +1080,7 @@ impl PropletService {
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn get_task_from_coordinator(&self, url: &str) -> Result<serde_json::Value> {
         info!("Getting task from coordinator: {}", url);
         let response = self
@@ -1082,6 +1107,7 @@ impl PropletService {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct HttpRequest {
     action: String,
@@ -1090,13 +1116,13 @@ struct HttpRequest {
 }
 
 fn extract_model_version_from_uri(uri: &str) -> i32 {
-    if let Some(last_part) = uri.split('/').last() {
+    if let Some(last_part) = uri.split('/').next_back() {
         if let Some(v_part) = last_part.strip_prefix("global_model_v") {
             if let Ok(version) = v_part.parse::<i32>() {
                 return version;
             }
         }
-        if let Some(num_str) = last_part
+        if let Ok(num_str) = last_part
             .chars()
             .rev()
             .take_while(|c| c.is_ascii_digit())
@@ -1105,7 +1131,6 @@ fn extract_model_version_from_uri(uri: &str) -> i32 {
             .rev()
             .collect::<String>()
             .parse::<i32>()
-            .ok()
         {
             return num_str;
         }

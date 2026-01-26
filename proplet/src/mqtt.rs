@@ -125,8 +125,7 @@ pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::Sender<Mqtt
             Ok(Event::Incoming(packet)) => {
                 debug!("Received MQTT packet: {:?}", packet);
             }
-            Ok(Event::Outgoing(_)) => {
-            }
+            Ok(Event::Outgoing(_)) => {}
             Err(e) => {
                 warn!("MQTT connection error: {}", e);
                 tokio::time::sleep(Duration::from_secs(1)).await;

@@ -76,9 +76,10 @@ impl Runtime for HostRuntime {
 
         // If a specific function is requested (and not _start), use --invoke
         // For WASI command modules, _start is the default entry point
-        if !config.function_name.is_empty() 
-            && config.function_name != "_start" 
-            && !config.function_name.starts_with("fl-round-") {
+        if !config.function_name.is_empty()
+            && config.function_name != "_start"
+            && !config.function_name.starts_with("fl-round-")
+        {
             // This is a specific function name, use --invoke
             cmd.arg("--invoke").arg(&config.function_name);
         }
@@ -91,7 +92,11 @@ impl Runtime for HostRuntime {
         // Pass environment variables to the WASI guest via --env flags.
         // NOTE: These must be passed BEFORE the wasm file argument.
         if !config.env.is_empty() {
-            info!("Setting {} environment variables for task {}", config.env.len(), config.id);
+            info!(
+                "Setting {} environment variables for task {}",
+                config.env.len(),
+                config.id
+            );
             for (key, value) in &config.env {
                 debug!("  {}={}", key, value);
                 cmd.arg("--env");
@@ -155,8 +160,7 @@ impl Runtime for HostRuntime {
                                     info!("Daemon task {} exited with status: {}", task_id, status);
                                     should_cleanup = true;
                                 }
-                                Ok(None) => {
-                                }
+                                Ok(None) => {}
                                 Err(e) => {
                                     error!("Daemon task {} try_wait error: {}", task_id, e);
                                     should_cleanup = true;
@@ -231,8 +235,7 @@ impl Runtime for HostRuntime {
                                 stderr,
                             };
                         }
-                        Ok(None) => {
-                        }
+                        Ok(None) => {}
                         Err(e) => {
                             drop(processes);
                             return Err(anyhow::anyhow!("Failed to check process status: {}", e));

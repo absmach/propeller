@@ -52,12 +52,12 @@ impl Runtime for WasmtimeRuntime {
         // Build WASI context with environment variables
         let mut wasi_builder = WasiCtxBuilder::new();
         wasi_builder.inherit_stdio();
-        
+
         // Inject environment variables into WASI context
         for (key, value) in &config.env {
             wasi_builder.env(key, value);
         }
-        
+
         let wasi = wasi_builder.build_p1();
 
         let mut store = Store::new(&self.engine, wasi);
@@ -135,7 +135,7 @@ impl Runtime for WasmtimeRuntime {
                         let fallbacks = vec!["main", "run", "_start"];
                         let mut found_func = None;
                         let mut tried_fallbacks = Vec::new();
-                        
+
                         for fallback in &fallbacks {
                             tried_fallbacks.push(*fallback);
                             if let Some(f) = instance.get_func(&mut store, fallback) {
@@ -144,7 +144,7 @@ impl Runtime for WasmtimeRuntime {
                                 break;
                             }
                         }
-                        
+
                         found_func.ok_or_else(|| {
                             anyhow::anyhow!(
                                 "Function '{}' not found, and fallbacks {:?} also not found in module exports. Available function exports: {:?}",

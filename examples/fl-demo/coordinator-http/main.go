@@ -531,7 +531,6 @@ func aggregateAndAdvance(round *RoundState) {
 
 		return nil
 	})
-
 	if err != nil {
 		slog.Error("Failed to aggregate updates after retries", "round_id", round.RoundID, "error", err)
 		return
@@ -568,7 +567,6 @@ func aggregateAndAdvance(round *RoundState) {
 
 		return nil
 	})
-
 	if err != nil {
 		slog.Error("Failed to store model in registry after retries", "round_id", round.RoundID, "version", newVersion, "error", err)
 		return

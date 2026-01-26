@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/fxamacker/cbor/v2"
-
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	"github.com/fxamacker/cbor/v2"
 )
 
 func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentConfig) error {

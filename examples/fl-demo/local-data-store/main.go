@@ -17,11 +17,11 @@ import (
 )
 
 type Dataset struct {
-	Schema   string                 `json:"schema"`
-	PropletID string                `json:"proplet_id,omitempty"`
-	ClientID string                 `json:"client_id,omitempty"` // Legacy field for backward compatibility
-	Data     []map[string]interface{} `json:"data"`
-	Size     int                    `json:"size"`
+	Schema    string                   `json:"schema"`
+	PropletID string                   `json:"proplet_id,omitempty"`
+	ClientID  string                   `json:"client_id,omitempty"` // Legacy field for backward compatibility
+	Data      []map[string]interface{} `json:"data"`
+	Size      int                      `json:"size"`
 }
 
 type DatasetStore struct {
@@ -40,7 +40,7 @@ func main() {
 		store.dataDir = dir
 	}
 
-	if err := os.MkdirAll(store.dataDir, 0755); err != nil {
+	if err := os.MkdirAll(store.dataDir, 0o755); err != nil {
 		log.Fatalf("Failed to create data directory: %v", err)
 	}
 
@@ -61,7 +61,7 @@ func main() {
 	// Support both proplet_id and client_id for backward compatibility
 	r.HandleFunc("/datasets/{proplet_id}", getDatasetHandler).Methods("GET")
 	r.HandleFunc("/datasets/{proplet_id}", postDatasetHandler).Methods("POST")
-	r.HandleFunc("/datasets/{client_id}", getDatasetHandler).Methods("GET") // Legacy route
+	r.HandleFunc("/datasets/{client_id}", getDatasetHandler).Methods("GET")   // Legacy route
 	r.HandleFunc("/datasets/{client_id}", postDatasetHandler).Methods("POST") // Legacy route
 
 	slog.Info("Local Data Store HTTP server starting", "port", port, "data_dir", store.dataDir)
@@ -230,13 +230,13 @@ func getParticipantUUIDs() []string {
 // generateDataset creates a deterministic dataset for a given proplet ID
 func generateDataset(propletID string, numSamples int) *Dataset {
 	sampleData := make([]map[string]interface{}, numSamples)
-	
+
 	// Use proplet ID hash to generate deterministic but unique data per proplet
 	hash := 0
 	for _, c := range propletID {
 		hash = hash*31 + int(c)
 	}
-	
+
 	for i := 0; i < numSamples; i++ {
 		// Deterministic data based on proplet ID and sample index
 		seed := (hash + i) % 1000
@@ -269,7 +269,7 @@ func saveDatasetAtomic(propletID string, dataset *Dataset) error {
 		return fmt.Errorf("failed to marshal dataset: %w", err)
 	}
 
-	if err := os.WriteFile(tempFile, datasetJSON, 0644); err != nil {
+	if err := os.WriteFile(tempFile, datasetJSON, 0o644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 

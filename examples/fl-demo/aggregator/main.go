@@ -85,7 +85,7 @@ func aggregateHandler(w http.ResponseWriter, r *http.Request) {
 		// Debug: log the first update structure
 		updateJSON, _ := json.Marshal(req.Updates[0].Update)
 		slog.Info("First update structure", "update", string(updateJSON))
-		
+
 		if w, ok := req.Updates[0].Update["w"].([]interface{}); ok {
 			aggregatedW = make([]float64, len(w))
 			for i := range w {

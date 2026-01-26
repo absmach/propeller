@@ -22,10 +22,10 @@ func get_dataset_data(ret_offset *int32, ret_len *int32) int32
 
 func getEnvVarViaHost(hostFunc func(*int32, *int32) int32, envVarName string) string {
 	var offset, length int32
-	
+
 	if hostFunc(&offset, &length) == 1 && offset != 0 && length > 0 {
 	}
-	
+
 	return os.Getenv(envVarName)
 }
 
@@ -53,7 +53,7 @@ func main() {
 
 	modelDataStr := getEnvVarViaHost(get_model_data, "MODEL_DATA")
 	var model map[string]interface{}
-	
+
 	if modelDataStr != "" {
 		fmt.Fprintf(os.Stderr, "Received MODEL_DATA from proplet runtime (length: %d)\n", len(modelDataStr))
 		if err := json.Unmarshal([]byte(modelDataStr), &model); err != nil {
@@ -158,7 +158,7 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 	weights := model["w"].([]float64)
-	
+
 	for epoch := 0; epoch < epochs; epoch++ {
 		for i := len(dataset) - 1; i > 0; i-- {
 			j := rand.Intn(i + 1)

@@ -70,7 +70,7 @@ func main() {
 
 	modelDataStr := os.Getenv("MODEL_DATA")
 	var model map[string]interface{}
-	
+
 	if modelDataStr != "" {
 		if err := json.Unmarshal([]byte(modelDataStr), &model); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to parse MODEL_DATA: %v\n", err)
@@ -88,7 +88,7 @@ func main() {
 	}
 
 	datasetDataStr := os.Getenv("DATASET_DATA")
-	
+
 	var dataset []map[string]interface{}
 	var numSamples int
 
@@ -167,7 +167,7 @@ func main() {
 		firstSample := dataset[0]
 		if x, ok := firstSample["x"].([]interface{}); ok && len(x) >= 3 {
 			if y, ok := firstSample["y"].(float64); ok {
-				fmt.Fprintf(os.Stderr, "DEBUG: Initial model - w: [%.6f, %.6f, %.6f], b: %.6f\n", 
+				fmt.Fprintf(os.Stderr, "DEBUG: Initial model - w: [%.6f, %.6f, %.6f], b: %.6f\n",
 					weights[0], weights[1], weights[2], bias)
 				fmt.Fprintf(os.Stderr, "DEBUG: First sample - x: [%.3f, %.3f, %.3f], y: %.0f\n",
 					x[0].(float64), x[1].(float64), x[2].(float64), y)
@@ -176,7 +176,7 @@ func main() {
 	}
 
 	rand.Seed(time.Now().UnixNano())
-	
+
 	// Logistic regression training with SGD
 	for epoch := 0; epoch < epochs; epoch++ {
 		// Shuffle dataset
@@ -197,7 +197,7 @@ func main() {
 				sample := dataset[i]
 				xInterface, xOk := sample["x"].([]interface{})
 				yInterface, yOk := sample["y"].(float64)
-				
+
 				if !xOk || !yOk {
 					continue
 				}
@@ -275,7 +275,7 @@ func main() {
 	}
 
 	// Debug: Log the update payload being sent
-	fmt.Fprintf(os.Stderr, "DEBUG: Update payload (first 500 chars): %s\n", 
+	fmt.Fprintf(os.Stderr, "DEBUG: Update payload (first 500 chars): %s\n",
 		func() string {
 			s := string(updateJSON)
 			if len(s) > 500 {
