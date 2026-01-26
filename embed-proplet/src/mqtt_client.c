@@ -968,12 +968,22 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
       if (header_end) {
         headers_complete = true;
         size_t header_len = (header_end - header_buffer) + 4;
-        size_t body_start_in_chunk = header_len - (header_buffer_len - copy_len);
+        
+        /* Calculate where body starts within current chunk */
+        size_t body_start_in_chunk = 0;
+        if (header_len > (header_buffer_len - copy_len)) {
+          body_start_in_chunk = header_len - header_buffer_len + copy_len;
+        }
         
         /* Extract Content-Length from accumulated headers */
         char *cl_header = strstr(header_buffer, "Content-Length:");
         if (cl_header) {
-          content_length = atoi(cl_header + strlen("Content-Length:"));
+          const char *val_start = cl_header + strlen("Content-Length:");
+          char *endptr;
+          unsigned long cl_val = strtoul(val_start, &endptr, 10);
+          if (endptr != val_start && cl_val <= (unsigned long)SIZE_MAX) {
+            content_length = (size_t)cl_val;
+          }
         }
         
         /* Copy body data from current chunk */
@@ -1033,11 +1043,10 @@ static int extract_model_version_from_uri(const char *uri) {
     return version;
   }
   
-  size_t len = strlen(last_part);
   int version = 0;
-  for (size_t i = len; i > 0; i--) {
-    if (last_part[i-1] >= '0' && last_part[i-1] <= '9') {
-      version = (version * 10) + (last_part[i-1] - '0');
+  for (size_t i = 0; i < strlen(last_part); i++) {
+    if (last_part[i] >= '0' && last_part[i] <= '9') {
+      version = (version * 10) + (last_part[i] - '0');
     } else if (version > 0) {
       break;
     }
@@ -1229,11 +1238,81 @@ void publish_results(const char *domain_id, const char *channel_id,
   publish_results_with_error(domain_id, channel_id, task_id, results, NULL);
 }
 
+static void json_escape_string(char *dest, size_t dest_size, const char *src) {
+  if (!src || dest_size == 0) {
+    if (dest_size > 0) {
+      dest[0] = '\0';
+    }
+    return;
+  }
+
+  size_t j = 0;
+  for (size_t i = 0; src[i] != '\0' && j < dest_size - 1; i++) {
+    switch (src[i]) {
+      case '"':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = '"';
+        }
+        break;
+      case '\\':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = '\\';
+        }
+        break;
+      case '\b':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = 'b';
+        }
+        break;
+      case '\f':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = 'f';
+        }
+        break;
+      case '\n':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = 'n';
+        }
+        break;
+      case '\r':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = 'r';
+        }
+        break;
+      case '\t':
+        if (j + 2 < dest_size) {
+          dest[j++] = '\\';
+          dest[j++] = 't';
+        }
+        break;
+      default:
+        if (j < dest_size - 1) {
+          dest[j++] = src[i];
+        }
+        break;
+    }
+  }
+  dest[j] = '\0';
+}
+
 void publish_results_with_error(const char *domain_id, const char *channel_id,
                                  const char *task_id, const char *results,
                                  const char *error_msg) {
   char results_payload[2048];
+  char escaped_error[MAX_ERROR_MSG_LEN * 2];
   const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
+
+  if (error_msg) {
+    json_escape_string(escaped_error, sizeof(escaped_error), error_msg);
+  } else {
+    escaped_error[0] = '\0';
+  }
 
   if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
     cJSON *update_json = NULL;
@@ -1259,7 +1338,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         g_current_task.round_id,
         pid,
         g_current_task.model_uri,
-        error_msg
+        escaped_error
       );
     } else if (update_json) {
       cJSON *round_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "round_id");
@@ -1314,10 +1393,6 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
   if (g_current_task.is_fl_task && 
       strcmp(g_current_task.mode, "train") == 0 &&
       strlen(g_current_task.fl.job_id) > 0) {
-    if (strlen(g_current_task.fl.job_id) == 0) {
-      LOG_ERR("FL task missing job_id, cannot publish update");
-      return;
-    }
     if (strlen(g_current_task.fl.global_version) == 0) {
       LOG_ERR("FL task missing global_version, cannot publish update");
       return;
@@ -1396,7 +1471,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         pid,
         (unsigned long long)num_samples,
         format,
-        error_msg
+        escaped_error
       );
     } else {
       snprintf(results_payload, sizeof(results_payload),
@@ -1430,13 +1505,20 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
             task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
             error_msg ? error_msg : "none");
   } else {
+    char escaped_results[2048];
+    if (results) {
+      json_escape_string(escaped_results, sizeof(escaped_results), results);
+    } else {
+      escaped_results[0] = '\0';
+    }
+    
     if (error_msg) {
       snprintf(results_payload, sizeof(results_payload),
                "{\"task_id\":\"%s\",\"results\":\"%s\",\"error\":\"%s\"}", 
-               task_id, results ? results : "", error_msg);
+               task_id, escaped_results, escaped_error);
     } else {
       snprintf(results_payload, sizeof(results_payload),
-               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results ? results : "");
+               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, escaped_results);
     }
   }
 

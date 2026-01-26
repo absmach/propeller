@@ -140,14 +140,14 @@ func handle(logger *slog.Logger, containerChan chan<- string) func(topic string,
 			return errors.New("failed to unmarshal app_name")
 		}
 
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		select {
 		case containerChan <- appName:
 			logger.Info("Received container request", slog.String("app_name", appName))
-		default:
-			// Channel is full - this is expected when many proplets request the same binary simultaneously
-			// The deduplication logic in the service will handle this - if a fetch is already in progress,
-			// the duplicate requests will be skipped. If not, the request will be retried on the next attempt.
-			logger.Debug("Channel full, dropping duplicate request (deduplication will handle this)",
+		case <-ctx.Done():
+			logger.Error("Channel full, request timed out waiting for available slot",
 				slog.String("app_name", appName))
 		}
 

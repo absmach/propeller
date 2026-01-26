@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/fxamacker/cbor/v2"
@@ -159,7 +160,7 @@ func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundSt
 		return RoundStatus{}, errors.New("COORDINATOR_URL must be configured")
 	}
 
-	url := fmt.Sprintf("%s/rounds/%s/complete", svc.flCoordinatorURL, roundID)
+	url := fmt.Sprintf("%s/rounds/%s/complete", svc.flCoordinatorURL, url.PathEscape(roundID))
 	resp, err := svc.httpClient.Get(url)
 	if err != nil {
 		return RoundStatus{}, fmt.Errorf("failed to forward round status request to coordinator: %w", err)

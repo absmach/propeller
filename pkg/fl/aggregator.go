@@ -31,7 +31,11 @@ func (f *FedAvgAggregator) Aggregate(updates []Update) (Model, error) {
 
 		weight := float64(update.NumSamples)
 		// Explicitly cast to int64 to prevent overflow when summing many updates
-		totalSamples += int64(update.NumSamples)
+		newTotal := totalSamples + int64(update.NumSamples)
+		if newTotal < totalSamples {
+			return Model{}, ErrOverflow
+		}
+		totalSamples = newTotal
 
 		if w, ok := update.Update["w"].([]any); ok {
 			for i, v := range w {
