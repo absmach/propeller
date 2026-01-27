@@ -334,6 +334,7 @@ mod tests {
         let msg = MqttMessage {
             topic: "test/topic".to_string(),
             payload: serde_json::to_vec(&payload).unwrap(),
+            is_reconnect: false,
         };
 
         let decoded: TestPayload = msg.decode().unwrap();
@@ -346,6 +347,7 @@ mod tests {
         let msg = MqttMessage {
             topic: "test/topic".to_string(),
             payload: b"invalid json".to_vec(),
+            is_reconnect: false,
         };
 
         let result: Result<serde_json::Value> = msg.decode();
@@ -361,6 +363,7 @@ mod tests {
         let msg = MqttMessage {
             topic: "test/topic".to_string(),
             payload: Vec::new(),
+            is_reconnect: false,
         };
 
         let result: Result<serde_json::Value> = msg.decode();
@@ -528,6 +531,7 @@ mod tests {
         let msg = MqttMessage {
             topic: "nested/topic".to_string(),
             payload: serde_json::to_vec(&payload).unwrap(),
+            is_reconnect: false,
         };
 
         let decoded: NestedPayload = msg.decode().unwrap();
