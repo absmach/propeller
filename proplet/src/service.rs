@@ -1145,10 +1145,7 @@ fn build_fl_update_envelope(
         .cloned()
         .unwrap_or_else(|| "f32-delta".to_string());
 
-    let round_id = env
-        .get("ROUND_ID")
-        .cloned()
-        .unwrap_or_default();
+    let round_id = env.get("ROUND_ID").cloned().unwrap_or_default();
 
     let update_b64 = STANDARD.encode(result_str.as_bytes());
 
