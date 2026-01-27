@@ -39,6 +39,7 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
+
 				return
 			}
 
@@ -48,6 +49,7 @@ Examples:
 			})
 			if err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logJSONCmd(*cmd, t)
@@ -69,12 +71,14 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
+
 				return
 			}
 
 			t, err := psdk.GetTask(args[0])
 			if err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logJSONCmd(*cmd, t)
@@ -96,6 +100,7 @@ Examples:
 			})
 			if err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logJSONCmd(*cmd, t)
@@ -109,11 +114,13 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
+
 				return
 			}
 
 			if err := psdk.DeleteTask(args[0]); err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logOKCmd(*cmd)
@@ -127,11 +134,13 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
+
 				return
 			}
 
 			if err := psdk.StartTask(args[0]); err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logOKCmd(*cmd)
@@ -145,11 +154,13 @@ Examples:
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
+
 				return
 			}
 
 			if err := psdk.StopTask(args[0]); err != nil {
 				logErrorCmd(*cmd, err)
+
 				return
 			}
 			logOKCmd(*cmd)
