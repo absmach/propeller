@@ -112,7 +112,19 @@ impl Runtime for HostRuntime {
             cmd.arg(arg.to_string());
         }
 
+        // Pass task-specific environment variables
         cmd.envs(&config.env);
+        
+        // Inherit critical system environment variables for OpenVINO/wasi-nn
+        if let Ok(ld_path) = std::env::var("LD_LIBRARY_PATH") {
+            cmd.env("LD_LIBRARY_PATH", ld_path);
+        }
+        if let Ok(openvino_dir) = std::env::var("INTEL_OPENVINO_DIR") {
+            cmd.env("INTEL_OPENVINO_DIR", openvino_dir);
+        }
+        if let Ok(openvino_cmake) = std::env::var("OpenVINO_DIR") {
+            cmd.env("OpenVINO_DIR", openvino_cmake);
+        }
 
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
