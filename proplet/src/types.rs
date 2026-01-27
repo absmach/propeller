@@ -290,7 +290,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -313,7 +312,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -336,7 +334,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -361,7 +358,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -386,7 +382,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -414,7 +409,6 @@ mod tests {
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -437,7 +431,6 @@ mod tests {
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -465,7 +458,6 @@ mod tests {
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
@@ -710,7 +702,6 @@ mod tests {
             encrypted: false,
             kbs_resource_path: None,
             mode: None,
-            fl: None,
             proplet_id: None,
         };
 
