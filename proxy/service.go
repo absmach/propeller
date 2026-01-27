@@ -12,13 +12,15 @@ import (
 
 const (
 	chunkBuffer       = 10
-	containerChanSize = 100 // Increased buffer to handle concurrent requests from multiple proplets
+	containerChanSize = 100
 
 	connTimeout    = 10
 	reconnTimeout  = 1
 	disconnTimeout = 250
 	PubTopic       = "m/%s/c/%s/registry/server"
 	SubTopic       = "m/%s/c/%s/registry/proplet"
+
+	maxConcurrentFetches = 50
 )
 
 type ProxyService struct {
@@ -29,8 +31,10 @@ type ProxyService struct {
 	logger        *slog.Logger
 	containerChan chan string
 	dataChan      chan proplet.ChunkPayload
-	fetching      map[string]bool // Track ongoing fetches to avoid duplicates
-	fetchingMu    sync.Mutex      // Mutex to protect fetching map
+	fetching      map[string]bool
+	fetchingMu    sync.Mutex
+	activeFetches int
+	activeFetchMu sync.Mutex
 }
 
 func NewService(ctx context.Context, pubsub pkgmqtt.PubSub, domainID, channelID string, httpCfg HTTPProxyConfig, logger *slog.Logger) (*ProxyService, error) {
@@ -56,27 +60,42 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case containerName := <-s.containerChan:
-			// Check if we're already fetching this container
+			s.activeFetchMu.Lock()
+			if s.activeFetches >= maxConcurrentFetches {
+				s.activeFetchMu.Unlock()
+				s.logger.Debug("maximum concurrent fetches reached, queuing request",
+					slog.String("container", containerName),
+					slog.Int("max_concurrent", maxConcurrentFetches))
+
+				continue
+			}
+			s.activeFetches++
+			s.activeFetchMu.Unlock()
+
 			s.fetchingMu.Lock()
 			if s.fetching[containerName] {
 				s.fetchingMu.Unlock()
+				s.activeFetchMu.Lock()
+				s.activeFetches--
+				s.activeFetchMu.Unlock()
 				s.logger.Debug("already fetching container, skipping duplicate request",
 					slog.String("container", containerName))
 
 				continue
 			}
 
-			// Mark as fetching
 			s.fetching[containerName] = true
 			s.fetchingMu.Unlock()
 
-			// Fetch in a goroutine to allow concurrent processing
 			go func(name string) {
 				defer func() {
-					// Remove from fetching map when done
 					s.fetchingMu.Lock()
 					delete(s.fetching, name)
 					s.fetchingMu.Unlock()
+
+					s.activeFetchMu.Lock()
+					s.activeFetches--
+					s.activeFetchMu.Unlock()
 				}()
 
 				s.logger.Info("fetching container from registry",
@@ -95,7 +114,6 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 					slog.String("container", name),
 					slog.Int("total_chunks", len(chunks)))
 
-				// Send each chunk through the data channel
 				for _, chunk := range chunks {
 					select {
 					case s.dataChan <- chunk:

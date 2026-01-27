@@ -160,27 +160,37 @@ func (ps *PersistentStorage) ListModels() ([]int, error) {
 // sanitizeRoundID removes path traversal sequences and other dangerous characters
 // from roundID to prevent directory traversal attacks.
 func sanitizeRoundID(roundID string) string {
+	// Remove null bytes and other control characters first
+	var sanitized strings.Builder
+	for _, r := range roundID {
+		if r < 32 || r == 127 {
+			continue
+		}
+		sanitized.WriteRune(r)
+	}
+
 	// Remove path separators and parent directory references
-	sanitized := strings.ReplaceAll(roundID, "..", "")
-	sanitized = strings.ReplaceAll(sanitized, "/", "")
-	sanitized = strings.ReplaceAll(sanitized, "\\", "")
+	result := strings.ReplaceAll(sanitized.String(), "..", "")
+	result = strings.ReplaceAll(result, "/", "")
+	result = strings.ReplaceAll(result, "\\", "")
 
-	// Remove any remaining whitespace and control characters
-	sanitized = strings.TrimSpace(sanitized)
+	// Remove any remaining whitespace
+	result = strings.TrimSpace(result)
 
-	// Only allow alphanumeric, hyphens, underscores, and dots (but not consecutive dots)
+	// Only allow alphanumeric, hyphens, underscores, and single dots
 	// This ensures the roundID is safe for use in filenames
-	var result strings.Builder
-	for _, r := range sanitized {
+	var final strings.Builder
+	for _, r := range result {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
-			result.WriteRune(r)
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			final.WriteRune(r)
 		}
 	}
 
-	final := result.String()
-	// Ensure no consecutive dots remain
-	final = strings.ReplaceAll(final, "..", "")
+	// Ensure result is not empty
+	if final.Len() == 0 {
+		return ""
+	}
 
-	return final
+	return final.String()
 }

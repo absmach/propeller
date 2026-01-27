@@ -35,12 +35,6 @@ For setup instructions, API references, and usage examples, see the documentatio
 - ☁️ **Serverless Applications**: Deploy FaaS applications leveraging Propeller's Wasm orchestration capabilities.
 - 🧠 **Federated Machine Learning**: Train machine learning models across distributed edge devices without exposing raw data, perfect for privacy-sensitive applications.
 
-### Architecture Notes
-
-- **Rust Proplet Only**: Propeller now uses only the Rust proplet implementation (Wasmtime runtime) for executing FL workloads
-- **MQTT Communication**: FL coordination uses MQTT topics under `m/{domain}/c/{channel}/control/...`
-- **Chunked Transport**: Large model artifacts are automatically chunked for efficient MQTT transport
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please check the [CONTRIBUTING.md](#) for details on how to get started.

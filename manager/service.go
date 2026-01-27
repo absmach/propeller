@@ -499,8 +499,6 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
 		go func() {
-			// Create a context with timeout for this goroutine
-			// Use a reasonable timeout (5 minutes) to prevent indefinite execution
 			roundCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
 
@@ -511,7 +509,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 				return
 			}
 
-			// Check if context is already cancelled
 			if roundCtx.Err() != nil {
 				svc.logger.WarnContext(roundCtx, "context cancelled before processing round start", "round_id", roundID)
 
@@ -555,7 +552,6 @@ func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg
 			}
 
 			for _, propletID := range participants {
-				// Check context cancellation before each participant
 				select {
 				case <-roundCtx.Done():
 					svc.logger.WarnContext(roundCtx, "context cancelled during round processing", "round_id", roundID, "processed", len(participants))

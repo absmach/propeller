@@ -398,14 +398,16 @@ impl PropletService {
 
         {
             let mut tasks = self.running_tasks.lock().await;
-            if tasks.contains_key(&req.id) {
+            use std::collections::hash_map::Entry;
+            if let Entry::Vacant(e) = tasks.entry(req.id.clone()) {
+                e.insert(TaskState::Running);
+            } else {
                 warn!(
                     "Task {} is already running, ignoring duplicate start command",
                     req.id
                 );
                 return Ok(());
             }
-            tasks.insert(req.id.clone(), TaskState::Running);
         }
 
         let wasm_binary = if !req.file.is_empty() {
@@ -772,31 +774,32 @@ impl PropletService {
                 }
             }
 
-            if req.mode.as_deref() == Some("train") && req.fl.is_some() {
-                let fl_spec = req.fl.as_ref().unwrap();
-                let update_envelope =
-                    build_fl_update_envelope(&task_id, &proplet_id, &result_str, fl_spec, &env);
+            if env.contains_key("ROUND_ID") {
+                if let Some(fl_spec) = req.fl.as_ref() {
+                    let update_envelope =
+                        build_fl_update_envelope(&task_id, &proplet_id, &result_str, fl_spec, &env);
 
-                #[derive(serde::Serialize)]
-                struct FLResultMessage {
-                    task_id: String,
-                    results: serde_json::Value,
-                    error: Option<String>,
-                }
+                    #[derive(serde::Serialize)]
+                    struct FLResultMessage {
+                        task_id: String,
+                        results: serde_json::Value,
+                        error: Option<String>,
+                    }
 
-                let fl_result = FLResultMessage {
-                    task_id: task_id.clone(),
-                    results: serde_json::to_value(&update_envelope).unwrap_or_default(),
-                    error,
-                };
+                    let fl_result = FLResultMessage {
+                        task_id: task_id.clone(),
+                        results: serde_json::to_value(&update_envelope).unwrap_or_default(),
+                        error,
+                    };
 
-                let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
-                info!("Publishing FL update for task {}", task_id);
+                    let topic = build_topic(&domain_id, &channel_id, "control/proplet/results");
+                    info!("Publishing FL update for task {}", task_id);
 
-                if let Err(e) = pubsub.publish(&topic, &fl_result, qos).await {
-                    error!("Failed to publish FL result for task {}: {}", task_id, e);
-                } else {
-                    info!("Successfully published FL update for task {}", task_id);
+                    if let Err(e) = pubsub.publish(&topic, &fl_result, qos).await {
+                        error!("Failed to publish FL result for task {}: {}", task_id, e);
+                    } else {
+                        info!("Successfully published FL update for task {}", task_id);
+                    }
                 }
             } else {
                 let result_msg = ResultMessage {
