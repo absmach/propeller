@@ -39,38 +39,6 @@ impl Proplet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FLSpec {
-    #[serde(default)]
-    pub job_id: String,
-    #[serde(default)]
-    pub round_id: u64,
-    #[serde(default)]
-    pub global_version: String,
-    #[serde(default)]
-    pub min_participants: u64,
-    #[serde(default)]
-    pub round_timeout_sec: u64,
-    #[serde(default)]
-    pub clients_per_round: u64,
-    #[serde(default)]
-    pub total_rounds: u64,
-    #[serde(default)]
-    pub algorithm: String,
-    #[serde(default)]
-    pub update_format: String,
-    #[serde(default)]
-    pub hyperparams: Option<HashMap<String, serde_json::Value>>,
-    #[serde(default)]
-    pub model_ref: String,
-    #[serde(default)]
-    pub local_epochs: u64,
-    #[serde(default)]
-    pub batch_size: u64,
-    #[serde(default)]
-    pub learning_rate: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartRequest {
     pub id: String,
     #[serde(default, deserialize_with = "deserialize_null_default")]
@@ -96,8 +64,6 @@ pub struct StartRequest {
     pub kbs_resource_path: Option<String>,
     #[serde(default)]
     pub mode: Option<String>,
-    #[serde(default)]
-    pub fl: Option<FLSpec>,
     #[serde(default)]
     pub proplet_id: Option<String>,
 }
