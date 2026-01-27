@@ -976,18 +976,6 @@ impl PropletService {
     }
 
     #[allow(dead_code)]
-    fn build_fl_update_envelope(
-        &self,
-        task_id: &str,
-        proplet_id: &str,
-        result_str: &str,
-        fl_spec: &crate::types::FLSpec,
-        env: &HashMap<String, String>,
-    ) -> serde_json::Value {
-        build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
-    }
-
-    #[allow(dead_code)]
     fn parse_http_requests_from_stderr(stderr: &str) -> Vec<HttpRequest> {
         let mut requests = Vec::new();
 
