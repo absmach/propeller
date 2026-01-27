@@ -65,22 +65,6 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_UPDATE_B64_LEN 2048
 #define MAX_ERROR_MSG_LEN 256
 
-struct fl_spec {
-  char job_id[MAX_ID_LEN];
-  uint64_t round_id;
-  char global_version[MAX_ID_LEN];
-  uint64_t min_participants;
-  uint64_t round_timeout_sec;
-  uint64_t clients_per_round;
-  uint64_t total_rounds;
-  char algorithm[MAX_NAME_LEN];
-  char update_format[MAX_NAME_LEN];
-  char model_ref[MAX_URL_LEN];
-  uint64_t local_epochs;
-  uint64_t batch_size;
-  double learning_rate;
-};
-
 struct task {
   char id[MAX_ID_LEN];
   char name[MAX_NAME_LEN];
@@ -101,13 +85,9 @@ struct task {
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
 
-  struct fl_spec fl;
-  bool is_fl_task;
+  bool is_fl_task;  // Legacy field - FL tasks now detected via ROUND_ID
   
-  char fl_job_id[MAX_ID_LEN];
   char fl_round_id_str[32];
-  char fl_global_version[MAX_ID_LEN];
-  char fl_global_update_b64[MAX_BASE64_LEN];
   char fl_format[MAX_NAME_LEN];
   char fl_num_samples_str[32];
   
@@ -543,56 +523,8 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  if (fl_obj != NULL && cJSON_IsObject(fl_obj)) {
-    t.is_fl_task = true;
-    cJSON *job_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "job_id");
-    cJSON *round_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "round_id");
-    cJSON *global_version = cJSON_GetObjectItemCaseSensitive(fl_obj, "global_version");
-    cJSON *update_format = cJSON_GetObjectItemCaseSensitive(fl_obj, "update_format");
-    cJSON *min_participants = cJSON_GetObjectItemCaseSensitive(fl_obj, "min_participants");
-    cJSON *total_rounds = cJSON_GetObjectItemCaseSensitive(fl_obj, "total_rounds");
-    cJSON *local_epochs = cJSON_GetObjectItemCaseSensitive(fl_obj, "local_epochs");
-    cJSON *batch_size = cJSON_GetObjectItemCaseSensitive(fl_obj, "batch_size");
-    cJSON *learning_rate = cJSON_GetObjectItemCaseSensitive(fl_obj, "learning_rate");
-
-    if (cJSON_IsString(job_id)) {
-      strncpy(t.fl.job_id, job_id->valuestring, MAX_ID_LEN - 1);
-      t.fl.job_id[MAX_ID_LEN - 1] = '\0';
-      strncpy(t.fl_job_id, job_id->valuestring, MAX_ID_LEN - 1);
-      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
-    }
-    if (cJSON_IsNumber(round_id)) {
-      t.fl.round_id = (uint64_t)round_id->valuedouble;
-      snprintf(t.fl_round_id_str, sizeof(t.fl_round_id_str), "%llu", (unsigned long long)t.fl.round_id);
-    }
-    if (cJSON_IsString(global_version)) {
-      strncpy(t.fl.global_version, global_version->valuestring, MAX_ID_LEN - 1);
-      t.fl.global_version[MAX_ID_LEN - 1] = '\0';
-      strncpy(t.fl_global_version, global_version->valuestring, MAX_ID_LEN - 1);
-      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
-    }
-    if (cJSON_IsString(update_format)) {
-      strncpy(t.fl.update_format, update_format->valuestring, MAX_NAME_LEN - 1);
-      t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
-      strncpy(t.fl_format, update_format->valuestring, MAX_NAME_LEN - 1);
-      t.fl_format[MAX_NAME_LEN - 1] = '\0';
-    }
-    if (cJSON_IsNumber(min_participants)) {
-      t.fl.min_participants = (uint64_t)min_participants->valuedouble;
-    }
-    if (cJSON_IsNumber(total_rounds)) {
-      t.fl.total_rounds = (uint64_t)total_rounds->valuedouble;
-    }
-    if (cJSON_IsNumber(local_epochs)) {
-      t.fl.local_epochs = (uint64_t)local_epochs->valuedouble;
-    }
-    if (cJSON_IsNumber(batch_size)) {
-      t.fl.batch_size = (uint64_t)batch_size->valuedouble;
-    }
-    if (cJSON_IsNumber(learning_rate)) {
-      t.fl.learning_rate = learning_rate->valuedouble;
-    }
-  }
+  // FL tasks are detected via ROUND_ID environment variable
+  // No need to parse FLSpec from JSON - all values come from env vars
 
   t.model_data_fetched = false;
   t.dataset_data_fetched = false;
@@ -656,46 +588,22 @@ void handle_start_command(const char *payload) {
       t.hyperparams[sizeof(t.hyperparams) - 1] = '\0';
     }
     
-    cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
+    // FL task configuration from environment variables
     cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
-    cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
-    cJSON *fl_global_update_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_UPDATE_B64");
     cJSON *fl_format_env = cJSON_GetObjectItemCaseSensitive(env, "FL_FORMAT");
     cJSON *fl_num_samples_env = cJSON_GetObjectItemCaseSensitive(env, "FL_NUM_SAMPLES");
 
-    if (cJSON_IsString(fl_job_id_env)) {
-      strncpy(t.fl_job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
-      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
-      if (!t.is_fl_task) {
-        strncpy(t.fl.job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
-        t.fl.job_id[MAX_ID_LEN - 1] = '\0';
-        t.is_fl_task = true;
-      }
-    }
     if (cJSON_IsString(fl_round_id_env)) {
       strncpy(t.fl_round_id_str, fl_round_id_env->valuestring, sizeof(t.fl_round_id_str) - 1);
       t.fl_round_id_str[sizeof(t.fl_round_id_str) - 1] = '\0';
-      t.fl.round_id = (uint64_t)strtoull(t.fl_round_id_str, NULL, 10);
-    }
-    if (cJSON_IsString(fl_global_version_env)) {
-      strncpy(t.fl_global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
-      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
-      if (!t.is_fl_task || strlen(t.fl.global_version) == 0) {
-        strncpy(t.fl.global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
-        t.fl.global_version[MAX_ID_LEN - 1] = '\0';
-      }
-    }
-    if (cJSON_IsString(fl_global_update_env)) {
-      strncpy(t.fl_global_update_b64, fl_global_update_env->valuestring, MAX_BASE64_LEN - 1);
-      t.fl_global_update_b64[MAX_BASE64_LEN - 1] = '\0';
     }
     if (cJSON_IsString(fl_format_env)) {
       strncpy(t.fl_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
       t.fl_format[MAX_NAME_LEN - 1] = '\0';
-      if (!t.is_fl_task || strlen(t.fl.update_format) == 0) {
-        strncpy(t.fl.update_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
-        t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
-      }
+    } else {
+      // Default format
+      strncpy(t.fl_format, "f32-delta", MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
     }
     if (cJSON_IsString(fl_num_samples_env)) {
       strncpy(t.fl_num_samples_str, fl_num_samples_env->valuestring, sizeof(t.fl_num_samples_str) - 1);
@@ -732,16 +640,7 @@ void handle_start_command(const char *payload) {
         LOG_ERR("Failed to subscribe to model topic: %s (error: %d)", t.model_uri, ret);
       }
     }
-  } else if (t.is_fl_task) {
-    if (strlen(t.fl.job_id) == 0) {
-      LOG_ERR("FL task (legacy) missing required job_id field");
-      cJSON_Delete(json);
-      return;
-    }
-    LOG_INF("FL Task (legacy): job_id=%s, round_id=%llu, global_version=%s, format=%s",
-            t.fl.job_id, (unsigned long long)t.fl.round_id, 
-            t.fl.global_version, t.fl.update_format);
-  }
+  // FL tasks are detected via ROUND_ID environment variable (FML tasks)
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
 
@@ -1421,13 +1320,11 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
     return;
   }
 
-  if (g_current_task.is_fl_task && 
-      strcmp(g_current_task.mode, "train") == 0 &&
-      strlen(g_current_task.fl.job_id) > 0) {
-    if (strlen(g_current_task.fl.global_version) == 0) {
-      LOG_ERR("FL task missing global_version, cannot publish update");
-      return;
-    }
+  // Check if this is an FL task (has ROUND_ID)
+  bool is_fl_task = (strlen(g_current_task.round_id) > 0 || 
+                     strlen(g_current_task.fl_round_id_str) > 0);
+  
+  if (is_fl_task && strcmp(g_current_task.mode, "train") == 0) {
 
     char update_b64[MAX_UPDATE_B64_LEN];
     size_t encoded_len = 0;
@@ -1477,15 +1374,19 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       num_samples = 1;
     }
 
+    // Get round_id from ROUND_ID env var (stored in fl_round_id_str)
+    const char *round_id_str = (strlen(g_current_task.fl_round_id_str) > 0) ?
+                               g_current_task.fl_round_id_str : 
+                               (strlen(g_current_task.round_id) > 0) ?
+                               g_current_task.round_id : "";
+
     if (error_msg) {
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"task_id\":\"%s\","
         "\"results\":{"
           "\"task_id\":\"%s\","
-          "\"job_id\":\"%s\","
-          "\"round_id\":%llu,"
-          "\"global_version\":\"%s\","
+          "\"round_id\":\"%s\","
           "\"proplet_id\":\"%s\","
           "\"num_samples\":%llu,"
           "\"update_b64\":\"\","
@@ -1496,9 +1397,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "}",
         task_id,
         task_id,
-        g_current_task.fl.job_id,
-        (unsigned long long)g_current_task.fl.round_id,
-        g_current_task.fl.global_version,
+        round_id_str,
         pid,
         (unsigned long long)num_samples,
         format,
@@ -1510,9 +1409,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "\"task_id\":\"%s\","
         "\"results\":{"
           "\"task_id\":\"%s\","
-          "\"job_id\":\"%s\","
-          "\"round_id\":%llu,"
-          "\"global_version\":\"%s\","
+          "\"round_id\":\"%s\","
           "\"proplet_id\":\"%s\","
           "\"num_samples\":%llu,"
           "\"update_b64\":\"%s\","
@@ -1522,9 +1419,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "}",
         task_id,
         task_id,
-        g_current_task.fl.job_id,
-        (unsigned long long)g_current_task.fl.round_id,
-        g_current_task.fl.global_version,
+        round_id_str,
         pid,
         (unsigned long long)num_samples,
         update_b64,
@@ -1532,9 +1427,8 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       );
     }
 
-    LOG_INF("Publishing FL update envelope for task: %s (job=%s, round=%llu, error=%s)",
-            task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
-            error_msg ? error_msg : "none");
+    LOG_INF("Publishing FL update envelope for task: %s (round=%s, error=%s)",
+            task_id, round_id_str, error_msg ? error_msg : "none");
   } else {
     char escaped_results[2048];
     if (results) {
