@@ -97,6 +97,7 @@ impl PubSub {
 pub struct MqttMessage {
     pub topic: String,
     pub payload: Vec<u8>,
+    pub is_reconnect: bool,
 }
 
 impl MqttMessage {
@@ -117,10 +118,26 @@ pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::Sender<Mqtt
                 let msg = MqttMessage {
                     topic: publish.topic.clone(),
                     payload: publish.payload.to_vec(),
+                    is_reconnect: false,
                 };
 
                 if let Err(e) = tx.send(msg).await {
                     error!("Failed to send MQTT message to handler: {}", e);
+                }
+            }
+            Ok(Event::Incoming(Packet::ConnAck(connack))) => {
+                debug!("Received MQTT packet: ConnAck({:?})", connack);
+                // If session_present is false, subscriptions are lost and need to be re-established
+                if !connack.session_present {
+                    info!("MQTT session not present, triggering re-subscription");
+                    let reconnect_msg = MqttMessage {
+                        topic: "__reconnect__".to_string(),
+                        payload: Vec::new(),
+                        is_reconnect: true,
+                    };
+                    if let Err(e) = tx.send(reconnect_msg).await {
+                        error!("Failed to send reconnect notification: {}", e);
+                    }
                 }
             }
             Ok(Event::Incoming(packet)) => {

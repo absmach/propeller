@@ -13,8 +13,10 @@ WORKDIR /go/src/github.com/absmach/propeller
 COPY . .
 RUN apk add --no-cache make upx \
     && make $SVC \
-    && upx build/$SVC \
-    && mv build/$SVC /exe
+    && if [ -f "build/$SVC" ]; then upx build/$SVC && mv build/$SVC /exe; \
+       elif [ -f "proplet/target/release/$SVC" ]; then upx proplet/target/release/$SVC && mv proplet/target/release/$SVC /exe; \
+       elif [ -f "target/release/$SVC" ]; then upx target/release/$SVC && mv target/release/$SVC /exe; \
+       else echo "Binary not found" && find . -name "$SVC" -type f 2>/dev/null && exit 1; fi
 
 FROM scratch
 LABEL org.opencontainers.image.source=https://github.com/absmach/propeller

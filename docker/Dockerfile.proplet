@@ -25,7 +25,7 @@ RUN cargo build --release && \
     strip target/release/proplet && \
     upx --best --lzma target/release/proplet
 
-FROM ubuntu:25.10
+FROM ubuntu:24.04
 
 LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
 LABEL org.opencontainers.image.licenses=Apache-2.0
@@ -33,7 +33,9 @@ LABEL org.opencontainers.image.title="Propeller Proplet (Rust)"
 LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
 
 ARG WASMTIME_VERSION=39.0.1
+ARG TARGETARCH
 
+# Install base dependencies and wasmtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -58,6 +60,11 @@ RUN chown proplet:proplet /usr/local/bin/proplet && \
 
 RUN mkdir -p /home/proplet && \
     chown proplet:proplet /home/proplet
+
+# Set OpenVINO environment variables (for x86_64)
+ENV INTEL_OPENVINO_DIR=/opt/intel/openvino_2024
+ENV LD_LIBRARY_PATH=/opt/intel/openvino_2024/runtime/lib/intel64:${LD_LIBRARY_PATH}
+ENV PATH=/opt/intel/openvino_2024/runtime/bin/intel64:${PATH}
 
 USER proplet
 
