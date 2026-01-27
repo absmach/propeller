@@ -1148,7 +1148,7 @@ fn build_fl_update_envelope(
     let round_id = env
         .get("ROUND_ID")
         .cloned()
-        .unwrap_or_else(|| String::new());
+        .unwrap_or_default();
 
     let update_b64 = STANDARD.encode(result_str.as_bytes());
 
