@@ -26,38 +26,40 @@ LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.title="Propeller Proplet (Rust)"
 LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
 
-ARG WASMTIME_VERSION=39.0.1
 ARG TARGETARCH
+ARG WASMTIME_VERSION=39.0.1
 
-# Install base dependencies and wasmtime
+# Install base dependencies and download wasmtime (pre-built has wasi-nn support)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         wget \
+        curl \
         xz-utils \
-        gnupg2 && \
+        libtbb12 && \
     ARCH=$(case ${TARGETARCH} in arm64) echo "aarch64" ;; amd64) echo "x86_64" ;; *) echo "x86_64" ;; esac) && \
     wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux.tar.xz && \
     tar -xf wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux.tar.xz && \
     mv wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux/wasmtime /usr/local/bin/ && \
     rm -rf wasmtime-v${WASMTIME_VERSION}-${ARCH}-linux*
 
-# Install OpenVINO (only for x86_64/amd64)
+# Install OpenVINO Runtime 2025 from archive (only for x86_64/amd64)
+# Note: wasmtime 39.x requires OpenVINO 2025+
 RUN if [ "${TARGETARCH}" = "amd64" ] || [ "${TARGETARCH}" = "" ]; then \
-        wget -qO - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor -o /usr/share/keyrings/intel-openvino.gpg && \
-        echo "deb [signed-by=/usr/share/keyrings/intel-openvino.gpg] https://apt.repos.intel.com/openvino/2024 ubuntu24 main" > /etc/apt/sources.list.d/intel-openvino.list && \
-        apt-get update && \
-        apt-get install -y --no-install-recommends openvino-2024.6.0 && \
-        echo 'source /opt/intel/openvino_2024/setupvars.sh' >> /etc/bash.bashrc; \
+        mkdir -p /opt/intel && \
+        cd /tmp && \
+        curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.4/linux/openvino_toolkit_ubuntu24_2025.4.0.20398.8fdad55727d_x86_64.tgz --output openvino.tgz && \
+        tar -xf openvino.tgz && \
+        mv openvino_toolkit_ubuntu24_2025.4.0.* /opt/intel/openvino_2025 && \
+        rm -f /tmp/openvino.tgz; \
     else \
         echo "OpenVINO not available for ARM64, skipping..."; \
     fi
 
-# Cleanup
-RUN apt-get remove -y gnupg2 && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Verify OpenVINO installation
+RUN echo "=== Checking OpenVINO installation ===" && \
+    ls -la /opt/intel/ && \
+    ls -la /opt/intel/openvino_2025/ | head -10 || echo "OpenVINO not found"
 
 RUN groupadd -r proplet && \
     useradd -r -g proplet -s /bin/false proplet
@@ -71,9 +73,9 @@ RUN mkdir -p /home/proplet && \
     chown proplet:proplet /home/proplet
 
 # Set OpenVINO environment variables (for x86_64)
-ENV INTEL_OPENVINO_DIR=/opt/intel/openvino_2024
-ENV LD_LIBRARY_PATH=/opt/intel/openvino_2024/runtime/lib/intel64:${LD_LIBRARY_PATH}
-ENV PATH=/opt/intel/openvino_2024/runtime/bin/intel64:${PATH}
+ENV INTEL_OPENVINO_DIR=/opt/intel/openvino_2025
+ENV LD_LIBRARY_PATH=/opt/intel/openvino_2025/runtime/lib/intel64:${LD_LIBRARY_PATH}
+ENV OpenVINO_DIR=/opt/intel/openvino_2025/runtime/cmake
 
 USER proplet
 
