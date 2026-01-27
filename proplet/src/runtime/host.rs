@@ -114,7 +114,7 @@ impl Runtime for HostRuntime {
 
         // Pass task-specific environment variables
         cmd.envs(&config.env);
-        
+
         // Inherit critical system environment variables for OpenVINO/wasi-nn
         if let Ok(ld_path) = std::env::var("LD_LIBRARY_PATH") {
             cmd.env("LD_LIBRARY_PATH", ld_path);

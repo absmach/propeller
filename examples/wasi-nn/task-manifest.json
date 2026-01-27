@@ -1,0 +1,7 @@
+{
+  "name": "wasi-nn-classification",
+  "cli_args": ["-S", "nn", "--dir=/home/proplet/fixture::fixture"],
+  "daemon": false,
+  "env": {},
+  "inputs": []
+}
