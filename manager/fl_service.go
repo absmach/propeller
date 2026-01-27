@@ -96,7 +96,7 @@ func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (F
 	q.Set("proplet_id", propletID)
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return FLTask{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -187,7 +187,7 @@ func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundSt
 		return RoundStatus{}, fmt.Errorf("failed to parse coordinator URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return RoundStatus{}, fmt.Errorf("failed to create request: %w", err)
 	}
