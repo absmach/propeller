@@ -92,6 +92,7 @@ services:
       - supermq-auth-redis-volume:/data
 
   auth:
+    platform: linux/amd64
     image: docker.io/supermq/auth:${SMQ_RELEASE_TAG}
     container_name: supermq-auth
     depends_on:
@@ -138,6 +139,9 @@ services:
       SMQ_AUTH_ADAPTER_INSTANCE_ID: ${SMQ_AUTH_ADAPTER_INSTANCE_ID}
       SMQ_ES_URL: ${SMQ_ES_URL}
       SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
+      SMQ_AUTH_KEYS_ACTIVE_KEY_PATH: ${SMQ_AUTH_KEYS_ACTIVE_KEY_PATH:+/keys/active.key}
+      SMQ_AUTH_KEYS_RETIRING_KEY_PATH: ${SMQ_AUTH_KEYS_RETIRING_KEY_PATH:+/keys/retiring.key}
     ports:
       - ${SMQ_AUTH_HTTP_PORT}:${SMQ_AUTH_HTTP_PORT}
       - ${SMQ_AUTH_GRPC_PORT}:${SMQ_AUTH_GRPC_PORT}
@@ -183,6 +187,16 @@ services:
         target: /auth-callout-client-ca${SMQ_AUTH_CALLOUT_CLIENT_CA_CERTS:+.crt}
         bind:
           create_host_path: true
+      - type: bind
+        source: ${SMQ_AUTH_KEYS_ACTIVE_KEY_PATH:-./keys/active.key}
+        target: /keys/active.key
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_AUTH_KEYS_RETIRING_KEY_PATH:-./keys/retiring.key}
+        target: /keys/retiring.key
+        bind:
+          create_host_path: true
 
   domains-db:
     image: docker.io/postgres:18.0-alpine3.22
@@ -207,6 +221,7 @@ services:
       - supermq-domains-redis-volume:/data
 
   domains:
+    platform: linux/amd64
     image: docker.io/supermq/domains:${SMQ_RELEASE_TAG}
     container_name: supermq-domains
     depends_on:
@@ -252,6 +267,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_GROUPS_GRPC_URL: ${SMQ_GROUPS_GRPC_URL}
       SMQ_GROUPS_GRPC_TIMEOUT: ${SMQ_GROUPS_GRPC_TIMEOUT}
       SMQ_GROUPS_GRPC_CLIENT_CERT: ${SMQ_GROUPS_GRPC_CLIENT_CERT:+/groups-grpc-client.crt}
@@ -286,6 +302,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Auth gRPC mTLS server certificates
       - type: bind
@@ -441,6 +458,7 @@ services:
       - supermq-clients-redis-volume:/data
 
   clients:
+    platform: linux/amd64
     image: docker.io/supermq/clients:${SMQ_RELEASE_TAG}
     container_name: supermq-clients
     depends_on:
@@ -481,6 +499,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_CHANNELS_URL: ${SMQ_CHANNELS_URL}
       SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL}
       SMQ_CHANNELS_GRPC_TIMEOUT: ${SMQ_CHANNELS_GRPC_TIMEOUT}
@@ -520,6 +539,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Clients gRPC server certificates
       - type: bind
@@ -632,6 +652,7 @@ services:
       - supermq-channels-redis-volume:/data
 
   channels:
+    platform: linux/amd64
     image: docker.io/supermq/channels:${SMQ_RELEASE_TAG}
     container_name: supermq-channels
     depends_on:
@@ -671,6 +692,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL}
       SMQ_CLIENTS_GRPC_TIMEOUT: ${SMQ_CLIENTS_GRPC_TIMEOUT}
       SMQ_CLIENTS_GRPC_CLIENT_CERT: ${SMQ_CLIENTS_GRPC_CLIENT_CERT:+/clients-grpc-client.crt}
@@ -709,6 +731,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Channels gRPC server certificates
       - type: bind
@@ -812,6 +835,7 @@ services:
       - supermq-users-db-volume:/var/lib/postgresql/data
 
   users:
+    platform: linux/amd64
     image: docker.io/supermq/users:${SMQ_RELEASE_TAG}
     container_name: supermq-users
     depends_on:
@@ -868,6 +892,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL}
       SMQ_DOMAINS_GRPC_TIMEOUT: ${SMQ_DOMAINS_GRPC_TIMEOUT}
       SMQ_DOMAINS_GRPC_CLIENT_CERT: ${SMQ_DOMAINS_GRPC_CLIENT_CERT:+/domains-grpc-client.crt}
@@ -931,6 +956,7 @@ services:
           create_host_path: true
 
   notifications:
+    platform: linux/amd64
     image: docker.io/supermq/notifications:${SMQ_RELEASE_TAG}
     container_name: supermq-notifications
     depends_on:
@@ -996,6 +1022,7 @@ services:
       - supermq-groups-db-volume:/var/lib/postgresql/data
 
   groups:
+    platform: linux/amd64
     image: docker.io/supermq/groups:${SMQ_RELEASE_TAG}
     container_name: supermq-groups
     depends_on:
@@ -1052,6 +1079,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY}
       SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST}
       SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT}
@@ -1071,6 +1099,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Groups gRPC server certificates
       - type: bind
@@ -1171,6 +1200,7 @@ services:
       - supermq-base-net
 
   mqtt-adapter:
+    platform: linux/amd64
     image: docker.io/supermq/mqtt:${SMQ_RELEASE_TAG}
     container_name: supermq-mqtt
     depends_on:
@@ -1270,6 +1300,7 @@ services:
           create_host_path: true
 
   http-adapter:
+    platform: linux/amd64
     image: docker.io/supermq/http:${SMQ_RELEASE_TAG}
     container_name: supermq-http
     depends_on:
@@ -1305,6 +1336,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL}
       SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
       SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
@@ -1382,6 +1414,7 @@ services:
           create_host_path: true
 
   coap-adapter:
+    platform: linux/amd64
     image: docker.io/supermq/coap:${SMQ_RELEASE_TAG}
     container_name: supermq-coap
     depends_on:
@@ -1500,6 +1533,7 @@ services:
           create_host_path: true
 
   ws-adapter:
+    platform: linux/amd64
     image: docker.io/supermq/ws:${SMQ_RELEASE_TAG}
     container_name: supermq-ws
     depends_on:
@@ -1535,6 +1569,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL}
       SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
       SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
@@ -1681,11 +1716,15 @@ services:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml
 
   proplet:
-    image: ghcr.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
+    platform: linux/amd64 # Required for OpenVINO (x86_64 only)
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proplet
+      platforms:
+        - linux/amd64
+    image: propeller-proplet:local
     container_name: propeller-proplet
     restart: on-failure
     depends_on:
@@ -1712,12 +1751,14 @@ services:
       COORDINATOR_URL: ${COORDINATOR_URL:-http://coordinator-http:8080}
       MODEL_REGISTRY_URL: ${MODEL_REGISTRY_URL:-http://model-registry:8081}
       DATA_STORE_URL: ${DATA_STORE_URL:-http://local-data-store:8083}
+      DYLD_LIBRARY_PATH: "/opt/homebrew/lib"
     networks:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/home/proplet/config.toml
+    volumes:
+      - ./models:/models
+      - ./fixture:/home/proplet/fixture
 
   proxy:
     image: ghcr.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
@@ -1745,5 +1786,3 @@ services:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml

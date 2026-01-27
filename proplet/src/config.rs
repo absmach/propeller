@@ -166,7 +166,9 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_INSTANCE_ID") {
-            config.instance_id = val;
+            if !val.is_empty() {
+                config.instance_id = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_ADDRESS") {
