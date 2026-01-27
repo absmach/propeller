@@ -25,15 +25,33 @@
 #define MAX_BASE64_LEN 1024
 #define MAX_UPDATE_B64_LEN 2048
 
+struct fl_spec {
+  char job_id[MAX_ID_LEN];
+  uint64_t round_id;
+  char global_version[MAX_ID_LEN];
+  uint64_t min_participants;
+  uint64_t round_timeout_sec;
+  uint64_t clients_per_round;
+  uint64_t total_rounds;
+  char algorithm[MAX_NAME_LEN];
+  char update_format[MAX_NAME_LEN];
+  char model_ref[MAX_BASE64_LEN];
+  uint64_t local_epochs;
+  uint64_t batch_size;
+  double learning_rate;
+};
+
 struct task {
   char id[MAX_ID_LEN];
   char name[MAX_NAME_LEN];
   char mode[MAX_NAME_LEN];
+  struct fl_spec fl;
   bool is_fl_task;
+  char fl_job_id[MAX_ID_LEN];
   char fl_round_id_str[32];
+  char fl_global_version[MAX_ID_LEN];
   char fl_format[MAX_NAME_LEN];
   char fl_num_samples_str[32];
-  char round_id[MAX_ID_LEN];
 };
 
 // Simplified base64 encoding for testing
@@ -57,8 +75,9 @@ static void test_fl_envelope_creation(void) {
   t.is_fl_task = true;
   strncpy(t.id, "test-task-123", sizeof(t.id) - 1);
   strncpy(t.mode, "train", sizeof(t.mode) - 1);
-  strncpy(t.fl_round_id_str, "round-1", sizeof(t.fl_round_id_str) - 1);
-  strncpy(t.round_id, "round-1", sizeof(t.round_id) - 1);
+  strncpy(t.fl.job_id, "job-456", sizeof(t.fl.job_id) - 1);
+  t.fl.round_id = 1;
+  strncpy(t.fl.global_version, "v1.0", sizeof(t.fl.global_version) - 1);
   strncpy(t.fl_format, "f32-delta", sizeof(t.fl_format) - 1);
   strncpy(t.fl_num_samples_str, "100", sizeof(t.fl_num_samples_str) - 1);
   
@@ -83,7 +102,9 @@ static void test_fl_envelope_creation(void) {
     "\"task_id\":\"%s\","
     "\"results\":{"
       "\"task_id\":\"%s\","
-      "\"round_id\":\"%s\","
+      "\"job_id\":\"%s\","
+      "\"round_id\":%llu,"
+      "\"global_version\":\"%s\","
       "\"proplet_id\":\"%s\","
       "\"num_samples\":%llu,"
       "\"update_b64\":\"%s\","
@@ -93,7 +114,9 @@ static void test_fl_envelope_creation(void) {
     "}",
     t.id,
     t.id,
-    t.fl_round_id_str,
+    t.fl.job_id,
+    (unsigned long long)t.fl.round_id,
+    t.fl.global_version,
     proplet_id,
     (unsigned long long)num_samples,
     update_b64,
@@ -102,6 +125,7 @@ static void test_fl_envelope_creation(void) {
   
   // Validate envelope structure
   assert(strstr(envelope, "\"task_id\"") != NULL);
+  assert(strstr(envelope, "\"job_id\"") != NULL);
   assert(strstr(envelope, "\"round_id\"") != NULL);
   assert(strstr(envelope, "\"proplet_id\"") != NULL);
   assert(strstr(envelope, "\"num_samples\"") != NULL);
@@ -121,8 +145,9 @@ static void test_error_envelope(void) {
   t.is_fl_task = true;
   strncpy(t.id, "test-task-123", sizeof(t.id) - 1);
   strncpy(t.mode, "train", sizeof(t.mode) - 1);
-  strncpy(t.fl_round_id_str, "round-1", sizeof(t.fl_round_id_str) - 1);
-  strncpy(t.round_id, "round-1", sizeof(t.round_id) - 1);
+  strncpy(t.fl.job_id, "job-456", sizeof(t.fl.job_id) - 1);
+  t.fl.round_id = 1;
+  strncpy(t.fl.global_version, "v1.0", sizeof(t.fl.global_version) - 1);
   strncpy(t.fl_format, "f32-delta", sizeof(t.fl_format) - 1);
   strncpy(t.fl_num_samples_str, "100", sizeof(t.fl_num_samples_str) - 1);
   
@@ -140,7 +165,9 @@ static void test_error_envelope(void) {
     "\"task_id\":\"%s\","
     "\"results\":{"
       "\"task_id\":\"%s\","
-      "\"round_id\":\"%s\","
+      "\"job_id\":\"%s\","
+      "\"round_id\":%llu,"
+      "\"global_version\":\"%s\","
       "\"proplet_id\":\"%s\","
       "\"num_samples\":%llu,"
       "\"update_b64\":\"\","
@@ -151,7 +178,9 @@ static void test_error_envelope(void) {
     "}",
     t.id,
     t.id,
-    t.fl_round_id_str,
+    t.fl.job_id,
+    (unsigned long long)t.fl.round_id,
+    t.fl.global_version,
     proplet_id,
     (unsigned long long)num_samples,
     t.fl_format,

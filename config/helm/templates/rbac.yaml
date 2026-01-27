@@ -1,0 +1,148 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "propeller-operator.fullname" . }}
+  labels:
+    {{- include "propeller-operator.labels" . | nindent 4 }}
+rules:
+  # CRDs
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks
+      - federatedjobs
+      - trainingrounds
+      - propletgroups
+      - modelcheckpoints
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks/status
+      - federatedjobs/status
+      - trainingrounds/status
+      - propletgroups/status
+      - modelcheckpoints/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks/finalizers
+      - federatedjobs/finalizers
+      - trainingrounds/finalizers
+      - propletgroups/finalizers
+      - modelcheckpoints/finalizers
+    verbs:
+      - update
+  # Jobs
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # ConfigMaps and Secrets
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Services and Deployments
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  # Leader election
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "propeller-operator.fullname" . }}
+  labels:
+    {{- include "propeller-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "propeller-operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "propeller-operator.serviceAccountName" . }}
+    namespace: {{ .Values.namespace | default "system" }}
+{{- end }}

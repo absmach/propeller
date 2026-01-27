@@ -2,16 +2,21 @@ package manager
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/0x6flab/namegenerator"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	flpkg "github.com/absmach/propeller/pkg/fl"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
@@ -24,6 +29,8 @@ const (
 	defOffset         = 0
 	defLimit          = 100
 	aliveHistoryLimit = 10
+
+	modeTrain = task.ModeTrain
 )
 
 var (
@@ -40,8 +47,18 @@ type service struct {
 	baseTopic        string
 	pubsub           mqtt.PubSub
 	logger           *slog.Logger
+	aggMu            sync.Mutex
+	aggregated       map[string]bool
 	flCoordinatorURL string
 	httpClient       *http.Client
+}
+
+type roundProgressInfo struct {
+	Expected     uint64
+	Completed    uint64
+	Updates      []flpkg.UpdateEnvelope
+	Format       string
+	TotalSamples uint64
 }
 
 func NewService(
@@ -57,10 +74,10 @@ func NewService(
 		}
 		logger.Info("HTTP FL Coordinator enabled", "url", coordinatorURL)
 	} else {
-		logger.Warn("COORDINATOR_URL not configured - FL features will not be available")
+		logger.Debug("COORDINATOR_URL not configured - HTTP FL coordination will not be available")
 	}
 
-	svc := &service{
+	return &service{
 		tasksDB:          tasksDB,
 		propletsDB:       propletsDB,
 		taskPropletDB:    taskPropletDB,
@@ -69,11 +86,10 @@ func NewService(
 		baseTopic:        fmt.Sprintf(baseTopic, domainID, channelID),
 		pubsub:           pubsub,
 		logger:           logger,
+		aggregated:       make(map[string]bool),
 		flCoordinatorURL: coordinatorURL,
 		httpClient:       httpClient,
 	}
-
-	return svc
 }
 
 func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
@@ -131,7 +147,18 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 
 	// Set default kind if not specified
 	if t.Kind == "" {
-		t.Kind = task.TaskKindStandard
+		if t.FL != nil {
+			//nolint:staticcheck // TaskKindFederated is deprecated but still used for backward compatibility
+			t.Kind = task.TaskKindFederated
+		} else {
+			t.Kind = task.TaskKindStandard
+		}
+	}
+
+	// Set default mode for FL tasks
+	//nolint:staticcheck // TaskKindFederated is deprecated but still used for backward compatibility
+	if t.Kind == task.TaskKindFederated && t.Mode == "" {
+		t.Mode = task.ModeInfer
 	}
 
 	if err := svc.tasksDB.Create(ctx, t.ID, t); err != nil {
@@ -254,6 +281,8 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 
 	t.PropletID = p.ID
 
+	svc.injectFLEnv(&t)
+
 	if err := svc.persistTaskBeforeStart(ctx, &t); err != nil {
 		return err
 	}
@@ -319,11 +348,6 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 func (svc *service) Subscribe(ctx context.Context) error {
 	topic := svc.baseTopic + "/#"
 	if err := svc.pubsub.Subscribe(ctx, topic, svc.handle(ctx)); err != nil {
-		return err
-	}
-
-	flRoundStartTopic := svc.baseTopic + "/fl/rounds/start"
-	if err := svc.pubsub.Subscribe(ctx, flRoundStartTopic, svc.handleRoundStart(ctx)); err != nil {
 		return err
 	}
 
@@ -479,6 +503,34 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		return err
 	}
 
+	// Handle FL training tasks
+	if t.FL != nil && t.Mode == task.ModeTrain {
+		envlp, err := svc.parseAndValidateTrainResults(ctx, t, msg)
+		if err != nil {
+			svc.logger.ErrorContext(ctx, "failed to parse FL results", "error", err, "task_id", taskID)
+			t.Error = err.Error()
+			t.State = task.Failed
+			t.UpdatedAt = time.Now()
+			t.FinishTime = time.Now()
+			_ = svc.tasksDB.Update(ctx, t.ID, t)
+
+			return err
+		}
+
+		if err := svc.completeTrainTask(ctx, t, envlp, msg); err != nil {
+			return err
+		}
+
+		// Trigger aggregation check
+		if err := svc.tryAggregateAndAdvance(ctx, envlp.JobID, envlp.RoundID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to aggregate or advance round", "error", err, "job_id", envlp.JobID, "round_id", envlp.RoundID)
+			// Don't fail the task update if aggregation fails
+		}
+
+		return nil
+	}
+
+	// Handle standard tasks
 	t.Results = msg["results"]
 	t.State = task.Completed
 	t.UpdatedAt = time.Now()
@@ -495,131 +547,585 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	return nil
 }
 
-//nolint:gocognit // Complex function handles round start orchestration with multiple validation steps
-func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
-	return func(topic string, msg map[string]any) error {
-		go func() {
-			roundCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			defer cancel()
+func (svc *service) parseAndValidateTrainResults(ctx context.Context, t task.Task, msg map[string]any) (flpkg.UpdateEnvelope, error) {
+	rawRes, exists := msg["results"]
+	if !exists {
+		return flpkg.UpdateEnvelope{}, errors.New("missing results for train task")
+	}
 
-			roundID, ok := msg["round_id"].(string)
-			if !ok || roundID == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid round_id")
+	resBytes, err := json.Marshal(rawRes)
+	if err != nil {
+		return flpkg.UpdateEnvelope{}, err
+	}
 
-				return
-			}
+	var envlp flpkg.UpdateEnvelope
+	if err := json.Unmarshal(resBytes, &envlp); err != nil {
+		return flpkg.UpdateEnvelope{}, err
+	}
 
-			if roundCtx.Err() != nil {
-				svc.logger.WarnContext(roundCtx, "context cancelled before processing round start", "round_id", roundID)
+	if t.FL == nil {
+		return flpkg.UpdateEnvelope{}, errors.New("train task missing FL spec")
+	}
+	if envlp.JobID == "" {
+		return flpkg.UpdateEnvelope{}, errors.New("invalid results: job_id is empty")
+	}
+	if envlp.JobID != t.FL.JobID || envlp.RoundID != t.FL.RoundID {
+		return flpkg.UpdateEnvelope{}, fmt.Errorf(
+			"invalid results: job/round mismatch (got job=%s round=%d, expected job=%s round=%d)",
+			envlp.JobID, envlp.RoundID, t.FL.JobID, t.FL.RoundID,
+		)
+	}
 
-				return
-			}
+	expectedPID, err := svc.expectedPropletID(ctx, t.ID)
+	if err != nil {
+		return flpkg.UpdateEnvelope{}, err
+	}
+	if envlp.PropletID == "" {
+		return flpkg.UpdateEnvelope{}, errors.New("invalid results: proplet_id is empty")
+	}
+	if envlp.PropletID != expectedPID {
+		return flpkg.UpdateEnvelope{}, fmt.Errorf(
+			"invalid results: proplet_id mismatch (got %s, expected %s)",
+			envlp.PropletID, expectedPID,
+		)
+	}
 
-			modelURI, ok := msg["model_uri"].(string)
-			if !ok || modelURI == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid model_uri")
+	return envlp, nil
+}
 
-				return
-			}
+func (svc *service) expectedPropletID(ctx context.Context, taskID string) (string, error) {
+	expectedPIDAny, err := svc.taskPropletDB.Get(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
 
-			taskWasmImage, ok := msg["task_wasm_image"].(string)
-			if !ok || taskWasmImage == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid task_wasm_image")
+	expectedPID, ok := expectedPIDAny.(string)
+	if !ok || expectedPID == "" {
+		return "", pkgerrors.ErrInvalidData
+	}
 
-				return
-			}
+	return expectedPID, nil
+}
 
-			participantsRaw, ok := msg["participants"].([]any)
-			if !ok || len(participantsRaw) == 0 {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid participants")
+func (svc *service) completeTrainTask(ctx context.Context, t task.Task, envlp flpkg.UpdateEnvelope, msg map[string]any) error {
+	t.Results = envlp
+	t.State = task.Completed
+	t.UpdatedAt = time.Now()
+	t.FinishTime = time.Now()
 
-				return
-			}
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
+		t.Error = errMsg
+	}
 
-			hyperparams, _ := msg["hyperparams"].(map[string]any)
+	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+		return err
+	}
 
-			participants := make([]string, 0, len(participantsRaw))
-			for _, p := range participantsRaw {
-				if pid, ok := p.(string); ok && pid != "" {
-					participants = append(participants, pid)
-				}
-			}
+	return nil
+}
 
-			if len(participants) == 0 {
-				svc.logger.ErrorContext(roundCtx, "no valid participants")
-
-				return
-			}
-
-			for _, propletID := range participants {
-				select {
-				case <-roundCtx.Done():
-					svc.logger.WarnContext(roundCtx, "context cancelled during round processing", "round_id", roundID, "processed", len(participants))
-
-					return
-				default:
-				}
-
-				p, err := svc.GetProplet(roundCtx, propletID)
-				if err != nil {
-					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
-
-					continue
-				}
-				if !p.Alive {
-					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not alive", "proplet_id", propletID)
-
-					continue
-				}
-
-				t := task.Task{
-					Name:     fmt.Sprintf("fl-round-%s-%s", roundID, propletID),
-					Kind:     task.TaskKindStandard,
-					State:    task.Pending,
-					ImageURL: taskWasmImage,
-					Env: map[string]string{
-						"ROUND_ID":  roundID,
-						"MODEL_URI": modelURI,
-					},
-					PropletID: propletID,
-					CreatedAt: time.Now(),
-				}
-
-				if hyperparams != nil {
-					hyperparamsJSON, err := json.Marshal(hyperparams)
-					if err == nil {
-						t.Env["HYPERPARAMS"] = string(hyperparamsJSON)
-					}
-				}
-
-				created, err := svc.CreateTask(roundCtx, t)
-				if err != nil {
-					if roundCtx.Err() != nil {
-						svc.logger.WarnContext(roundCtx, "context cancelled during task creation", "round_id", roundID, "proplet_id", propletID)
-
-						return
-					}
-					svc.logger.ErrorContext(roundCtx, "failed to create task for participant", "proplet_id", propletID, "error", err)
-
-					continue
-				}
-
-				if err := svc.StartTask(roundCtx, created.ID); err != nil {
-					if roundCtx.Err() != nil {
-						svc.logger.WarnContext(roundCtx, "context cancelled during task start", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
-
-						return
-					}
-					svc.logger.ErrorContext(roundCtx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
-
-					continue
-				}
-
-				svc.logger.InfoContext(roundCtx, "launched task for FL round participant", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
-			}
-		}()
-
+func (svc *service) tryAggregateAndAdvance(ctx context.Context, jobID string, roundID uint64) error {
+	rp, err := svc.roundProgress(ctx, jobID, roundID)
+	if err != nil {
+		return err
+	}
+	if rp.Expected == 0 || rp.Completed < rp.Expected {
 		return nil
+	}
+
+	aggEnv, already, err := svc.aggregateOnce(ctx, jobID, roundID, rp.Updates, rp.Format, rp.TotalSamples)
+	if err != nil {
+		return err
+	}
+	if already {
+		return nil
+	}
+
+	topic := svc.baseTopic + "/control/manager/fl/aggregated"
+	payload := map[string]any{
+		"job_id":          aggEnv.JobID,
+		"round_id":        aggEnv.RoundID,
+		"global_version":  aggEnv.GlobalVersion,
+		"update_b64":      aggEnv.UpdateB64,
+		"format":          aggEnv.Format,
+		"metrics":         aggEnv.Metrics,
+		"num_samples":     aggEnv.NumSamples,
+		"aggregated_from": len(rp.Updates),
+	}
+	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
+		return err
+	}
+
+	if err := svc.startNextRound(ctx, jobID, roundID, aggEnv); err != nil {
+		svc.unmarkAggregated(jobID, roundID)
+
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) aggregateOnce(
+	ctx context.Context,
+	jobID string,
+	roundID uint64,
+	updates []flpkg.UpdateEnvelope,
+	fmtStr string,
+	totalSamples uint64,
+) (flpkg.UpdateEnvelope, bool, error) {
+	aggKey := fmt.Sprintf("%s:%d", jobID, roundID)
+
+	svc.aggMu.Lock()
+	already := svc.aggregated[aggKey]
+	if !already {
+		svc.aggregated[aggKey] = true
+	}
+	svc.aggMu.Unlock()
+
+	if already {
+		return flpkg.UpdateEnvelope{}, true, nil
+	}
+
+	aggEnv, err := svc.aggregateRound(jobID, roundID, updates, fmtStr, totalSamples)
+	if err != nil {
+		svc.unmarkAggregated(jobID, roundID)
+
+		return flpkg.UpdateEnvelope{}, false, err
+	}
+
+	storeKey := fmt.Sprintf("fl/%s/%d/aggregate", jobID, roundID)
+	if err := svc.tasksDB.Create(ctx, storeKey, aggEnv); err != nil {
+		_ = svc.tasksDB.Update(ctx, storeKey, aggEnv)
+	}
+
+	return aggEnv, false, nil
+}
+
+func (svc *service) unmarkAggregated(jobID string, roundID uint64) {
+	aggKey := fmt.Sprintf("%s:%d", jobID, roundID)
+
+	svc.aggMu.Lock()
+	delete(svc.aggregated, aggKey)
+	svc.aggMu.Unlock()
+}
+
+func (svc *service) roundProgress(
+	ctx context.Context,
+	jobID string,
+	roundID uint64,
+) (roundProgressInfo, error) {
+	all, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return roundProgressInfo{}, err
+	}
+
+	expectedProplets := make(map[string]struct{})
+	byProplet := make(map[string]flpkg.UpdateEnvelope)
+
+	fmtChosen := ""
+	fmtAny := false
+
+	for i := range all {
+		t := all[i]
+
+		if !svc.isRoundTrainTask(t, jobID, roundID) {
+			continue
+		}
+
+		pid := svc.resolveExpectedPropletID(ctx, t)
+		if pid != "" {
+			expectedProplets[pid] = struct{}{}
+		}
+
+		if !svc.isCompletedWithoutError(t) {
+			continue
+		}
+
+		env, ok := svc.extractEnvelope(t.Results)
+		if !ok || !svc.isMatchingEnvelope(env, jobID, roundID) {
+			continue
+		}
+
+		byProplet[env.PropletID] = env
+
+		if env.Format != "" && !fmtAny {
+			fmtChosen = env.Format
+			fmtAny = true
+		}
+	}
+
+	expected := uint64(len(expectedProplets))
+	completed := uint64(len(byProplet))
+	updates, totalSamples := svc.flattenEnvelopes(byProplet)
+
+	return roundProgressInfo{
+		Expected:     expected,
+		Completed:    completed,
+		Updates:      updates,
+		Format:       fmtChosen,
+		TotalSamples: totalSamples,
+	}, nil
+}
+
+func (svc *service) isRoundTrainTask(t task.Task, jobID string, roundID uint64) bool {
+	if t.Mode != modeTrain || t.FL == nil {
+		return false
+	}
+
+	return t.FL.JobID == jobID && t.FL.RoundID == roundID
+}
+
+func (svc *service) resolveExpectedPropletID(ctx context.Context, t task.Task) string {
+	if t.PropletID != "" {
+		return t.PropletID
+	}
+
+	pidAny, err := svc.taskPropletDB.Get(ctx, t.ID)
+	if err != nil {
+		return ""
+	}
+
+	pid, ok := pidAny.(string)
+	if !ok {
+		return ""
+	}
+
+	return pid
+}
+
+func (svc *service) isCompletedWithoutError(t task.Task) bool {
+	return t.State == task.Completed && t.Error == ""
+}
+
+func (svc *service) isMatchingEnvelope(env flpkg.UpdateEnvelope, jobID string, roundID uint64) bool {
+	if env.JobID != jobID || env.RoundID != roundID {
+		return false
+	}
+
+	return env.PropletID != ""
+}
+
+func (svc *service) flattenEnvelopes(m map[string]flpkg.UpdateEnvelope) (updates []flpkg.UpdateEnvelope, totalSamples uint64) {
+	updates = make([]flpkg.UpdateEnvelope, 0, len(m))
+	for _, env := range m {
+		updates = append(updates, env)
+		totalSamples += env.NumSamples
+	}
+
+	return
+}
+
+func (svc *service) extractEnvelope(v any) (flpkg.UpdateEnvelope, bool) {
+	switch vv := v.(type) {
+	case flpkg.UpdateEnvelope:
+		return vv, true
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return flpkg.UpdateEnvelope{}, false
+		}
+		var env flpkg.UpdateEnvelope
+		if err := json.Unmarshal(b, &env); err != nil {
+			return flpkg.UpdateEnvelope{}, false
+		}
+		if env.JobID == "" {
+			return flpkg.UpdateEnvelope{}, false
+		}
+
+		return env, true
+	}
+}
+
+func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
+	var out []task.Task
+
+	var offset uint64
+	limit := uint64(defLimit)
+
+	for {
+		data, _, err := svc.tasksDB.List(ctx, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) == 0 {
+			break
+		}
+
+		for i := range data {
+			t, ok := data[i].(task.Task)
+			if !ok {
+				return nil, pkgerrors.ErrInvalidData
+			}
+			out = append(out, t)
+		}
+
+		if uint64(len(data)) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	return out, nil
+}
+
+func (svc *service) aggregateRound(
+	jobID string,
+	roundID uint64,
+	updates []flpkg.UpdateEnvelope,
+	fmtStr string,
+	totalSamples uint64,
+) (flpkg.UpdateEnvelope, error) {
+	globalVersion := uuid.NewString()
+
+	if fmtStr == "json-f64" {
+		return svc.aggregateJSONF64(jobID, roundID, updates, totalSamples, globalVersion)
+	}
+
+	return svc.aggregateConcat(jobID, roundID, updates, totalSamples, globalVersion, fmtStr)
+}
+
+func (svc *service) aggregateJSONF64(
+	jobID string,
+	roundID uint64,
+	updates []flpkg.UpdateEnvelope,
+	totalSamples uint64,
+	globalVersion string,
+) (flpkg.UpdateEnvelope, error) {
+	if totalSamples == 0 {
+		return flpkg.UpdateEnvelope{}, errors.New("cannot aggregate: total_samples is zero")
+	}
+
+	var sum []float64
+	var dim int
+	var haveDim bool
+
+	for i := range updates {
+		u := updates[i]
+
+		raw, err := base64.StdEncoding.DecodeString(u.UpdateB64)
+		if err != nil {
+			return flpkg.UpdateEnvelope{}, fmt.Errorf("invalid update_b64: %w", err)
+		}
+
+		var vec []float64
+		if err := json.Unmarshal(raw, &vec); err != nil {
+			return flpkg.UpdateEnvelope{}, fmt.Errorf("invalid json-f64 payload: %w", err)
+		}
+
+		if !haveDim {
+			dim = len(vec)
+			if dim == 0 {
+				return flpkg.UpdateEnvelope{}, errors.New("invalid vector: empty")
+			}
+			sum = make([]float64, dim)
+			haveDim = true
+		}
+		if len(vec) != dim {
+			return flpkg.UpdateEnvelope{}, errors.New("cannot aggregate: mismatched vector dimensions")
+		}
+
+		w := float64(u.NumSamples)
+		for j := range vec {
+			sum[j] += vec[j] * w
+		}
+	}
+
+	den := float64(totalSamples)
+	for i := range sum {
+		sum[i] /= den
+	}
+
+	avgJSON, err := json.Marshal(sum)
+	if err != nil {
+		return flpkg.UpdateEnvelope{}, err
+	}
+
+	return flpkg.UpdateEnvelope{
+		JobID:         jobID,
+		RoundID:       roundID,
+		GlobalVersion: globalVersion,
+		PropletID:     "manager",
+		NumSamples:    totalSamples,
+		UpdateB64:     base64.StdEncoding.EncodeToString(avgJSON),
+		Metrics: map[string]any{
+			"num_clients":   len(updates),
+			"total_samples": totalSamples,
+			"aggregated_at": time.Now().UTC().Format(time.RFC3339),
+		},
+		Format: "json-f64",
+	}, nil
+}
+
+func (svc *service) aggregateConcat(
+	jobID string,
+	roundID uint64,
+	updates []flpkg.UpdateEnvelope,
+	totalSamples uint64,
+	globalVersion string,
+	fmtStr string,
+) (flpkg.UpdateEnvelope, error) {
+	const delim = "\n---PROP-UPDATE---\n"
+
+	var buf []byte
+	for i, u := range updates {
+		raw, err := base64.StdEncoding.DecodeString(u.UpdateB64)
+		if err != nil {
+			return flpkg.UpdateEnvelope{}, fmt.Errorf("invalid update_b64: %w", err)
+		}
+		if i > 0 {
+			buf = append(buf, []byte(delim)...)
+		}
+		buf = append(buf, raw...)
+	}
+
+	return flpkg.UpdateEnvelope{
+		JobID:         jobID,
+		RoundID:       roundID,
+		GlobalVersion: globalVersion,
+		PropletID:     "manager",
+		NumSamples:    totalSamples,
+		UpdateB64:     base64.StdEncoding.EncodeToString(buf),
+		Metrics: map[string]any{
+			"num_clients":   len(updates),
+			"total_samples": totalSamples,
+			"aggregated_at": time.Now().UTC().Format(time.RFC3339),
+		},
+		Format: fmtStr,
+	}, nil
+}
+
+func (svc *service) startNextRound(ctx context.Context, jobID string, currentRound uint64, aggEnv flpkg.UpdateEnvelope) error {
+	nextRound := currentRound + 1
+
+	exists, err := svc.roundTasksExist(ctx, jobID, nextRound)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	curTasks, err := svc.tasksForRound(ctx, jobID, currentRound)
+	if err != nil {
+		return err
+	}
+	if len(curTasks) == 0 {
+		return errors.New("cannot start next round: no tasks found for current round")
+	}
+
+	for i := range curTasks {
+		cur := curTasks[i]
+		if cur.FL == nil || cur.Mode != modeTrain {
+			continue
+		}
+
+		pinnedPropletID := svc.resolvePinnedPropletID(ctx, cur)
+		newEnv := svc.buildNextRoundEnv(cur.Env, jobID, nextRound, aggEnv, cur.FL)
+		nextTask := svc.buildNextRoundTask(cur, pinnedPropletID, jobID, nextRound, aggEnv, newEnv)
+
+		created, err := svc.CreateTask(ctx, nextTask)
+		if err != nil {
+			return err
+		}
+		if err := svc.StartTask(ctx, created.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) resolvePinnedPropletID(ctx context.Context, cur task.Task) string {
+	var pinnedPropletID string
+	if pidAny, gErr := svc.taskPropletDB.Get(ctx, cur.ID); gErr == nil {
+		if pid, ok := pidAny.(string); ok && pid != "" {
+			pinnedPropletID = pid
+		}
+	}
+	if pinnedPropletID == "" {
+		pinnedPropletID = cur.PropletID
+	}
+
+	return pinnedPropletID
+}
+
+func (svc *service) buildNextRoundEnv(
+	curEnv map[string]string,
+	jobID string,
+	nextRound uint64,
+	aggEnv flpkg.UpdateEnvelope,
+	//nolint:staticcheck // FLSpec is deprecated but still used for backward compatibility
+	flSpec *task.FLSpec,
+) map[string]string {
+	newEnv := copyStringMap(curEnv)
+	if newEnv == nil {
+		newEnv = make(map[string]string)
+	}
+
+	newEnv["FL_JOB_ID"] = jobID
+	newEnv["FL_ROUND_ID"] = strconv.FormatUint(nextRound, 10)
+	newEnv["FL_GLOBAL_VERSION"] = aggEnv.GlobalVersion
+	newEnv["FL_GLOBAL_UPDATE_B64"] = aggEnv.UpdateB64
+	if aggEnv.Format != "" {
+		newEnv["FL_GLOBAL_UPDATE_FORMAT"] = aggEnv.Format
+	}
+
+	if newEnv["FL_NUM_SAMPLES"] == "" {
+		newEnv["FL_NUM_SAMPLES"] = "1"
+	}
+
+	updateFormat := ""
+	if flSpec != nil {
+		updateFormat = flSpec.UpdateFormat
+	}
+	if updateFormat == "" && aggEnv.Format != "" {
+		updateFormat = aggEnv.Format
+	}
+	if updateFormat != "" {
+		newEnv["FL_FORMAT"] = updateFormat
+	}
+
+	return newEnv
+}
+
+func (svc *service) buildNextRoundTask(
+	cur task.Task,
+	pinnedPropletID string,
+	jobID string,
+	nextRound uint64,
+	aggEnv flpkg.UpdateEnvelope,
+	newEnv map[string]string,
+) task.Task {
+	updateFormat := ""
+	if cur.FL != nil {
+		updateFormat = cur.FL.UpdateFormat
+	}
+	if updateFormat == "" && aggEnv.Format != "" {
+		updateFormat = aggEnv.Format
+	}
+
+	return task.Task{
+		Name:      cur.Name,
+		State:     task.Pending,
+		ImageURL:  cur.ImageURL,
+		File:      cur.File,
+		CLIArgs:   append([]string(nil), cur.CLIArgs...),
+		Inputs:    append([]uint64(nil), cur.Inputs...),
+		Env:       newEnv,
+		Daemon:    cur.Daemon,
+		PropletID: pinnedPropletID,
+		Mode:      task.ModeTrain,
+		//nolint:staticcheck // FLSpec is deprecated but still used for backward compatibility
+		FL: &task.FLSpec{
+			JobID:         jobID,
+			RoundID:       nextRound,
+			GlobalVersion: aggEnv.GlobalVersion,
+			Algorithm:     cur.FL.Algorithm,
+			UpdateFormat:  updateFormat,
+			Hyperparams:   cur.FL.Hyperparams,
+			ModelRef:      cur.FL.ModelRef,
+		},
+		CreatedAt: time.Now(),
 	}
 }
 
@@ -817,6 +1323,24 @@ func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID stri
 	return svc.taskPropletDB.Create(ctx, taskID, propletID)
 }
 
+func (svc *service) injectFLEnv(t *task.Task) {
+	if t.FL == nil {
+		return
+	}
+	if t.Env == nil {
+		t.Env = make(map[string]string)
+	}
+	t.Env["FL_JOB_ID"] = t.FL.JobID
+	t.Env["FL_ROUND_ID"] = strconv.FormatUint(t.FL.RoundID, 10)
+	t.Env["FL_GLOBAL_VERSION"] = t.FL.GlobalVersion
+	if t.FL.UpdateFormat != "" {
+		t.Env["FL_FORMAT"] = t.FL.UpdateFormat
+	}
+	if t.FL.ModelRef != "" {
+		t.Env["FL_MODEL_REF"] = t.FL.ModelRef
+	}
+}
+
 func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 
@@ -837,6 +1361,21 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		"monitoring_profile": t.MonitoringProfile,
 		"proplet_id":         propletID,
 	}
+	if t.FL != nil {
+		payload["mode"] = string(t.Mode)
+		flPayload := map[string]any{
+			"job_id":            t.FL.JobID,
+			"round_id":          t.FL.RoundID,
+			"global_version":    t.FL.GlobalVersion,
+			"min_participants":  t.FL.MinParticipants,
+			"round_timeout_sec": t.FL.RoundTimeoutSec,
+			"algorithm":         t.FL.Algorithm,
+			"update_format":     t.FL.UpdateFormat,
+			"hyperparams":       t.FL.Hyperparams,
+			"model_ref":         t.FL.ModelRef,
+		}
+		payload["fl"] = flPayload
+	}
 
 	topic := svc.baseTopic + "/control/manager/start"
 
@@ -856,4 +1395,44 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 
 	return svc.tasksDB.Update(ctx, t.ID, *t)
+}
+
+func copyStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cpy := make(map[string]string, len(m))
+	maps.Copy(cpy, m)
+
+	return cpy
+}
+
+func (svc *service) tasksForRound(ctx context.Context, jobID string, roundID uint64) ([]task.Task, error) {
+	all, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result []task.Task
+	for i := range all {
+		t := all[i]
+		if svc.isRoundTrainTask(t, jobID, roundID) {
+			result = append(result, t)
+		}
+	}
+
+	return result, nil
+}
+
+func (svc *service) roundTasksExist(ctx context.Context, jobID string, roundID uint64) (bool, error) {
+	all, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return false, err
+	}
+	for i := range all {
+		if svc.isRoundTrainTask(all[i], jobID, roundID) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

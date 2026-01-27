@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum MLBackend {
     #[serde(rename = "standard")]
@@ -27,8 +28,8 @@ pub struct FLTaskConfig {
 #[allow(dead_code)]
 pub struct TaskHandler;
 
-#[allow(dead_code)]
 impl TaskHandler {
+    #[allow(dead_code)]
     pub fn parse_and_select_backend(
         task_config: &FLTaskConfig,
         env: &HashMap<String, String>,
@@ -79,6 +80,7 @@ impl TaskHandler {
         (backend, start_config)
     }
 
+    #[allow(dead_code)]
     fn select_backend_auto(task_config: &FLTaskConfig, env: &HashMap<String, String>) -> MLBackend {
         if let Some(backend_str) = env.get("ML_BACKEND") {
             match backend_str.to_lowercase().as_str() {
@@ -107,6 +109,7 @@ impl TaskHandler {
         MLBackend::Standard
     }
 
+    #[allow(dead_code)]
     pub fn get_backend_config(backend: &MLBackend) -> HashMap<String, String> {
         let mut config = HashMap::new();
 

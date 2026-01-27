@@ -32,7 +32,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define PAYLOAD_BUFFER_SIZE 1024
 #endif
 
-#define MQTT_BROKER_HOSTNAME "10.42.0.1" /* Replace with your broker's IP */
+#define MQTT_BROKER_HOSTNAME "10.42.0.1"
 #define MQTT_BROKER_PORT 1883
 
 #define REGISTRY_ACK_TOPIC_TEMPLATE "m/%s/c/%s/control/manager/registry"
@@ -65,6 +65,22 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define MAX_UPDATE_B64_LEN 2048
 #define MAX_ERROR_MSG_LEN 256
 
+struct fl_spec {
+  char job_id[MAX_ID_LEN];
+  uint64_t round_id;
+  char global_version[MAX_ID_LEN];
+  uint64_t min_participants;
+  uint64_t round_timeout_sec;
+  uint64_t clients_per_round;
+  uint64_t total_rounds;
+  char algorithm[MAX_NAME_LEN];
+  char update_format[MAX_NAME_LEN];
+  char model_ref[MAX_URL_LEN];
+  uint64_t local_epochs;
+  uint64_t batch_size;
+  double learning_rate;
+};
+
 struct task {
   char id[MAX_ID_LEN];
   char name[MAX_NAME_LEN];
@@ -85,9 +101,13 @@ struct task {
   char created_at[MAX_TIMESTAMP_LEN];
   char updated_at[MAX_TIMESTAMP_LEN];
 
-  bool is_fl_task;  // Legacy field - FL tasks now detected via ROUND_ID
+  struct fl_spec fl;
+  bool is_fl_task;
   
+  char fl_job_id[MAX_ID_LEN];
   char fl_round_id_str[32];
+  char fl_global_version[MAX_ID_LEN];
+  char fl_global_update_b64[MAX_BASE64_LEN];
   char fl_format[MAX_NAME_LEN];
   char fl_num_samples_str[32];
   
@@ -207,7 +227,7 @@ static void mqtt_event_handler(struct mqtt_client *client,
       LOG_ERR("Failed to read payload [%d]", ret);
       return;
     }
-    payload[ret] = '\0'; /* Null-terminate */
+    payload[ret] = '\0';
     LOG_INF("Payload: %s", payload);
 
     const struct mqtt_utf8 *rtopic = &pub->message.topic.topic;
@@ -523,8 +543,56 @@ void handle_start_command(const char *payload) {
     }
   }
 
-  // FL tasks are detected via ROUND_ID environment variable
-  // No need to parse FLSpec from JSON - all values come from env vars
+  if (fl_obj != NULL && cJSON_IsObject(fl_obj)) {
+    t.is_fl_task = true;
+    cJSON *job_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "job_id");
+    cJSON *round_id = cJSON_GetObjectItemCaseSensitive(fl_obj, "round_id");
+    cJSON *global_version = cJSON_GetObjectItemCaseSensitive(fl_obj, "global_version");
+    cJSON *update_format = cJSON_GetObjectItemCaseSensitive(fl_obj, "update_format");
+    cJSON *min_participants = cJSON_GetObjectItemCaseSensitive(fl_obj, "min_participants");
+    cJSON *total_rounds = cJSON_GetObjectItemCaseSensitive(fl_obj, "total_rounds");
+    cJSON *local_epochs = cJSON_GetObjectItemCaseSensitive(fl_obj, "local_epochs");
+    cJSON *batch_size = cJSON_GetObjectItemCaseSensitive(fl_obj, "batch_size");
+    cJSON *learning_rate = cJSON_GetObjectItemCaseSensitive(fl_obj, "learning_rate");
+
+    if (cJSON_IsString(job_id)) {
+      strncpy(t.fl.job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_job_id, job_id->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(round_id)) {
+      t.fl.round_id = (uint64_t)round_id->valuedouble;
+      snprintf(t.fl_round_id_str, sizeof(t.fl_round_id_str), "%llu", (unsigned long long)t.fl.round_id);
+    }
+    if (cJSON_IsString(global_version)) {
+      strncpy(t.fl.global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      strncpy(t.fl_global_version, global_version->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+    }
+    if (cJSON_IsString(update_format)) {
+      strncpy(t.fl.update_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      strncpy(t.fl_format, update_format->valuestring, MAX_NAME_LEN - 1);
+      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+    }
+    if (cJSON_IsNumber(min_participants)) {
+      t.fl.min_participants = (uint64_t)min_participants->valuedouble;
+    }
+    if (cJSON_IsNumber(total_rounds)) {
+      t.fl.total_rounds = (uint64_t)total_rounds->valuedouble;
+    }
+    if (cJSON_IsNumber(local_epochs)) {
+      t.fl.local_epochs = (uint64_t)local_epochs->valuedouble;
+    }
+    if (cJSON_IsNumber(batch_size)) {
+      t.fl.batch_size = (uint64_t)batch_size->valuedouble;
+    }
+    if (cJSON_IsNumber(learning_rate)) {
+      t.fl.learning_rate = learning_rate->valuedouble;
+    }
+  }
 
   t.model_data_fetched = false;
   t.dataset_data_fetched = false;
@@ -546,64 +614,88 @@ void handle_start_command(const char *payload) {
     cJSON *model_registry_url_env = cJSON_GetObjectItemCaseSensitive(env, "MODEL_REGISTRY_URL");
     cJSON *data_store_url_env = cJSON_GetObjectItemCaseSensitive(env, "DATA_STORE_URL");
     
-    if (cJSON_IsString(coordinator_url_env)) {
+    if (cJSON_IsString(coordinator_url_env) && coordinator_url_env->valuestring) {
       strncpy(t.coordinator_url, coordinator_url_env->valuestring, sizeof(t.coordinator_url) - 1);
       t.coordinator_url[sizeof(t.coordinator_url) - 1] = '\0';
     } else {
       strncpy(t.coordinator_url, "http://coordinator-http:8080", sizeof(t.coordinator_url) - 1);
       t.coordinator_url[sizeof(t.coordinator_url) - 1] = '\0';
     }
-
-    if (cJSON_IsString(model_registry_url_env)) {
+    
+    if (cJSON_IsString(model_registry_url_env) && model_registry_url_env->valuestring) {
       strncpy(t.model_registry_url, model_registry_url_env->valuestring, sizeof(t.model_registry_url) - 1);
       t.model_registry_url[sizeof(t.model_registry_url) - 1] = '\0';
     } else {
       strncpy(t.model_registry_url, "http://model-registry:8081", sizeof(t.model_registry_url) - 1);
       t.model_registry_url[sizeof(t.model_registry_url) - 1] = '\0';
     }
-
-    if (cJSON_IsString(data_store_url_env)) {
+    
+    if (cJSON_IsString(data_store_url_env) && data_store_url_env->valuestring) {
       strncpy(t.data_store_url, data_store_url_env->valuestring, sizeof(t.data_store_url) - 1);
       t.data_store_url[sizeof(t.data_store_url) - 1] = '\0';
     } else {
       strncpy(t.data_store_url, "http://local-data-store:8083", sizeof(t.data_store_url) - 1);
       t.data_store_url[sizeof(t.data_store_url) - 1] = '\0';
     }
-
-    if (cJSON_IsString(round_id_env)) {
+    
+    if (cJSON_IsString(round_id_env) && round_id_env->valuestring) {
       strncpy(t.round_id, round_id_env->valuestring, sizeof(t.round_id) - 1);
       t.round_id[sizeof(t.round_id) - 1] = '\0';
       t.is_fml_task = true;
       LOG_INF("FML task detected: ROUND_ID=%s", t.round_id);
     }
-
-    if (cJSON_IsString(model_uri_env)) {
+    
+    if (cJSON_IsString(model_uri_env) && model_uri_env->valuestring) {
       strncpy(t.model_uri, model_uri_env->valuestring, sizeof(t.model_uri) - 1);
       t.model_uri[sizeof(t.model_uri) - 1] = '\0';
       LOG_INF("FML model URI: %s", t.model_uri);
     }
-
-    if (cJSON_IsString(hyperparams_env)) {
+    
+    if (cJSON_IsString(hyperparams_env) && hyperparams_env->valuestring) {
       strncpy(t.hyperparams, hyperparams_env->valuestring, sizeof(t.hyperparams) - 1);
       t.hyperparams[sizeof(t.hyperparams) - 1] = '\0';
     }
     
-    // FL task configuration from environment variables
+    cJSON *fl_job_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_JOB_ID");
     cJSON *fl_round_id_env = cJSON_GetObjectItemCaseSensitive(env, "FL_ROUND_ID");
+    cJSON *fl_global_version_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_VERSION");
+    cJSON *fl_global_update_env = cJSON_GetObjectItemCaseSensitive(env, "FL_GLOBAL_UPDATE_B64");
     cJSON *fl_format_env = cJSON_GetObjectItemCaseSensitive(env, "FL_FORMAT");
     cJSON *fl_num_samples_env = cJSON_GetObjectItemCaseSensitive(env, "FL_NUM_SAMPLES");
 
+    if (cJSON_IsString(fl_job_id_env)) {
+      strncpy(t.fl_job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_job_id[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task) {
+        strncpy(t.fl.job_id, fl_job_id_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.job_id[MAX_ID_LEN - 1] = '\0';
+        t.is_fl_task = true;
+      }
+    }
     if (cJSON_IsString(fl_round_id_env)) {
       strncpy(t.fl_round_id_str, fl_round_id_env->valuestring, sizeof(t.fl_round_id_str) - 1);
       t.fl_round_id_str[sizeof(t.fl_round_id_str) - 1] = '\0';
+      t.fl.round_id = (uint64_t)strtoull(t.fl_round_id_str, NULL, 10);
+    }
+    if (cJSON_IsString(fl_global_version_env)) {
+      strncpy(t.fl_global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+      t.fl_global_version[MAX_ID_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.global_version) == 0) {
+        strncpy(t.fl.global_version, fl_global_version_env->valuestring, MAX_ID_LEN - 1);
+        t.fl.global_version[MAX_ID_LEN - 1] = '\0';
+      }
+    }
+    if (cJSON_IsString(fl_global_update_env)) {
+      strncpy(t.fl_global_update_b64, fl_global_update_env->valuestring, MAX_BASE64_LEN - 1);
+      t.fl_global_update_b64[MAX_BASE64_LEN - 1] = '\0';
     }
     if (cJSON_IsString(fl_format_env)) {
       strncpy(t.fl_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
       t.fl_format[MAX_NAME_LEN - 1] = '\0';
-    } else {
-      // Default format
-      strncpy(t.fl_format, "f32-delta", MAX_NAME_LEN - 1);
-      t.fl_format[MAX_NAME_LEN - 1] = '\0';
+      if (!t.is_fl_task || strlen(t.fl.update_format) == 0) {
+        strncpy(t.fl.update_format, fl_format_env->valuestring, MAX_NAME_LEN - 1);
+        t.fl.update_format[MAX_NAME_LEN - 1] = '\0';
+      }
     }
     if (cJSON_IsString(fl_num_samples_env)) {
       strncpy(t.fl_num_samples_str, fl_num_samples_env->valuestring, sizeof(t.fl_num_samples_str) - 1);
@@ -615,13 +707,7 @@ void handle_start_command(const char *payload) {
   }
 
   LOG_INF("Starting task: ID=%s, Name=%s, Mode=%s", t.id, t.name, t.mode);
-
   if (t.is_fml_task) {
-    if (strlen(t.round_id) == 0) {
-      LOG_ERR("FML task missing required ROUND_ID field");
-      cJSON_Delete(json);
-      return;
-    }
     LOG_INF("FML Task: round_id=%s, model_uri=%s", t.round_id, t.model_uri);
     if (strlen(t.model_uri) > 0) {
       struct mqtt_topic model_topic = {
@@ -640,9 +726,25 @@ void handle_start_command(const char *payload) {
         LOG_ERR("Failed to subscribe to model topic: %s (error: %d)", t.model_uri, ret);
       }
     }
-  // FL tasks are detected via ROUND_ID environment variable (FML tasks)
+  } else if (t.is_fl_task) {
+    LOG_INF("FL Task (legacy): job_id=%s, round_id=%llu, global_version=%s, format=%s",
+            t.fl.job_id, (unsigned long long)t.fl.round_id, 
+            t.fl.global_version, t.fl.update_format);
+  }
   LOG_INF("image_url=%s, file-len(b64)=%zu", t.image_url, strlen(t.file));
   LOG_INF("inputs_count=%zu", t.inputs_count);
+
+  if (t.is_fml_task && strlen(t.round_id) == 0) {
+    LOG_ERR("FML task missing required ROUND_ID field");
+    cJSON_Delete(json);
+    return;
+  }
+  
+  if (t.is_fl_task && !t.is_fml_task && strlen(t.fl.job_id) == 0) {
+    LOG_ERR("FL task missing required job_id field");
+    cJSON_Delete(json);
+    return;
+  }
 
   memcpy(&g_current_task, &t, sizeof(t));
 
@@ -656,11 +758,7 @@ void handle_start_command(const char *payload) {
     
     char http_response[4096];
     if (http_get_json(model_url, http_response, sizeof(http_response)) == 0) {
-      size_t response_len = strlen(http_response);
-      if (response_len >= sizeof(g_current_task.model_data) - 1) {
-        LOG_ERR("Model data truncated (size >= %zu), training may fail", sizeof(g_current_task.model_data));
-      }
-      strncpy(g_current_task.model_data, http_response,
+      strncpy(g_current_task.model_data, http_response, 
               sizeof(g_current_task.model_data) - 1);
       g_current_task.model_data[sizeof(g_current_task.model_data) - 1] = '\0';
       g_current_task.model_data_fetched = true;
@@ -680,11 +778,7 @@ void handle_start_command(const char *payload) {
     
     char http_response[4096];
     if (http_get_json(dataset_url, http_response, sizeof(http_response)) == 0) {
-      size_t response_len = strlen(http_response);
-      if (response_len >= sizeof(g_current_task.dataset_data) - 1) {
-        LOG_ERR("Dataset data truncated (size >= %zu), training may fail", sizeof(g_current_task.dataset_data));
-      }
-      strncpy(g_current_task.dataset_data, http_response,
+      strncpy(g_current_task.dataset_data, http_response, 
               sizeof(g_current_task.dataset_data) - 1);
       g_current_task.dataset_data[sizeof(g_current_task.dataset_data) - 1] = '\0';
       g_current_task.dataset_data_fetched = true;
@@ -828,27 +922,13 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     return -1;
   }
 
-  struct timeval tv;
-  tv.tv_sec = 30;
-  tv.tv_usec = 0;
-  ret = zsock_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  if (ret < 0) {
-    LOG_WRN("Failed to set socket receive timeout: %d", ret);
-  }
-
-  char request[2048];
-  int request_len = snprintf(request, sizeof(request),
+  char request[1024];
+  snprintf(request, sizeof(request),
            "GET %s HTTP/1.1\r\n"
            "Host: %s\r\n"
            "Connection: close\r\n"
            "\r\n",
            path, host);
-
-  if (request_len < 0 || request_len >= (int)sizeof(request)) {
-    LOG_ERR("HTTP request too long or formatting error: %d", request_len);
-    zsock_close(sock);
-    return -1;
-  }
   
   ret = zsock_send(sock, request, strlen(request), 0);
   if (ret < 0) {
@@ -860,9 +940,6 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
   size_t total_received = 0;
   bool headers_complete = false;
   size_t content_length = 0;
-  char header_buffer[1024] = {0};
-  size_t header_buffer_len = 0;
-  int http_status_code = 0;
   
   while (total_received < buffer_size - 1) {
     char chunk[512];
@@ -873,69 +950,30 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
     chunk[ret] = '\0';
     
     if (!headers_complete) {
-      size_t header_space = sizeof(header_buffer) - header_buffer_len - 1;
-      size_t copy_len = MIN((size_t)ret, header_space);
-      memcpy(header_buffer + header_buffer_len, chunk, copy_len);
-      header_buffer_len += copy_len;
-      header_buffer[header_buffer_len] = '\0';
-
-      char *header_end = strstr(header_buffer, "\r\n\r\n");
+      char *header_end = strstr(chunk, "\r\n\r\n");
       if (header_end) {
         headers_complete = true;
-        size_t header_len = (header_end - header_buffer) + 4;
-
-        char *status_line = header_buffer;
-        char *http_version_end = strchr(status_line, ' ');
-        if (http_version_end) {
-          char *status_code_start = http_version_end + 1;
-          char *status_code_end = strchr(status_code_start, ' ');
-          if (status_code_end) {
-            char status_code_str[16];
-            size_t code_len = status_code_end - status_code_start;
-            if (code_len < sizeof(status_code_str)) {
-              memcpy(status_code_str, status_code_start, code_len);
-              status_code_str[code_len] = '\0';
-              http_status_code = atoi(status_code_str);
-              LOG_INF("HTTP status code: %d", http_status_code);
-            }
-          }
-        }
-
-        if (http_status_code < 200 || http_status_code >= 300) {
-          LOG_ERR("HTTP request failed with status: %d", http_status_code);
-          zsock_close(sock);
-          return -1;
-        }
-
-        size_t body_start_in_chunk = 0;
-        if (header_len > (header_buffer_len - copy_len)) {
-          body_start_in_chunk = header_len - header_buffer_len + copy_len;
-        }
-
-        char *cl_header = strstr(header_buffer, "Content-Length:");
+        size_t header_len = (header_end - chunk) + 4;
+        size_t body_start = header_len;
+        size_t body_len = ret - body_start;
+        
+        char *cl_header = strstr(chunk, "Content-Length:");
         if (cl_header) {
-          const char *val_start = cl_header + strlen("Content-Length:");
-          char *endptr;
-          unsigned long cl_val = strtoul(val_start, &endptr, 10);
-          if (endptr != val_start && cl_val <= (unsigned long)SIZE_MAX) {
-            content_length = (size_t)cl_val;
-          }
+          content_length = atoi(cl_header + strlen("Content-Length:"));
         }
-
-        if (body_start_in_chunk < (size_t)ret) {
-          size_t body_len = ret - body_start_in_chunk;
-          if (total_received + body_len < buffer_size - 1) {
-            memcpy(response_buffer + total_received, chunk + body_start_in_chunk, body_len);
-            total_received += body_len;
-          }
+        
+        if (body_len > 0 && total_received + body_len < buffer_size - 1) {
+          memcpy(response_buffer + total_received, chunk + body_start, body_len);
+          total_received += body_len;
         }
-      } else if (header_buffer_len >= sizeof(header_buffer) - 1) {
-        LOG_ERR("HTTP headers too long or malformed");
-        zsock_close(sock);
-        return -1;
+      } else {
+        char *cl_header = strstr(chunk, "Content-Length:");
+        if (cl_header) {
+          content_length = atoi(cl_header + strlen("Content-Length:"));
+        }
       }
     } else {
-      size_t copy_len = MIN((size_t)ret, buffer_size - total_received - 1);
+      size_t copy_len = MIN(ret, buffer_size - total_received - 1);
       memcpy(response_buffer + total_received, chunk, copy_len);
       total_received += copy_len;
     }
@@ -976,10 +1014,11 @@ static int extract_model_version_from_uri(const char *uri) {
     return version;
   }
   
+  size_t len = strlen(last_part);
   int version = 0;
-  for (size_t i = 0; i < strlen(last_part); i++) {
-    if (last_part[i] >= '0' && last_part[i] <= '9') {
-      version = (version * 10) + (last_part[i] - '0');
+  for (size_t i = len; i > 0; i--) {
+    if (last_part[i-1] >= '0' && last_part[i-1] <= '9') {
+      version = (version * 10) + (last_part[i-1] - '0');
     } else if (version > 0) {
       break;
     }
@@ -1020,7 +1059,7 @@ int handle_registry_response(const char *payload) {
   LOG_INF("Single-chunk registry response for app: %s", resp.app_name);
 
   size_t encoded_len = strlen(resp.data);
-  size_t decoded_len = (encoded_len * 3) / 4; /* max possible decoded size */
+  size_t decoded_len = (encoded_len * 3) / 4;
 
   uint8_t *binary_data = malloc(decoded_len);
   if (!binary_data) {
@@ -1169,81 +1208,11 @@ void publish_results(const char *domain_id, const char *channel_id,
   publish_results_with_error(domain_id, channel_id, task_id, results, NULL);
 }
 
-static void json_escape_string(char *dest, size_t dest_size, const char *src) {
-  if (!src || dest_size == 0) {
-    if (dest_size > 0) {
-      dest[0] = '\0';
-    }
-    return;
-  }
-
-  size_t j = 0;
-  for (size_t i = 0; src[i] != '\0' && j < dest_size - 1; i++) {
-    switch (src[i]) {
-      case '"':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = '"';
-        }
-        break;
-      case '\\':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = '\\';
-        }
-        break;
-      case '\b':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = 'b';
-        }
-        break;
-      case '\f':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = 'f';
-        }
-        break;
-      case '\n':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = 'n';
-        }
-        break;
-      case '\r':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = 'r';
-        }
-        break;
-      case '\t':
-        if (j + 2 < dest_size) {
-          dest[j++] = '\\';
-          dest[j++] = 't';
-        }
-        break;
-      default:
-        if (j < dest_size - 1) {
-          dest[j++] = src[i];
-        }
-        break;
-    }
-  }
-  dest[j] = '\0';
-}
-
 void publish_results_with_error(const char *domain_id, const char *channel_id,
                                  const char *task_id, const char *results,
                                  const char *error_msg) {
   char results_payload[2048];
-  char escaped_error[MAX_ERROR_MSG_LEN * 2];
   const char *pid = (g_proplet_id[0] != '\0') ? g_proplet_id : CLIENT_ID;
-
-  if (error_msg) {
-    json_escape_string(escaped_error, sizeof(escaped_error), error_msg);
-  } else {
-    escaped_error[0] = '\0';
-  }
 
   if (g_current_task.is_fml_task && strlen(g_current_task.round_id) > 0) {
     cJSON *update_json = NULL;
@@ -1269,7 +1238,7 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         g_current_task.round_id,
         pid,
         g_current_task.model_uri,
-        escaped_error
+        error_msg
       );
     } else if (update_json) {
       cJSON *round_id_obj = cJSON_GetObjectItemCaseSensitive(update_json, "round_id");
@@ -1288,7 +1257,8 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       
       char *json_str = cJSON_PrintUnformatted(update_json);
       if (json_str) {
-        strncpy(results_payload, json_str, sizeof(results_payload));
+        strncpy(results_payload, json_str, sizeof(results_payload) - 1);
+        results_payload[sizeof(results_payload) - 1] = '\0';
         cJSON_free(json_str);
       } else {
         snprintf(results_payload, sizeof(results_payload),
@@ -1320,11 +1290,17 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
     return;
   }
 
-  // Check if this is an FL task (has ROUND_ID)
-  bool is_fl_task = (strlen(g_current_task.round_id) > 0 || 
-                     strlen(g_current_task.fl_round_id_str) > 0);
-  
-  if (is_fl_task && strcmp(g_current_task.mode, "train") == 0) {
+  if (g_current_task.is_fl_task && 
+      strcmp(g_current_task.mode, "train") == 0 &&
+      strlen(g_current_task.fl.job_id) > 0) {
+    if (strlen(g_current_task.fl.job_id) == 0) {
+      LOG_ERR("FL task missing job_id, cannot publish update");
+      return;
+    }
+    if (strlen(g_current_task.fl.global_version) == 0) {
+      LOG_ERR("FL task missing global_version, cannot publish update");
+      return;
+    }
 
     char update_b64[MAX_UPDATE_B64_LEN];
     size_t encoded_len = 0;
@@ -1349,19 +1325,10 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         LOG_ERR("Failed to encode results as base64");
         error_msg = "Failed to encode update as base64";
         encoded_len = 0;
-        update_b64[0] = '\0';
-      } else if (encoded_len == 0) {
-        LOG_ERR("Base64 encoding produced empty result");
-        error_msg = "Base64 encoding produced empty result";
-        update_b64[0] = '\0';
       } else {
         update_b64[encoded_len] = '\0';
       }
     } else {
-      if (!error_msg) {
-        LOG_ERR("FL task has no results and no error message");
-        error_msg = "No results data available";
-      }
       encoded_len = 0;
       update_b64[0] = '\0';
     }
@@ -1374,19 +1341,15 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       num_samples = 1;
     }
 
-    // Get round_id from ROUND_ID env var (stored in fl_round_id_str)
-    const char *round_id_str = (strlen(g_current_task.fl_round_id_str) > 0) ?
-                               g_current_task.fl_round_id_str : 
-                               (strlen(g_current_task.round_id) > 0) ?
-                               g_current_task.round_id : "";
-
     if (error_msg) {
       snprintf(results_payload, sizeof(results_payload),
         "{"
         "\"task_id\":\"%s\","
         "\"results\":{"
           "\"task_id\":\"%s\","
-          "\"round_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
           "\"proplet_id\":\"%s\","
           "\"num_samples\":%llu,"
           "\"update_b64\":\"\","
@@ -1397,11 +1360,13 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "}",
         task_id,
         task_id,
-        round_id_str,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
         pid,
         (unsigned long long)num_samples,
         format,
-        escaped_error
+        error_msg
       );
     } else {
       snprintf(results_payload, sizeof(results_payload),
@@ -1409,7 +1374,9 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "\"task_id\":\"%s\","
         "\"results\":{"
           "\"task_id\":\"%s\","
-          "\"round_id\":\"%s\","
+          "\"job_id\":\"%s\","
+          "\"round_id\":%llu,"
+          "\"global_version\":\"%s\","
           "\"proplet_id\":\"%s\","
           "\"num_samples\":%llu,"
           "\"update_b64\":\"%s\","
@@ -1419,7 +1386,9 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
         "}",
         task_id,
         task_id,
-        round_id_str,
+        g_current_task.fl.job_id,
+        (unsigned long long)g_current_task.fl.round_id,
+        g_current_task.fl.global_version,
         pid,
         (unsigned long long)num_samples,
         update_b64,
@@ -1427,23 +1396,17 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
       );
     }
 
-    LOG_INF("Publishing FL update envelope for task: %s (round=%s, error=%s)",
-            task_id, round_id_str, error_msg ? error_msg : "none");
+    LOG_INF("Publishing FL update envelope for task: %s (job=%s, round=%llu, error=%s)",
+            task_id, g_current_task.fl.job_id, (unsigned long long)g_current_task.fl.round_id,
+            error_msg ? error_msg : "none");
   } else {
-    char escaped_results[2048];
-    if (results) {
-      json_escape_string(escaped_results, sizeof(escaped_results), results);
-    } else {
-      escaped_results[0] = '\0';
-    }
-    
     if (error_msg) {
       snprintf(results_payload, sizeof(results_payload),
                "{\"task_id\":\"%s\",\"results\":\"%s\",\"error\":\"%s\"}", 
-               task_id, escaped_results, escaped_error);
+               task_id, results ? results : "", error_msg);
     } else {
       snprintf(results_payload, sizeof(results_payload),
-               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, escaped_results);
+               "{\"task_id\":\"%s\",\"results\":\"%s\"}", task_id, results ? results : "");
     }
   }
 

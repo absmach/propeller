@@ -143,6 +143,7 @@ func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 	return mm.svc.Subscribe(ctx)
 }
 
+// ConfigureExperiment implements the FL Orchestration method.
 func (mm *metricsMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) error {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "configure-experiment").Add(1)
@@ -152,6 +153,7 @@ func (mm *metricsMiddleware) ConfigureExperiment(ctx context.Context, config man
 	return mm.svc.ConfigureExperiment(ctx, config)
 }
 
+// GetFLTask implements the FL Coordination method.
 func (mm *metricsMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (manager.FLTask, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "get-fl-task").Add(1)

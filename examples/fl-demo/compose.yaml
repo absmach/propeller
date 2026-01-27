@@ -138,7 +138,7 @@ services:
       MANAGER_HTTP_SERVER_KEY: ${MANAGER_HTTP_SERVER_KEY:-}
       MANAGER_OTEL_URL: ${MANAGER_OTEL_URL:-}
       MANAGER_TRACE_RATIO: ${MANAGER_TRACE_RATIO:-0.0}
-      COORDINATOR_URL: http://coordinator-http:8080
+      FL_COORDINATOR_URL: http://coordinator-http:8080
     ports:
       - "${MANAGER_HTTP_PORT:-7070}:${MANAGER_HTTP_PORT:-7070}"
     depends_on:

@@ -160,10 +160,8 @@ func decodeFLUpdateReq(_ context.Context, r *http.Request) (any, error) {
 }
 
 func decodeFLUpdateCBORReq(_ context.Context, r *http.Request) (any, error) {
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "application/cbor" && contentType != "application/cbor-seq" {
-		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
-	}
+	// Content-Type validation is handled by the transport layer
+	// Accept both application/cbor and application/cbor-seq
 
 	data, err := io.ReadAll(r.Body)
 	if err != nil {

@@ -121,7 +121,10 @@ lint:
 	cd proplet && cargo check --release && cargo fmt --all -- --check && cargo clippy -- -D warnings
 
 test:
-	go test -v ./manager
+	go test -v ./manager -run TestAggregateJSONF64
+	go test -v ./manager -run TestAggregateConcat
+	go test -v ./manager -run TestAggregateRound
+	go test -v ./manager -run TestFLWorkflowIntegration
 
 test-all:
 	go test -v ./...

@@ -1,0 +1,104 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: propeller-operator
+rules:
+  # CRDs
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks
+      - federatedjobs
+      - trainingrounds
+      - propletgroups
+      - modelcheckpoints
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks/status
+      - federatedjobs/status
+      - trainingrounds/status
+      - propletgroups/status
+      - modelcheckpoints/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - propeller.absmach.io
+    resources:
+      - wasmtasks/finalizers
+      - federatedjobs/finalizers
+      - trainingrounds/finalizers
+      - propletgroups/finalizers
+      - modelcheckpoints/finalizers
+    verbs:
+      - update
+  # Jobs
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # ConfigMaps and Secrets
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Services and Deployments (optional)
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch

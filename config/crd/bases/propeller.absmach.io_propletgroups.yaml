@@ -1,0 +1,120 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: propletgroups.propeller.absmach.io
+spec:
+  group: propeller.absmach.io
+  names:
+    kind: PropletGroup
+    listKind: PropletGroupList
+    plural: propletgroups
+    singular: propletgroup
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.totalProplets
+      name: Total
+      type: integer
+    - jsonPath: .status.availableProplets
+      name: Available
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: PropletGroup is the Schema for the propletgroups API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PropletGroupSpec defines the desired state of PropletGroup
+            properties:
+              scheduling:
+                description: Scheduling defines the scheduling configuration
+                properties:
+                  algorithm:
+                    description: Algorithm is the scheduling algorithm (round-robin,
+                      least-loaded, random)
+                    type: string
+                  maxTasksPerProplet:
+                    description: MaxTasksPerProplet is the maximum number of tasks
+                      per proplet
+                    type: integer
+                required:
+                - algorithm
+                type: object
+              selector:
+                description: Selector is a label selector for matching proplets
+                properties:
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: MatchLabels is a map of labels to match
+                    type: object
+                type: object
+            required:
+            - scheduling
+            - selector
+            type: object
+          status:
+            description: PropletGroupStatus defines the observed state of PropletGroup
+            properties:
+              availableProplets:
+                description: AvailableProplets is the number of available proplets
+                type: integer
+              proplets:
+                description: Proplets is the list of proplets in this group
+                items:
+                  description: PropletInfo defines information about a proplet
+                  properties:
+                    alive:
+                      description: Alive indicates if the proplet is alive
+                      type: boolean
+                    id:
+                      description: ID is the proplet ID
+                      type: string
+                    lastHeartbeat:
+                      description: LastHeartbeat is the timestamp of the last heartbeat
+                      format: date-time
+                      type: string
+                    namespace:
+                      description: Namespace is the Kubernetes namespace
+                      type: string
+                    taskCount:
+                      description: TaskCount is the current number of tasks
+                      type: integer
+                  required:
+                  - alive
+                  - id
+                  - taskCount
+                  type: object
+                type: array
+              totalProplets:
+                description: TotalProplets is the total number of proplets
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

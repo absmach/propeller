@@ -398,16 +398,14 @@ impl PropletService {
 
         {
             let mut tasks = self.running_tasks.lock().await;
-            use std::collections::hash_map::Entry;
-            if let Entry::Vacant(e) = tasks.entry(req.id.clone()) {
-                e.insert(TaskState::Running);
-            } else {
+            if tasks.contains_key(&req.id) {
                 warn!(
                     "Task {} is already running, ignoring duplicate start command",
                     req.id
                 );
                 return Ok(());
             }
+            tasks.insert(req.id.clone(), TaskState::Running);
         }
 
         let wasm_binary = if !req.file.is_empty() {
@@ -506,13 +504,16 @@ impl PropletService {
 
             info!("Executing task {} in spawned task", task_id);
 
-            if !env.contains_key("PROPLET_ID") {
-                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
-            }
-
             let mut cli_args = cli_args;
             if let Some(ref img_url) = image_url {
                 cli_args.insert(0, img_url.clone());
+            }
+
+            // Set PROPLET_ID in task environment from config.client_id (PROPLET_CLIENT_ID)
+            // This must be done BEFORE creating StartConfig so it's included in WASM environment
+            // This is the Manager-known identity that should be used in FL updates
+            if !env.contains_key("PROPLET_ID") {
+                env.insert("PROPLET_ID".to_string(), proplet_id.clone());
             }
 
             // Note: We'll create config after fetching MODEL_DATA and DATASET_DATA
@@ -592,21 +593,16 @@ impl PropletService {
                 None
             };
 
-            // Fetch model if MODEL_URI is present (FML task)
-            // Use environment variables only - no fallbacks, must be set in .env file
-            if let Some(model_uri) = env.get("MODEL_URI") {
-                let model_registry_url = match env
-                    .get("MODEL_REGISTRY_URL")
-                    .cloned()
-                    .or_else(|| std::env::var("MODEL_REGISTRY_URL").ok())
-                {
-                    Some(url) => url,
-                    None => {
-                        error!("MODEL_REGISTRY_URL not set. Must be provided via environment variable in .env file.");
-                        return;
-                    }
-                };
+            let coordinator_url = env
+                .get("COORDINATOR_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://coordinator-http:8080".to_string());
+            let model_registry_url = env
+                .get("MODEL_REGISTRY_URL")
+                .cloned()
+                .unwrap_or_else(|| "http://model-registry:8081".to_string());
 
+            if let Some(model_uri) = env.get("MODEL_URI") {
                 let model_version = extract_model_version_from_uri(model_uri);
                 let model_url = format!("{}/models/{}", model_registry_url, model_version);
 
@@ -632,8 +628,6 @@ impl PropletService {
                 }
             }
 
-            // Fetch dataset if this is an FML task
-            // Use environment variables only - no fallbacks, must be set in .env file
             let dataset_proplet_id = env.get("PROPLET_ID").cloned().unwrap_or_else(|| {
                 warn!(
                     "PROPLET_ID not in environment, using proplet_id from config: {}",
@@ -641,46 +635,34 @@ impl PropletService {
                 );
                 proplet_id.clone()
             });
-
-            let data_store_url = match env
+            let data_store_url = env
                 .get("DATA_STORE_URL")
                 .cloned()
-                .or_else(|| std::env::var("DATA_STORE_URL").ok())
-            {
-                Some(url) => url,
-                None => {
-                    warn!("DATA_STORE_URL not set. Dataset fetching will be skipped. Set it in .env file to enable dataset fetching.");
-                    String::new() // Empty string to skip dataset fetching
-                }
-            };
+                .unwrap_or_else(|| "http://local-data-store:8083".to_string());
 
-            if !data_store_url.is_empty() {
-                let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
-                info!("Fetching dataset from Local Data Store: {}", dataset_url);
-                match http_client.get(&dataset_url).send().await {
-                    Ok(response) if response.status().is_success() => {
-                        if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
-                            if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
-                                env.insert("DATASET_DATA".to_string(), dataset_str);
-                                if let Some(size) =
-                                    dataset_json.get("size").and_then(|s| s.as_u64())
-                                {
-                                    info!("Successfully fetched dataset with {} samples and passed to client", size);
-                                } else {
-                                    info!("Successfully fetched dataset and passed to client");
-                                }
+            let dataset_url = format!("{}/datasets/{}", data_store_url, dataset_proplet_id);
+            info!("Fetching dataset from Local Data Store: {}", dataset_url);
+            match http_client.get(&dataset_url).send().await {
+                Ok(response) if response.status().is_success() => {
+                    if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
+                        if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
+                            env.insert("DATASET_DATA".to_string(), dataset_str);
+                            if let Some(size) = dataset_json.get("size").and_then(|s| s.as_u64()) {
+                                info!("Successfully fetched dataset with {} samples and passed to client", size);
+                            } else {
+                                info!("Successfully fetched dataset and passed to client");
                             }
                         }
                     }
-                    Ok(response) => {
-                        warn!(
-                            "Failed to fetch dataset: HTTP {} (will use synthetic data)",
-                            response.status()
-                        );
-                    }
-                    Err(e) => {
-                        warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
-                    }
+                }
+                Ok(response) => {
+                    warn!(
+                        "Failed to fetch dataset: HTTP {} (will use synthetic data)",
+                        response.status()
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to fetch dataset from Local Data Store: {} (will use synthetic data)", e);
                 }
             }
 
@@ -711,20 +693,6 @@ impl PropletService {
             };
 
             if let Some(round_id) = env.get("ROUND_ID") {
-                // COORDINATOR_URL is required for FML tasks (when ROUND_ID is present)
-                // Use environment variables only - no fallbacks, must be set in .env file
-                let coordinator_url = match env
-                    .get("COORDINATOR_URL")
-                    .cloned()
-                    .or_else(|| std::env::var("COORDINATOR_URL").ok())
-                {
-                    Some(url) => url,
-                    None => {
-                        error!("COORDINATOR_URL not set. Must be provided via environment variable in .env file for FML tasks.");
-                        return;
-                    }
-                };
-
                 if let Ok(update_json) = serde_json::from_str::<serde_json::Value>(&result_str) {
                     let update_url = format!("{}/update", coordinator_url);
 
@@ -774,9 +742,10 @@ impl PropletService {
                 }
             }
 
-            if env.contains_key("ROUND_ID") {
+            if req.mode.as_deref() == Some("train") && req.fl.is_some() {
+                let fl_spec = req.fl.as_ref().unwrap();
                 let update_envelope =
-                    build_fl_update_envelope(&task_id, &proplet_id, &result_str, &env);
+                    build_fl_update_envelope(&task_id, &proplet_id, &result_str, fl_spec, &env);
 
                 #[derive(serde::Serialize)]
                 struct FLResultMessage {
@@ -976,6 +945,18 @@ impl PropletService {
     }
 
     #[allow(dead_code)]
+    fn build_fl_update_envelope(
+        &self,
+        task_id: &str,
+        proplet_id: &str,
+        result_str: &str,
+        fl_spec: &crate::types::FLSpec,
+        env: &HashMap<String, String>,
+    ) -> serde_json::Value {
+        build_fl_update_envelope(task_id, proplet_id, result_str, fl_spec, env)
+    }
+
+    #[allow(dead_code)]
     fn parse_http_requests_from_stderr(stderr: &str) -> Vec<HttpRequest> {
         let mut requests = Vec::new();
 
@@ -1131,6 +1112,7 @@ fn build_fl_update_envelope(
     task_id: &str,
     proplet_id: &str,
     result_str: &str,
+    fl_spec: &crate::types::FLSpec,
     env: &HashMap<String, String>,
 ) -> serde_json::Value {
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -1140,18 +1122,21 @@ fn build_fl_update_envelope(
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(1);
 
-    let update_format = env
-        .get("FL_FORMAT")
-        .cloned()
-        .unwrap_or_else(|| "f32-delta".to_string());
-
-    let round_id = env.get("ROUND_ID").cloned().unwrap_or_default();
+    let update_format = if !fl_spec.update_format.is_empty() {
+        fl_spec.update_format.clone()
+    } else {
+        env.get("FL_FORMAT")
+            .cloned()
+            .unwrap_or_else(|| "f32-delta".to_string())
+    };
 
     let update_b64 = STANDARD.encode(result_str.as_bytes());
 
     serde_json::json!({
         "task_id": task_id,
-        "round_id": round_id,
+        "job_id": fl_spec.job_id,
+        "round_id": fl_spec.round_id,
+        "global_version": fl_spec.global_version,
         "proplet_id": proplet_id,
         "num_samples": num_samples,
         "update_b64": update_b64,

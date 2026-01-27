@@ -79,18 +79,14 @@ func main() {
 		port = p
 	}
 
-	// Use environment variables - no hardcoded defaults for deployment flexibility
-	// For Docker Compose, set these in compose.yaml or .env file
-	// For Kubernetes, use ConfigMaps or environment variables
-	// For bare metal, set system environment variables
-	modelRegistryURL = os.Getenv("MODEL_REGISTRY_URL")
-	if modelRegistryURL == "" {
-		log.Fatal("MODEL_REGISTRY_URL environment variable is required")
+	modelRegistryURL = "http://model-registry:8081"
+	if url := os.Getenv("MODEL_REGISTRY_URL"); url != "" {
+		modelRegistryURL = url
 	}
 
-	aggregatorURL = os.Getenv("AGGREGATOR_URL")
-	if aggregatorURL == "" {
-		log.Fatal("AGGREGATOR_URL environment variable is required")
+	aggregatorURL = "http://aggregator:8082"
+	if url := os.Getenv("AGGREGATOR_URL"); url != "" {
+		aggregatorURL = url
 	}
 
 	httpClient = &http.Client{
@@ -323,20 +319,6 @@ func postUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
-	if update.RoundID == "" {
-		http.Error(w, "round_id is required", http.StatusBadRequest)
-		return
-	}
-	if update.PropletID == "" {
-		http.Error(w, "proplet_id is required", http.StatusBadRequest)
-		return
-	}
-	if len(update.Update) == 0 {
-		http.Error(w, "update data is required and cannot be empty", http.StatusBadRequest)
-		return
-	}
-
 	update.ReceivedAt = time.Now().UTC().Format(time.RFC3339)
 	processUpdate(update)
 
@@ -460,33 +442,6 @@ func processUpdate(update Update) {
 	}
 }
 
-// retryWithBackoff performs an HTTP request with exponential backoff retry
-func retryWithBackoff(maxRetries int, initialDelay time.Duration, operation func() error) error {
-	delay := initialDelay
-	var lastErr error
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			slog.Info("Retrying operation", "attempt", attempt+1, "max_retries", maxRetries, "delay_ms", delay.Milliseconds())
-			time.Sleep(delay)
-			delay = time.Duration(float64(delay) * 1.5) // Exponential backoff: 1.5x multiplier
-		}
-
-		err := operation()
-		if err == nil {
-			if attempt > 0 {
-				slog.Info("Operation succeeded after retry", "attempt", attempt+1)
-			}
-			return nil
-		}
-
-		lastErr = err
-		slog.Warn("Operation failed, will retry", "attempt", attempt+1, "error", err)
-	}
-
-	return fmt.Errorf("operation failed after %d attempts: %w", maxRetries, lastErr)
-}
-
 func aggregateAndAdvance(round *RoundState) {
 	round.mu.Lock()
 	updates := make([]Update, len(round.Updates))
@@ -510,29 +465,22 @@ func aggregateAndAdvance(round *RoundState) {
 		return
 	}
 
-	var aggregatedModel map[string]interface{}
-
-	// Retry aggregator call with exponential backoff
-	err = retryWithBackoff(3, 1*time.Second, func() error {
-		resp, err := httpClient.Post(aggregatorURL+"/aggregate", "application/json",
-			bytes.NewBuffer(reqBody))
-		if err != nil {
-			return fmt.Errorf("failed to call aggregator: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("aggregator returned error status: %d", resp.StatusCode)
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&aggregatedModel); err != nil {
-			return fmt.Errorf("failed to decode aggregated model: %w", err)
-		}
-
-		return nil
-	})
+	resp, err := httpClient.Post(aggregatorURL+"/aggregate", "application/json",
+		bytes.NewBuffer(reqBody))
 	if err != nil {
-		slog.Error("Failed to aggregate updates after retries", "round_id", round.RoundID, "error", err)
+		slog.Error("Failed to call aggregator", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("Aggregator returned error", "status", resp.StatusCode)
+		return
+	}
+
+	var aggregatedModel map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&aggregatedModel); err != nil {
+		slog.Error("Failed to decode aggregated model", "error", err)
 		return
 	}
 
@@ -552,23 +500,16 @@ func aggregateAndAdvance(round *RoundState) {
 		return
 	}
 
-	// Retry model registry call with exponential backoff
-	err = retryWithBackoff(3, 1*time.Second, func() error {
-		storeResp, err := httpClient.Post(modelRegistryURL+"/models", "application/json",
-			bytes.NewBuffer(storeReq))
-		if err != nil {
-			return fmt.Errorf("failed to store model in registry: %w", err)
-		}
-		defer storeResp.Body.Close()
-
-		if storeResp.StatusCode != http.StatusCreated {
-			return fmt.Errorf("model registry returned error status: %d", storeResp.StatusCode)
-		}
-
-		return nil
-	})
+	storeResp, err := httpClient.Post(modelRegistryURL+"/models", "application/json",
+		bytes.NewBuffer(storeReq))
 	if err != nil {
-		slog.Error("Failed to store model in registry after retries", "round_id", round.RoundID, "version", newVersion, "error", err)
+		slog.Error("Failed to store model in registry", "error", err)
+		return
+	}
+	defer storeResp.Body.Close()
+
+	if storeResp.StatusCode != http.StatusCreated {
+		slog.Error("Model registry returned error", "status", storeResp.StatusCode)
 		return
 	}
 
@@ -612,21 +553,13 @@ func checkRoundTimeouts() {
 
 	for range ticker.C {
 		now := time.Now()
-		// Collect rounds that need timeout checking while holding read lock
 		roundsMu.RLock()
-		roundsToCheck := make([]*RoundState, 0, len(rounds))
-		for _, round := range rounds {
-			roundsToCheck = append(roundsToCheck, round)
-		}
-		roundsMu.RUnlock()
-
-		// Check timeouts without holding the map lock
-		for _, round := range roundsToCheck {
+		for roundID, round := range rounds {
 			round.mu.Lock()
 			if !round.Completed {
 				elapsed := now.Sub(round.StartTime)
 				if elapsed >= time.Duration(round.TimeoutS)*time.Second {
-					slog.Warn("Round timeout exceeded", "round_id", round.RoundID, "timeout_s", round.TimeoutS, "updates", len(round.Updates))
+					slog.Warn("Round timeout exceeded", "round_id", roundID, "timeout_s", round.TimeoutS, "updates", len(round.Updates))
 					round.Completed = true
 					if len(round.Updates) > 0 {
 						go aggregateAndAdvance(round)
@@ -635,5 +568,6 @@ func checkRoundTimeouts() {
 			}
 			round.mu.Unlock()
 		}
+		roundsMu.RUnlock()
 	}
 }

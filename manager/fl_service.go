@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/fxamacker/cbor/v2"
@@ -29,7 +28,7 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 	}
 
 	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
-		return errors.New("COORDINATOR_URL must be configured for HTTP-based FL coordination")
+		return errors.New("FL_COORDINATOR_URL must be configured for HTTP-based FL coordination")
 	}
 
 	configJSON, err := json.Marshal(config)
@@ -37,13 +36,8 @@ func (svc *service) ConfigureExperiment(ctx context.Context, config ExperimentCo
 		return fmt.Errorf("failed to marshal experiment config: %w", err)
 	}
 
-	experimentsURL := svc.flCoordinatorURL + "/experiments"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, experimentsURL, bytes.NewBuffer(configJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := svc.httpClient.Do(req)
+	url := svc.flCoordinatorURL + "/experiments"
+	resp, err := svc.httpClient.Post(url, "application/json", bytes.NewBuffer(configJSON))
 	if err != nil {
 		return fmt.Errorf("failed to configure experiment with HTTP coordinator: %w", err)
 	}
@@ -84,23 +78,11 @@ func (svc *service) GetFLTask(ctx context.Context, roundID, propletID string) (F
 	}
 
 	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
-		return FLTask{}, errors.New("COORDINATOR_URL must be configured")
+		return FLTask{}, errors.New("FL_COORDINATOR_URL must be configured")
 	}
 
-	u, err := url.Parse(svc.flCoordinatorURL + "/task")
-	if err != nil {
-		return FLTask{}, fmt.Errorf("failed to parse coordinator URL: %w", err)
-	}
-	q := u.Query()
-	q.Set("round_id", roundID)
-	q.Set("proplet_id", propletID)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
-	if err != nil {
-		return FLTask{}, fmt.Errorf("failed to create request: %w", err)
-	}
-	resp, err := svc.httpClient.Do(req)
+	url := fmt.Sprintf("%s/task?round_id=%s&proplet_id=%s", svc.flCoordinatorURL, roundID, propletID)
+	resp, err := svc.httpClient.Get(url)
 	if err != nil {
 		return FLTask{}, fmt.Errorf("failed to forward task request to coordinator: %w", err)
 	}
@@ -132,7 +114,7 @@ func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 	}
 
 	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
-		return errors.New("COORDINATOR_URL must be configured")
+		return errors.New("FL_COORDINATOR_URL must be configured")
 	}
 
 	updateJSON, err := json.Marshal(update)
@@ -140,13 +122,8 @@ func (svc *service) PostFLUpdate(ctx context.Context, update FLUpdate) error {
 		return fmt.Errorf("failed to marshal update: %w", err)
 	}
 
-	updateURL := svc.flCoordinatorURL + "/update"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, updateURL, bytes.NewBuffer(updateJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := svc.httpClient.Do(req)
+	url := svc.flCoordinatorURL + "/update"
+	resp, err := svc.httpClient.Post(url, "application/json", bytes.NewBuffer(updateJSON))
 	if err != nil {
 		return fmt.Errorf("failed to forward update to HTTP coordinator: %w", err)
 	}
@@ -179,19 +156,11 @@ func (svc *service) GetRoundStatus(ctx context.Context, roundID string) (RoundSt
 	}
 
 	if svc.flCoordinatorURL == "" || svc.httpClient == nil {
-		return RoundStatus{}, errors.New("COORDINATOR_URL must be configured")
+		return RoundStatus{}, errors.New("FL_COORDINATOR_URL must be configured")
 	}
 
-	u, err := url.Parse(fmt.Sprintf("%s/rounds/%s/complete", svc.flCoordinatorURL, url.PathEscape(roundID)))
-	if err != nil {
-		return RoundStatus{}, fmt.Errorf("failed to parse coordinator URL: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
-	if err != nil {
-		return RoundStatus{}, fmt.Errorf("failed to create request: %w", err)
-	}
-	resp, err := svc.httpClient.Do(req)
+	url := fmt.Sprintf("%s/rounds/%s/complete", svc.flCoordinatorURL, roundID)
+	resp, err := svc.httpClient.Get(url)
 	if err != nil {
 		return RoundStatus{}, fmt.Errorf("failed to forward round status request to coordinator: %w", err)
 	}
