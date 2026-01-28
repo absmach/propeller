@@ -83,7 +83,7 @@ $(SERVICES):
 	$(call compile_service,$(@))
 
 $(RUST_SERVICES):
-	cd proplet && cargo build --release
+	cd proplet && cargo build --release && cp target/release/proplet ../$(BUILD_DIR)/proplet
 
 $(DOCKERS):
 	$(call make_docker,$(@),$(GOARCH))
