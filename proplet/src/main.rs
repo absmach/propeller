@@ -113,6 +113,11 @@ async fn main() -> Result<()> {
             tracing::error!("Failed to publish goodbye message: {}", e);
         }
 
+        // Release config lock
+        if let Err(e) = PropletConfig::release_lock(&config.client_id) {
+            tracing::error!("Failed to release config lock: {}", e);
+        }
+
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         if let Err(e) = pubsub_clone.disconnect().await {

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::tee_detection;
 
 const DEFAULT_CONFIG_PATH: &str = "config.toml";
-const DEFAULT_CONFIG_SECTION: &str = "proplet";
+const DEFAULT_LOCK_PATH: &str = ".proplet_locks";
 
 /// Configuration fields that can be loaded from TOML file
 #[derive(Debug, Clone, Deserialize)]
@@ -101,27 +101,11 @@ impl PropletConfig {
             let config_path =
                 env::var("PROPLET_CONFIG_FILE").unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string());
 
-            match fs::metadata(&config_path) {
-                Ok(_) => {
-                    let file_config = Self::from_file(&config_path)?;
-
-                    if config.client_id.is_empty() {
-                        config.client_id = file_config.client_id;
-                    }
-                    if config.client_key.is_empty() {
-                        config.client_key = file_config.client_key;
-                    }
-                    if config.channel_id.is_empty() {
-                        config.channel_id = file_config.channel_id;
-                    }
-                    if config.domain_id.is_empty() {
-                        config.domain_id = file_config.domain_id;
-                    }
-                }
-                Err(e) => {
-                    return Err(format!("config file '{config_path}' not accessible: {e}").into());
-                }
-            }
+            let file_config = Self::find_and_lock_config(&config_path)?;
+            config.domain_id = file_config.domain_id;
+            config.channel_id = file_config.channel_id;
+            config.client_id = file_config.client_id;
+            config.client_key = file_config.client_key;
         }
 
         #[cfg(feature = "tee")]
@@ -138,24 +122,60 @@ impl PropletConfig {
         Ok(config)
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<PropletFileConfig, Box<dyn std::error::Error>> {
-        let contents = fs::read_to_string(path)?;
-
+    /// Find an available proplet config section and lock it
+    fn find_and_lock_config(
+        config_path: &str,
+    ) -> Result<PropletFileConfig, Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string(config_path)?;
         let config: HashMap<String, toml::Value> = toml::from_str(&contents)?;
 
-        let section = env::var("PROPLET_CONFIG_SECTION")
-            .unwrap_or_else(|_| DEFAULT_CONFIG_SECTION.to_string());
+        // Get list of proplet sections
+        let mut proplet_sections: Vec<String> = config
+            .keys()
+            .filter(|k| k.starts_with("proplet"))
+            .cloned()
+            .collect();
+        proplet_sections.sort();
 
-        let section_value = config
-            .get(&section)
-            .ok_or_else(|| format!("config section '{section}' not found in TOML file"))?;
+        // Load or create lock file
+        let mut locks: HashMap<String, String> = if Path::new(DEFAULT_LOCK_PATH).exists() {
+            let lock_contents = fs::read_to_string(DEFAULT_LOCK_PATH)?;
+            serde_json::from_str(&lock_contents).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
 
-        let proplet_config: PropletFileConfig = section_value
-            .clone()
-            .try_into()
-            .map_err(|e| format!("failed to parse config section '{section}': {e}"))?;
+        // Find first available section
+        for section in proplet_sections {
+            if !locks.contains_key(&section) {
+                let section_value = config.get(&section).ok_or("Section not found")?;
 
-        Ok(proplet_config)
+                let proplet_config: PropletFileConfig = section_value.clone().try_into()?;
+
+                // Lock this section with the client_id
+                locks.insert(section.clone(), proplet_config.client_id.clone());
+                fs::write(DEFAULT_LOCK_PATH, serde_json::to_string_pretty(&locks)?)?;
+
+                return Ok(proplet_config);
+            }
+        }
+
+        Err("No available proplet sections in config file".into())
+    }
+
+    /// Release the lock on the config section (call on shutdown)
+    pub fn release_lock(client_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if !Path::new(DEFAULT_LOCK_PATH).exists() {
+            return Ok(());
+        }
+
+        let lock_contents = fs::read_to_string(DEFAULT_LOCK_PATH)?;
+        let mut locks: HashMap<String, String> = serde_json::from_str(&lock_contents)?;
+
+        locks.retain(|_, v| v != client_id);
+        fs::write(DEFAULT_LOCK_PATH, serde_json::to_string_pretty(&locks)?)?;
+
+        Ok(())
     }
 
     pub fn from_env() -> Self {
