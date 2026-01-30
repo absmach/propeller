@@ -109,12 +109,14 @@ async fn main() -> Result<()> {
 
         info!("Received shutdown signal, cleaning up...");
 
-        if let Err(e) = pubsub_clone.disconnect().await {
-            tracing::error!("Failed to disconnect gracefully: {}", e);
-        }
-
         if let Err(e) = service_clone.publish_goodbye().await {
             tracing::error!("Failed to publish goodbye message: {}", e);
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        if let Err(e) = pubsub_clone.disconnect().await {
+            tracing::error!("Failed to disconnect gracefully: {}", e);
         }
 
         info!("Graceful shutdown complete");
