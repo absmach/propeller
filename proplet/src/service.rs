@@ -229,6 +229,30 @@ impl PropletService {
         Ok(())
     }
 
+    pub async fn publish_goodbye(&self) -> Result<()> {
+        let goodbye = DiscoveryMessage {
+            proplet_id: self.config.client_id.clone(),
+            namespace: self
+                .config
+                .k8s_namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+        };
+
+        let topic = build_topic(
+            &self.config.domain_id,
+            &self.config.channel_id,
+            "control/proplet/destroy",
+        );
+
+        self.pubsub
+            .publish(&topic, &goodbye, self.config.qos())
+            .await?;
+        info!("Published goodbye message");
+
+        Ok(())
+    }
+
     async fn start_liveliness_updates(&self) {
         let mut interval = tokio::time::interval(self.config.liveliness_interval());
 

@@ -101,6 +101,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "tee"))]
     let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
 
+    let service_clone = service.clone();
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
@@ -110,6 +111,10 @@ async fn main() -> Result<()> {
 
         if let Err(e) = pubsub_clone.disconnect().await {
             tracing::error!("Failed to disconnect gracefully: {}", e);
+        }
+
+        if let Err(e) = service_clone.publish_goodbye().await {
+            tracing::error!("Failed to publish goodbye message: {}", e);
         }
 
         info!("Graceful shutdown complete");
