@@ -24,7 +24,6 @@ func NewTasksCmd() *cobra.Command {
 		Long:  `Create, view, update, delete, start, stop tasks.`,
 	}
 
-	// Create command with cli-args flag for wasmtime arguments
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create task",
@@ -56,7 +55,6 @@ Examples:
 		},
 	}
 
-	// Add flags to create command
 	createCmd.Flags().StringSliceVar(
 		&cliArgs,
 		"cli-args",
