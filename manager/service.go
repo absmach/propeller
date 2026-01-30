@@ -356,6 +356,11 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 				return err
 			}
 			svc.logger.InfoContext(ctx, "successfully created proplet")
+		case svc.baseTopic + "/control/proplet/destroy":
+			if err := svc.destroyPropletHandler(ctx, msg); err != nil {
+				return err
+			}
+			svc.logger.InfoContext(ctx, "successfully destroyed proplet")
 		case svc.baseTopic + "/control/proplet/alive":
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
@@ -384,6 +389,21 @@ func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any
 		Name: namegen.Generate(),
 	}
 	if err := svc.propletsDB.Create(ctx, p.ID, p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) destroyPropletHandler(ctx context.Context, msg map[string]any) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+	if err := svc.propletsDB.Delete(ctx, propletID); err != nil {
 		return err
 	}
 
