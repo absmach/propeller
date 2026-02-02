@@ -1,6 +1,7 @@
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "net/mqtt.h"
+#include "task_monitor.h"
 #include "wasm_handler.h"
 
 #include <errno.h>
@@ -45,6 +46,7 @@ LOG_MODULE_REGISTER(mqtt_client);
 #define RESULTS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/results"
 
 #define METRICS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/metrics"
+#define TASK_METRICS_TOPIC_TEMPLATE "m/%s/c/%s/control/proplet/task_metrics"
 
 #define WILL_MESSAGE_TEMPLATE                                                  \
   "{\"status\":\"offline\",\"proplet_id\":\"%s\",\"namespace\":\"%s\"}"
@@ -1452,6 +1454,80 @@ void publish_results_with_error(const char *domain_id, const char *channel_id,
     LOG_ERR("Failed to publish results");
   } else {
     LOG_INF("Published results for task: %s", task_id);
+  }
+}
+
+void publish_task_metrics(const char *domain_id, const char *channel_id,
+                          const char *task_id, const char *proplet_id) {
+  task_metrics_t metrics;
+
+  if (task_monitor_get_metrics(task_id, &metrics) != 0) {
+    LOG_DBG("No metrics available for task: %s", task_id);
+    return;
+  }
+
+  cJSON *root = cJSON_CreateObject();
+  if (root == NULL) {
+    LOG_ERR("Failed to create JSON for task metrics");
+    return;
+  }
+
+  cJSON_AddStringToObject(root, "task_id", task_id);
+  cJSON_AddStringToObject(root, "proplet_id", proplet_id);
+  cJSON_AddNumberToObject(root, "timestamp", (double)k_uptime_get());
+
+  cJSON *proc_metrics = cJSON_AddObjectToObject(root, "metrics");
+  if (proc_metrics != NULL) {
+    cJSON_AddNumberToObject(proc_metrics, "cpu_percent",
+                            metrics.current.cpu_percent);
+    cJSON_AddNumberToObject(proc_metrics, "memory_bytes",
+                            (double)metrics.current.memory_bytes);
+    cJSON_AddNumberToObject(proc_metrics, "memory_percent",
+                            metrics.current.memory_percent);
+    cJSON_AddNumberToObject(proc_metrics, "disk_read_bytes", 0.0);
+    cJSON_AddNumberToObject(proc_metrics, "disk_write_bytes", 0.0);
+    cJSON_AddNumberToObject(proc_metrics, "uptime_seconds",
+                            (double)metrics.current.uptime_seconds);
+    cJSON_AddNumberToObject(proc_metrics, "thread_count",
+                            (double)metrics.current.thread_count);
+    cJSON_AddNumberToObject(proc_metrics, "file_descriptor_count", 0.0);
+  }
+
+  cJSON *agg_metrics = cJSON_AddObjectToObject(root, "aggregated");
+  if (agg_metrics != NULL) {
+    cJSON_AddNumberToObject(agg_metrics, "avg_cpu_usage",
+                            metrics.aggregated.avg_cpu_usage);
+    cJSON_AddNumberToObject(agg_metrics, "max_cpu_usage",
+                            metrics.aggregated.max_cpu_usage);
+    cJSON_AddNumberToObject(agg_metrics, "avg_memory_usage",
+                            (double)metrics.aggregated.avg_memory_usage);
+    cJSON_AddNumberToObject(agg_metrics, "max_memory_usage",
+                            (double)metrics.aggregated.max_memory_usage);
+    cJSON_AddNumberToObject(agg_metrics, "total_disk_read", 0.0);
+    cJSON_AddNumberToObject(agg_metrics, "total_disk_write", 0.0);
+    cJSON_AddNumberToObject(agg_metrics, "sample_count",
+                            (double)metrics.aggregated.sample_count);
+  }
+
+  char *payload = cJSON_PrintUnformatted(root);
+  if (payload != NULL) {
+    if (publish(domain_id, channel_id, TASK_METRICS_TOPIC_TEMPLATE, payload) ==
+        0) {
+      LOG_DBG("Published task metrics for: %s", task_id);
+    }
+    cJSON_free(payload);
+  }
+
+  cJSON_Delete(root);
+}
+
+void publish_active_task_metrics(const char *domain_id, const char *channel_id,
+                                 const char *proplet_id) {
+  char task_id[MAX_TASK_ID_LEN];
+
+  for (int i = 0; task_monitor_get_active_task_id_at(i, task_id) == 0; i++) {
+    task_monitor_sample(task_id);
+    publish_task_metrics(domain_id, channel_id, task_id, proplet_id);
   }
 }
 

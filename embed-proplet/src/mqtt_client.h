@@ -127,6 +127,34 @@ void publish_results_with_error(const char *domain_id,
                                 const char *results,
                                 const char *error_msg);
 
+ * @brief Publish task-level metrics for a specific task.
+ *
+ * Publishes CPU, memory, and timing metrics for a running or recently
+ * completed WASM task.
+ *
+ * @param domain_id   Domain ID used for topic generation.
+ * @param channel_id  Channel ID used for topic generation.
+ * @param task_id     Task identifier being monitored.
+ * @param proplet_id  Proplet identity.
+ */
+void publish_task_metrics(const char *domain_id,
+                          const char *channel_id,
+                          const char *task_id,
+                          const char *proplet_id);
+
+/**
+ * @brief Publish metrics for all active monitored tasks.
+ *
+ * Iterates through all currently monitored tasks and publishes their metrics.
+ *
+ * @param domain_id   Domain ID used for topic generation.
+ * @param channel_id  Channel ID used for topic generation.
+ * @param proplet_id  Proplet identity.
+ */
+void publish_active_task_metrics(const char *domain_id,
+                                 const char *channel_id,
+                                 const char *proplet_id);
+
 /**
  * @brief Process incoming MQTT messages and maintain keepalive.
  */

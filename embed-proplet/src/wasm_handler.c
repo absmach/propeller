@@ -1,5 +1,6 @@
 #include "wasm_handler.h"
 #include "mqtt_client.h"
+#include "task_monitor.h"
 #include <logging/log.h>
 #include <stdbool.h>
 #include <string.h>
@@ -21,6 +22,7 @@ typedef struct
 } wasm_app_t;
 
 static wasm_app_t g_wasm_apps[MAX_WASM_APPS];
+static K_MUTEX_DEFINE(g_wasm_apps_mutex);
 
 static bool g_wamr_initialized = false;
 
@@ -88,8 +90,8 @@ static NativeSymbol native_symbols[] = {
 };
 
 void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
-                         size_t wasm_size, const uint64_t *inputs,
-                         size_t inputs_count)
+                          size_t wasm_size, const uint64_t *inputs,
+                          size_t inputs_count)
 {
   maybe_init_wamr_runtime();
   if (!g_wamr_initialized)
@@ -98,12 +100,15 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     return;
   }
 
-  int existing_idx = find_app_by_id(task_id);
-  if (existing_idx >= 0)
+  k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+
+  if (find_app_by_id(task_id) >= 0)
   {
     LOG_WRN("WASM app with ID %s is already running. Stopping it first...",
             task_id);
+    k_mutex_unlock(&g_wasm_apps_mutex);
     stop_wasm_app(task_id);
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
   }
 
   int slot = find_free_slot();
@@ -111,7 +116,25 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
   {
     LOG_ERR("No free slot to store new WASM app instance (increase "
             "MAX_WASM_APPS).");
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
+  }
+
+  /* Reserve the slot immediately to prevent race conditions */
+  g_wasm_apps[slot].in_use = true;
+  strncpy(g_wasm_apps[slot].id, task_id, MAX_ID_LEN - 1);
+  g_wasm_apps[slot].id[MAX_ID_LEN - 1] = '\0';
+
+  k_mutex_unlock(&g_wasm_apps_mutex);
+
+  bool monitoring_started = false;
+  if (task_monitor_start(task_id) == 0)
+  {
+    monitoring_started = true;
+  }
+  else
+  {
+    LOG_WRN("Failed to start task monitoring for %s", task_id);
   }
 
   char error_buf[128];
@@ -119,16 +142,22 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
       wasm_runtime_load(wasm_data, wasm_size, error_buf, sizeof(error_buf));
   if (!module)
   {
-    char error_msg[256];
-    snprintf(error_msg, sizeof(error_msg), "Failed to load WASM module: %s", error_buf);
-    LOG_ERR("%s", error_msg);
-    
+    LOG_ERR("Failed to load WASM module: %s", error_buf);
+    if (monitoring_started)
+    {
+      task_monitor_stop(task_id);
+    }
     extern const char *channel_id;
     extern const char *domain_id;
     extern void publish_results_with_error(const char *, const char *, 
                                            const char *, const char *, 
                                            const char *);
-    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);    
+    /* Release reserved slot */
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+    g_wasm_apps[slot].in_use = false;
+    memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
 
@@ -143,51 +172,76 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
                                error_buf, sizeof(error_buf));
   if (!module_inst)
   {
-    char error_msg[256];
-    snprintf(error_msg, sizeof(error_msg), "Failed to instantiate WASM module: %s", error_buf);
-    LOG_ERR("%s", error_msg);
+    LOG_ERR("Failed to instantiate WASM module: %s", error_buf);
+    if (monitoring_started)
+    {
+      task_monitor_stop(task_id);
+    }
     wasm_runtime_unload(module);
-    
     extern const char *channel_id;
     extern const char *domain_id;
     extern void publish_results_with_error(const char *, const char *, 
                                            const char *, const char *, 
                                            const char *);
-    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);    
+    /* Release reserved slot */
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+    g_wasm_apps[slot].in_use = false;
+    memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
+
+  /* Store module handles in the reserved slot */
+  k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+  g_wasm_apps[slot].module = module;
+  g_wasm_apps[slot].module_inst = module_inst;
+  k_mutex_unlock(&g_wasm_apps_mutex);
 
   wasm_function_inst_t func = wasm_runtime_lookup_function(module_inst, "main");
   if (!func)
   {
-    const char *error_msg = "Function 'main' not found in WASM module";
-    LOG_WRN("%s", error_msg);
+    LOG_WRN(
+        "Function 'main' not found in WASM module. No entry point to call.");
+    if (monitoring_started)
+    {
+      task_monitor_stop(task_id);
+    }
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
-    
     extern const char *channel_id;
     extern const char *domain_id;
     extern void publish_results_with_error(const char *, const char *, 
                                            const char *, const char *, 
                                            const char *);
-    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);    
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+    g_wasm_apps[slot].in_use = false;
+    memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
 
   uint32_t result_count = wasm_func_get_result_count(func, module_inst);
   if (result_count == 0)
   {
-    const char *error_msg = "Function has no return value";
-    LOG_ERR("%s", error_msg);
+    LOG_ERR("Function has no return value.");
+    if (monitoring_started)
+    {
+      task_monitor_stop(task_id);
+    }
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
-    
-    extern const char *channel_id;
+   extern const char *channel_id;
     extern const char *domain_id;
     extern void publish_results_with_error(const char *, const char *, 
                                            const char *, const char *, 
                                            const char *);
-    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);    
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+    g_wasm_apps[slot].in_use = false;
+    memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
 
@@ -217,17 +271,25 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
       wasm_runtime_create_exec_env(module_inst, 16 * 1024);
   if (!exec_env)
   {
-    const char *error_msg = "Failed to create execution environment for WASM module";
-    LOG_ERR("%s", error_msg);
+
+    
+    LOG_ERR("Failed to create execution environment for WASM module.");
+    if (monitoring_started)
+    {
+      task_monitor_stop(task_id);
+    }
     wasm_runtime_deinstantiate(module_inst);
     wasm_runtime_unload(module);
-    
     extern const char *channel_id;
     extern const char *domain_id;
     extern void publish_results_with_error(const char *, const char *, 
                                            const char *, const char *, 
                                            const char *);
-    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
+    publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);    
+    k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+    g_wasm_apps[slot].in_use = false;
+    memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
 
@@ -273,28 +335,47 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     LOG_INF("WASM execution results published to MQTT topic");
   }
 
+  if (monitoring_started)
+  {
+    task_monitor_stop(task_id);
+  }
+
   wasm_runtime_destroy_exec_env(exec_env);
   wasm_runtime_deinstantiate(module_inst);
   wasm_runtime_unload(module);
+
+  /* Release the slot */
+  k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+  g_wasm_apps[slot].in_use = false;
+  memset(g_wasm_apps[slot].id, 0, sizeof(g_wasm_apps[slot].id));
+  k_mutex_unlock(&g_wasm_apps_mutex);
 }
 
 void stop_wasm_app(const char *task_id)
 {
+  k_mutex_lock(&g_wasm_apps_mutex, K_FOREVER);
+
   int idx = find_app_by_id(task_id);
   if (idx < 0)
   {
     LOG_WRN("No running WASM app found with ID=%s", task_id);
+    k_mutex_unlock(&g_wasm_apps_mutex);
     return;
   }
 
   wasm_app_t *app = &g_wasm_apps[idx];
   LOG_INF("Stopping WASM app with ID=%s", app->id);
 
+  /* Stop task monitoring if active (task_monitor has its own mutex) */
+  task_monitor_stop(task_id);
+
   wasm_runtime_deinstantiate(app->module_inst);
   wasm_runtime_unload(app->module);
 
   app->in_use = false;
   memset(app->id, 0, sizeof(app->id));
+
+  k_mutex_unlock(&g_wasm_apps_mutex);
 
   LOG_INF("WASM app [%s] has been stopped and unloaded.", task_id);
 }
