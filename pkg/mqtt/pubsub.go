@@ -146,7 +146,7 @@ func newClient(address, id, username, password, domainID, channelID string, time
 	}
 
 	opts.SetOnConnectHandler(func(_ mqtt.Client) {
-		logger.Info("MQTT connection lost")
+		logger.Info("MQTT connection established")
 	})
 
 	opts.SetConnectionLostHandler(func(_ mqtt.Client, err error) {

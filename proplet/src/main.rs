@@ -4,6 +4,7 @@ mod monitoring;
 mod mqtt;
 mod runtime;
 mod service;
+mod task_handler;
 #[cfg(feature = "tee")]
 mod tee_detection;
 mod types;

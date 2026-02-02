@@ -1708,6 +1708,9 @@ services:
       PROPLET_MANAGER_K8S_NAMESPACE: ${PROPLET_MANAGER_K8S_NAMESPACE}
       PROPLET_CONFIG_FILE: ${PROPLET_CONFIG_FILE}
       PROPLET_CONFIG_SECTION: ${PROPLET_CONFIG_SECTION}
+      COORDINATOR_URL: ${COORDINATOR_URL:-http://coordinator-http:8080}
+      MODEL_REGISTRY_URL: ${MODEL_REGISTRY_URL:-http://model-registry:8081}
+      DATA_STORE_URL: ${DATA_STORE_URL:-http://local-data-store:8083}
     networks:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
@@ -1724,7 +1727,7 @@ services:
     environment:
       PROXY_LOG_LEVEL: ${PROXY_LOG_LEVEL}
       PROXY_INSTANCE_ID: ${PROXY_INSTANCE_ID}
-      PROXY_MQTT_ADDRESS: ${PROXY_MQTT_ADDRESS}
+      PROXY_MQTT_ADDRESS: ${PROXY_MQTT_ADDRESS:-tcp://mqtt-adapter:1883}
       PROXY_MQTT_QOS: ${PROXY_MQTT_QOS}
       PROXY_MQTT_TIMEOUT: ${PROXY_MQTT_TIMEOUT}
       PROXY_DOMAIN_ID: ${PROXY_DOMAIN_ID}

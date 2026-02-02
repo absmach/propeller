@@ -62,6 +62,10 @@ pub struct StartRequest {
     pub encrypted: bool,
     #[serde(default)]
     pub kbs_resource_path: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub proplet_id: Option<String>,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -285,6 +289,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         assert!(req.validate().is_ok());
@@ -305,6 +311,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         assert!(req.validate().is_ok());
@@ -325,6 +333,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         let result = req.validate();
@@ -347,6 +357,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         let result = req.validate();
@@ -369,6 +381,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         let result = req.validate();
@@ -394,6 +408,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
+            mode: None,
+            proplet_id: None,
         };
 
         assert!(req.validate().is_ok());
@@ -414,6 +430,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
+            mode: None,
+            proplet_id: None,
         };
 
         let result = req.validate();
@@ -439,6 +457,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: true,
             kbs_resource_path: Some("default/key1/value".to_string()),
+            mode: None,
+            proplet_id: None,
         };
 
         let result = req.validate();
@@ -681,6 +701,8 @@ mod tests {
             monitoring_profile: None,
             encrypted: false,
             kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);

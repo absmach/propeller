@@ -113,6 +113,21 @@ void publish_results(const char *domain_id,
                      const char *results);
 
 /**
+ * @brief Publish the results of a completed task with optional error message.
+ *
+ * @param domain_id  Domain ID used for topic generation.
+ * @param channel_id Channel ID used for topic generation.
+ * @param task_id    Task identifier.
+ * @param results    Result string (will be JSON-escaped by caller if needed).
+ * @param error_msg  Optional error message (NULL if no error).
+ */
+void publish_results_with_error(const char *domain_id,
+                                const char *channel_id,
+                                const char *task_id,
+                                const char *results,
+                                const char *error_msg);
+
+/**
  * @brief Process incoming MQTT messages and maintain keepalive.
  */
 void mqtt_client_process(void);

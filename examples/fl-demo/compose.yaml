@@ -1,0 +1,269 @@
+# FL Demo Extension for docker/compose.yaml
+# This file extends the base SuperMQ + Propeller setup with FL-specific services
+#
+# Usage (from repository root):
+#     docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d
+#
+# To build and start:
+#     docker compose -f docker/compose.yaml -f examples/fl-demo/compose.yaml --env-file docker/.env up -d --build
+#
+# Note: Requires docker/.env file with SuperMQ configuration variables.
+# IMPORTANT: When using multiple -f files, Docker Compose resolves build contexts relative
+# to the FIRST file's directory (docker/). So we use '..' to go from docker/ to project root.
+# Commands must be run from the repository root.
+
+services:
+  # ============================================================================
+  # FL-specific services
+  # ============================================================================
+
+  # Local OCI registry for serving WASM binaries
+  # This allows using local WASM files without pushing to external registries
+  local-registry:
+    image: registry:2
+    container_name: fl-demo-local-registry
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+    volumes:
+      - local-registry-data:/var/lib/registry
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
+  model-registry:
+    build:
+      context: ../examples/fl-demo/model-registry
+      dockerfile: Dockerfile
+    container_name: fl-demo-model-registry
+    ports:
+      - "8084:8081"
+    volumes:
+      - fl-models:/tmp/fl-models
+    environment:
+      MODELS_DIR: /tmp/fl-models
+      REGISTRY_PORT: "8081"
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
+  local-data-store:
+    build:
+      context: ../examples/fl-demo/local-data-store
+      dockerfile: Dockerfile
+    container_name: fl-demo-local-data-store
+    ports:
+      - "8083:8083"
+    volumes:
+      - fl-datasets:/data/datasets
+    environment:
+      DATA_DIR: /data/datasets
+      DATA_STORE_PORT: "8083"
+      # Pass participant UUIDs for auto-seeding
+      PROPLET_CLIENT_ID: ${PROPLET_CLIENT_ID}
+      PROPLET_2_CLIENT_ID: ${PROPLET_2_CLIENT_ID}
+      PROPLET_3_CLIENT_ID: ${PROPLET_3_CLIENT_ID}
+      # Alternative: use FL_DATASET_PARTICIPANTS="uuid1,uuid2,uuid3" if preferred
+      FL_DATASET_PARTICIPANTS: ${FL_DATASET_PARTICIPANTS:-}
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
+  aggregator:
+    build:
+      context: ../examples/fl-demo/aggregator
+      dockerfile: Dockerfile
+    container_name: fl-demo-aggregator
+    ports:
+      - "8085:8082"
+    environment:
+      AGGREGATOR_PORT: "8082"
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
+  coordinator-http:
+    build:
+      context: ../examples/fl-demo/coordinator-http
+      dockerfile: Dockerfile
+    container_name: fl-demo-coordinator
+    depends_on:
+      - model-registry
+      - aggregator
+      - mqtt-adapter
+    ports:
+      - "8086:8080"
+    environment:
+      COORDINATOR_PORT: "8080"
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      AGGREGATOR_URL: http://aggregator:8082
+      MQTT_BROKER: tcp://mqtt-adapter:1883
+      MQTT_CLIENT_ID: ${COORDINATOR_CLIENT_ID}
+      MQTT_USERNAME: ${COORDINATOR_CLIENT_ID}
+      MQTT_PASSWORD: ${COORDINATOR_CLIENT_KEY}
+    volumes:
+      - fl-models:/tmp/fl-models
+    networks:
+      - supermq-base-net
+    restart: on-failure
+
+  # ============================================================================
+  # Override manager with FL-specific configuration
+  # ============================================================================
+
+  manager:
+    # Override to build from source (includes FL endpoints)
+    # When using multiple -f files, build context is resolved relative to first file's directory (docker/)
+    # So '..' goes from docker/ to project root, then dockerfile is relative to that context
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SVC: manager
+    image: propeller-manager:local
+    environment:
+      MANAGER_LOG_LEVEL: ${MANAGER_LOG_LEVEL:-info}
+      MANAGER_INSTANCE_ID: ${MANAGER_INSTANCE_ID:-}
+      MANAGER_MQTT_ADDRESS: ${MANAGER_MQTT_ADDRESS:-tcp://mqtt-adapter:1883}
+      MANAGER_MQTT_QOS: ${MANAGER_MQTT_QOS:-2}
+      MANAGER_MQTT_TIMEOUT: ${MANAGER_MQTT_TIMEOUT:-30s}
+      MANAGER_DOMAIN_ID: ${MANAGER_DOMAIN_ID}
+      MANAGER_CHANNEL_ID: ${MANAGER_CHANNEL_ID}
+      MANAGER_CLIENT_ID: ${MANAGER_CLIENT_ID}
+      MANAGER_CLIENT_KEY: ${MANAGER_CLIENT_KEY}
+      MANAGER_HTTP_HOST: ${MANAGER_HTTP_HOST:-0.0.0.0}
+      MANAGER_HTTP_PORT: ${MANAGER_HTTP_PORT:-7070}
+      MANAGER_HTTP_SERVER_CERT: ${MANAGER_HTTP_SERVER_CERT:-}
+      MANAGER_HTTP_SERVER_KEY: ${MANAGER_HTTP_SERVER_KEY:-}
+      MANAGER_OTEL_URL: ${MANAGER_OTEL_URL:-}
+      MANAGER_TRACE_RATIO: ${MANAGER_TRACE_RATIO:-0.0}
+      COORDINATOR_URL: http://coordinator-http:8080
+    ports:
+      - "${MANAGER_HTTP_PORT:-7070}:${MANAGER_HTTP_PORT:-7070}"
+    depends_on:
+      - mqtt-adapter
+      - coordinator-http
+
+  # ============================================================================
+  # Override default proplet with FL configuration (becomes proplet-1)
+  # ============================================================================
+
+  proplet:
+    # Override to build from source (includes FL endpoints)
+    # When using multiple -f files, build context is resolved relative to first file's directory (docker/)
+    # So '..' goes from docker/ to project root, then dockerfile is relative to that context
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proplet
+    image: propeller-proplet:local
+    environment:
+      PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL:-info}
+      PROPLET_INSTANCE_ID: proplet-1
+      PROPLET_MQTT_ADDRESS: ${PROPLET_MQTT_ADDRESS:-tcp://mqtt-adapter:1883}
+      PROPLET_MQTT_QOS: ${PROPLET_MQTT_QOS:-2}
+      PROPLET_MQTT_TIMEOUT: ${PROPLET_MQTT_TIMEOUT:-30s}
+      PROPLET_LIVELINESS_INTERVAL: ${PROPLET_LIVELINESS_INTERVAL:-10s}
+      PROPLET_DOMAIN_ID: ${PROPLET_DOMAIN_ID}
+      PROPLET_CHANNEL_ID: ${PROPLET_CHANNEL_ID}
+      PROPLET_CLIENT_ID: ${PROPLET_CLIENT_ID}
+      PROPLET_CLIENT_KEY: ${PROPLET_CLIENT_KEY}
+      PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
+      DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
+    depends_on:
+      - mqtt-adapter
+      - manager
+      - local-data-store
+      - model-registry
+    healthcheck:
+      disable: true
+
+  # ============================================================================
+  # Additional proplet instances for FL demo
+  # ============================================================================
+
+  proplet-2:
+    # Build from source (includes FL endpoints)
+    # When using multiple -f files, build context is resolved relative to first file's directory (docker/)
+    # So '..' goes from docker/ to project root, then dockerfile is relative to that context
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proplet
+    image: propeller-proplet:local
+    container_name: propeller-proplet-2
+    restart: on-failure
+    depends_on:
+      - mqtt-adapter
+      - manager
+      - local-data-store
+      - model-registry
+    environment:
+      PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL:-info}
+      PROPLET_INSTANCE_ID: proplet-2
+      PROPLET_MQTT_ADDRESS: ${PROPLET_MQTT_ADDRESS:-tcp://mqtt-adapter:1883}
+      PROPLET_MQTT_QOS: ${PROPLET_MQTT_QOS:-2}
+      PROPLET_MQTT_TIMEOUT: ${PROPLET_MQTT_TIMEOUT:-30s}
+      PROPLET_LIVELINESS_INTERVAL: ${PROPLET_LIVELINESS_INTERVAL:-10s}
+      PROPLET_DOMAIN_ID: ${PROPLET_DOMAIN_ID}
+      PROPLET_CHANNEL_ID: ${PROPLET_CHANNEL_ID}
+      PROPLET_CLIENT_ID: ${PROPLET_2_CLIENT_ID}
+      PROPLET_CLIENT_KEY: ${PROPLET_2_CLIENT_KEY}
+      PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
+      DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
+    networks:
+      - supermq-base-net
+    healthcheck:
+      disable: true
+
+  proplet-3:
+    # Build from source (includes FL endpoints)
+    # When using multiple -f files, build context is resolved relative to first file's directory (docker/)
+    # So '..' goes from docker/ to project root, then dockerfile is relative to that context
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proplet
+    image: propeller-proplet:local
+    container_name: propeller-proplet-3
+    restart: on-failure
+    depends_on:
+      - mqtt-adapter
+      - manager
+      - local-data-store
+      - model-registry
+    environment:
+      PROPLET_LOG_LEVEL: ${PROPLET_LOG_LEVEL:-info}
+      PROPLET_INSTANCE_ID: proplet-3
+      PROPLET_MQTT_ADDRESS: ${PROPLET_MQTT_ADDRESS:-tcp://mqtt-adapter:1883}
+      PROPLET_MQTT_QOS: ${PROPLET_MQTT_QOS:-2}
+      PROPLET_MQTT_TIMEOUT: ${PROPLET_MQTT_TIMEOUT:-30s}
+      PROPLET_LIVELINESS_INTERVAL: ${PROPLET_LIVELINESS_INTERVAL:-10s}
+      PROPLET_DOMAIN_ID: ${PROPLET_DOMAIN_ID}
+      PROPLET_CHANNEL_ID: ${PROPLET_CHANNEL_ID}
+      PROPLET_CLIENT_ID: ${PROPLET_3_CLIENT_ID}
+      PROPLET_CLIENT_KEY: ${PROPLET_3_CLIENT_KEY}
+      PROPLET_EXTERNAL_WASM_RUNTIME: ${PROPLET_EXTERNAL_WASM_RUNTIME:-/usr/local/bin/wasmtime}
+      DATA_STORE_URL: http://local-data-store:8083
+      MODEL_REGISTRY_URL: http://model-registry:8081
+      COORDINATOR_URL: http://coordinator-http:8080
+    networks:
+      - supermq-base-net
+    healthcheck:
+      disable: true
+
+  # ============================================================================
+  # Note: In production setup, nginx handles MQTT port exposure
+  # mqtt-adapter is accessed internally via nginx, so no need to expose ports here
+  # ============================================================================
+
+# ============================================================================
+# FL-specific volumes
+# ============================================================================
+
+volumes:
+  fl-models:
+  fl-datasets:
+  local-registry-data:

@@ -23,5 +23,21 @@ type Service interface {
 	GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error)
 	GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error)
 
+	// Orchestrator/Experiment Config API (Manager acts as Orchestrator per diagram)
+	// Step 1: Configure experiment with FL Coordinator
+	ConfigureExperiment(ctx context.Context, config ExperimentConfig) error
+
+	// Federated Learning Forwarding API (workload-agnostic)
+	// Note: In the diagram, clients call FL Coordinator directly (Steps 3 & 7)
+	// These endpoints exist for compatibility/MQTT forwarding
+	GetFLTask(ctx context.Context, roundID, propletID string) (FLTask, error)
+	PostFLUpdate(ctx context.Context, update FLUpdate) error
+	PostFLUpdateCBOR(ctx context.Context, updateData []byte) error
+	GetRoundStatus(ctx context.Context, roundID string) (RoundStatus, error)
+
+	// Note: Round completion notifications are handled by FL Coordinator directly.
+	// Coordinators publish MQTT notifications to "fl/rounds/next" topic.
+	// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
+
 	Subscribe(ctx context.Context) error
 }
