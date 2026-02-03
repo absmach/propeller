@@ -184,14 +184,14 @@ impl PropletService {
         let start_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            "control/manager/start",
+            &format!("control/proplet/{}/start", self.config.client_id),
         );
         self.pubsub.subscribe(&start_topic, qos).await?;
 
         let stop_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            "control/manager/stop",
+            &format!("control/proplet/{}/stop", self.config.client_id),
         );
         self.pubsub.subscribe(&stop_topic, qos).await?;
 
@@ -354,9 +354,15 @@ impl PropletService {
             debug!("Raw message payload: {}", payload_str);
         }
 
-        if msg.topic.contains("control/manager/start") {
+        if msg
+            .topic
+            .contains(&format!("control/proplet/{}/start", self.config.client_id))
+        {
             self.handle_start_command(msg).await
-        } else if msg.topic.contains("control/manager/stop") {
+        } else if msg
+            .topic
+            .contains(&format!("control/proplet/{}/stop", self.config.client_id))
+        {
             self.handle_stop_command(msg).await
         } else if msg.topic.contains("registry/server") {
             self.handle_chunk(msg).await
