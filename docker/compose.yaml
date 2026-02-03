@@ -1709,12 +1709,18 @@ services:
     #   - ./config.toml:/config.toml
 
   # Proplet - WebAssembly edge runtime
-  # For wasi-nn support:
-  #   1. Uncomment platform: linux/amd64 (required for OpenVINO)
-  #   2. Set PROPLET_EXTERNAL_WASM_RUNTIME=wasmtime in .env
-  #   3. Uncomment fixture volume mount
+  # Available images:
+  # Proplet image tags:
+  #   - latest   (base, lightweight)
+  #   - wasi-nn  (with wasi-nn/OpenVINO, x86_64 only)
+  #
+  # For wasi-nn support, set in .env:
+  #   1. PROPLET_IMAGE_TAG=wasi-nn
+  #   2. PROPLET_EXTERNAL_WASM_RUNTIME=wasmtime
+  # Then uncomment platform: linux/amd64 below
+  #   4. Uncomment fixture volume mount
   proplet:
-    image: ghcr.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
+    image: ghcr.io/absmach/propeller/proplet:${PROPLET_IMAGE_TAG:-latest}
     container_name: propeller-proplet
     restart: on-failure
     depends_on:

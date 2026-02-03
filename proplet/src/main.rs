@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
     let mqtt_config = MqttConfig {
         address: config.mqtt_address.clone(),
-        client_id: config.client_id.clone(), // SuperMQ client ID
+        client_id: config.client_id.clone(),
         timeout: config.mqtt_timeout(),
         qos: config.qos(),
         keep_alive: config.mqtt_keep_alive(),

@@ -112,7 +112,6 @@ impl Runtime for HostRuntime {
             cmd.arg(arg.to_string());
         }
 
-        // Pass task-specific environment variables
         cmd.envs(&config.env);
 
         // Inherit critical system environment variables for OpenVINO/wasi-nn

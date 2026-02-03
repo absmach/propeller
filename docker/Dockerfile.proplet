@@ -1,19 +1,9 @@
-# Proplet Docker Image
+# Base Proplet image (without wasi-nn support)
+# Lightweight Alpine-based image for standard WebAssembly workloads
 #
-# Supports two variants via --target build flag:
-#   - base:    Lightweight Alpine image without wasi-nn support
-#   - wasi-nn: Ubuntu image with wasi-nn/OpenVINO support (x86_64 only)
-#
-# Build commands:
-#   Base:    docker build -f docker/Dockerfile.proplet --target base -t ghcr.io/absmach/propeller/proplet:base .
-#   wasi-nn: docker build -f docker/Dockerfile.proplet --target wasi-nn --platform linux/amd64 -t ghcr.io/absmach/propeller/proplet:wasi-nn .
-#
-# For wasi-nn tasks, specify cli_args:
-#   cli_args: ["-S", "nn", "--dir=/home/proplet/fixture::fixture"]
+# Build: docker build -f docker/Dockerfile.proplet -t ghcr.io/absmach/propeller/proplet:latest .
+# Tag:   ghcr.io/absmach/propeller/proplet:latest
 
-# =============================================================================
-# Builder stage - compiles proplet binary
-# =============================================================================
 FROM rust:1.83-alpine AS builder
 
 ARG VERSION
@@ -35,14 +25,11 @@ RUN cargo build --release && \
     strip target/release/proplet && \
     upx --best --lzma target/release/proplet
 
-# =============================================================================
-# Base variant - lightweight Alpine image
-# =============================================================================
-FROM alpine:3.21 AS base
+FROM alpine:3.21
 
 LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
 LABEL org.opencontainers.image.licenses=Apache-2.0
-LABEL org.opencontainers.image.title="Propeller Proplet (Base)"
+LABEL org.opencontainers.image.title="Propeller Proplet"
 LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
 
 RUN apk add --no-cache ca-certificates && \
@@ -55,64 +42,6 @@ RUN chown proplet:proplet /usr/local/bin/proplet && \
     chmod +x /usr/local/bin/proplet && \
     mkdir -p /home/proplet && \
     chown proplet:proplet /home/proplet
-
-USER proplet
-WORKDIR /home/proplet
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/proplet", "--help"]
-
-ENTRYPOINT ["/usr/local/bin/proplet"]
-
-# =============================================================================
-# wasi-nn variant - Ubuntu with wasmtime and OpenVINO (x86_64 only)
-# =============================================================================
-FROM ubuntu:24.04 AS wasi-nn
-
-LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
-LABEL org.opencontainers.image.licenses=Apache-2.0
-LABEL org.opencontainers.image.title="Propeller Proplet with wasi-nn"
-LABEL org.opencontainers.image.description="Propeller edge runtime with wasi-nn/OpenVINO support"
-
-ARG WASMTIME_VERSION=39.0.1
-
-# Install dependencies and wasmtime
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        wget \
-        curl \
-        xz-utils \
-        libtbb12 && \
-    wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
-    tar -xf wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
-    mv wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/ && \
-    rm -rf wasmtime-v${WASMTIME_VERSION}-x86_64-linux*
-
-# Install OpenVINO Runtime 2025
-RUN mkdir -p /opt/intel && \
-    cd /tmp && \
-    curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.4/linux/openvino_toolkit_ubuntu24_2025.4.0.20398.8fdad55727d_x86_64.tgz --output openvino.tgz && \
-    tar -xf openvino.tgz && \
-    mv openvino_toolkit_ubuntu24_2025.4.0.* /opt/intel/openvino_2025 && \
-    rm -f /tmp/openvino.tgz && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN groupadd -r proplet && \
-    useradd -r -g proplet -s /bin/false proplet
-
-COPY --from=builder /build/target/release/proplet /usr/local/bin/proplet
-
-RUN chown proplet:proplet /usr/local/bin/proplet && \
-    chmod +x /usr/local/bin/proplet && \
-    mkdir -p /home/proplet && \
-    chown proplet:proplet /home/proplet
-
-# OpenVINO environment variables
-ENV INTEL_OPENVINO_DIR=/opt/intel/openvino_2025
-ENV LD_LIBRARY_PATH=/opt/intel/openvino_2025/runtime/lib/intel64
-ENV OpenVINO_DIR=/opt/intel/openvino_2025/runtime/cmake
 
 USER proplet
 WORKDIR /home/proplet
