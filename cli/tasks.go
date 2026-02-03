@@ -166,7 +166,6 @@ Examples:
 		},
 	}
 
-	// Add all subcommands
 	cmd.AddCommand(createCmd)
 	cmd.AddCommand(viewCmd)
 	cmd.AddCommand(updateCmd)
@@ -174,7 +173,6 @@ Examples:
 	cmd.AddCommand(startCmd)
 	cmd.AddCommand(stopCmd)
 
-	// Global flags for pagination
 	cmd.PersistentFlags().Uint64VarP(
 		&defOffset,
 		"offset",

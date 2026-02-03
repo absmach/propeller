@@ -1,5 +1,5 @@
 # Generic Dockerfile for Go services (manager, proxy)
-# For proplet images, use Dockerfile.proplet or Dockerfile.proplet-wasinn
+# For proplet images, use Dockerfile.proplet (base) or Dockerfile.proplet-wasinn (wasi-nn)
 
 FROM golang:1.25.5-alpine3.22 AS builder
 ARG SVC
