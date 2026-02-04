@@ -145,6 +145,14 @@ func main() {
 		return
 	}
 
+	// Clear the contents of the .proplet_locks file to ensure all are useable on start
+	lockFile := ".proplet_locks"
+	if err := os.WriteFile(lockFile, []byte{}, 0644); err != nil {
+		logger.Error(fmt.Sprintf("failed to clear %s: %v", lockFile, err))
+	} else {
+		logger.Info(fmt.Sprintf("cleared contents of %s", lockFile))
+	}
+
 	hs := httpserver.NewServer(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
 
 	g.Go(func() error {
