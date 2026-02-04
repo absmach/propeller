@@ -184,14 +184,14 @@ impl PropletService {
         let start_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            "control/manager/start",
+            &format!("control/proplet/{}/start", self.config.client_id),
         );
         self.pubsub.subscribe(&start_topic, qos).await?;
 
         let stop_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            "control/manager/stop",
+            &format!("control/proplet/{}/stop", self.config.client_id),
         );
         self.pubsub.subscribe(&stop_topic, qos).await?;
 
@@ -225,6 +225,30 @@ impl PropletService {
             .publish(&topic, &discovery, self.config.qos())
             .await?;
         info!("Published discovery message");
+
+        Ok(())
+    }
+
+    pub async fn publish_goodbye(&self) -> Result<()> {
+        let goodbye = DiscoveryMessage {
+            proplet_id: self.config.client_id.clone(),
+            namespace: self
+                .config
+                .k8s_namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
+        };
+
+        let topic = build_topic(
+            &self.config.domain_id,
+            &self.config.channel_id,
+            "control/proplet/destroy",
+        );
+
+        self.pubsub
+            .publish(&topic, &goodbye, self.config.qos())
+            .await?;
+        info!("Published goodbye message");
 
         Ok(())
     }
@@ -330,9 +354,15 @@ impl PropletService {
             debug!("Raw message payload: {}", payload_str);
         }
 
-        if msg.topic.contains("control/manager/start") {
+        if msg
+            .topic
+            .contains(&format!("control/proplet/{}/start", self.config.client_id))
+        {
             self.handle_start_command(msg).await
-        } else if msg.topic.contains("control/manager/stop") {
+        } else if msg
+            .topic
+            .contains(&format!("control/proplet/{}/stop", self.config.client_id))
+        {
             self.handle_stop_command(msg).await
         } else if msg.topic.contains("registry/server") {
             self.handle_chunk(msg).await

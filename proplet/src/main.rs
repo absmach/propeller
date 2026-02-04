@@ -101,12 +101,24 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "tee"))]
     let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
 
+    let service_clone = service.clone();
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for ctrl-c");
 
         info!("Received shutdown signal, cleaning up...");
+
+        if let Err(e) = service_clone.publish_goodbye().await {
+            tracing::error!("Failed to publish goodbye message: {}", e);
+        }
+
+        // Release config lock
+        if let Err(e) = PropletConfig::release_lock(&config.client_id) {
+            tracing::error!("Failed to release config lock: {}", e);
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         if let Err(e) = pubsub_clone.disconnect().await {
             tracing::error!("Failed to disconnect gracefully: {}", e);
