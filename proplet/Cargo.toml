@@ -23,6 +23,7 @@ url = "2.5"
 sysinfo = "0.32"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+reqwest = { version = "0.12", features = ["json"] }
 
 # TEE & Encryption Support (optional feature)
 attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", optional = true, default-features = false, features = ["rust-crypto", "kbs"] }

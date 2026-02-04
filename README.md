@@ -11,6 +11,7 @@
 - 🔧 **WAMR on Zephyr RTOS**: Deploy lightweight Wasm workloads on constrained devices running Zephyr RTOS via the WebAssembly Micro Runtime (WAMR).
 - 🛠️ **Powerful Service Mesh**: Integrates with **[SuperMQ](https://github.com/absmach)** for secure, efficient IoT device communication.
 - 🔒 **Security at the Core**: Propeller ensures secure workload execution and communication for IoT environments.
+- 🤖 **Federated Learning**: Built-in support for federated machine learning workflows with FedAvg aggregation, enabling privacy-preserving distributed training across edge devices.
 
 ## 🛠️ How It Works
 
@@ -32,6 +33,7 @@ For setup instructions, API references, and usage examples, see the documentatio
 - 🛡️ **Secure Workloads**: Run isolated, portable workloads securely on cloud or edge devices.
 - 🌎 **Smart Cities**: Power scalable IoT networks with efficient communication and dynamic workloads.
 - ☁️ **Serverless Applications**: Deploy FaaS applications leveraging Propeller's Wasm orchestration capabilities.
+- 🧠 **Federated Machine Learning**: Train machine learning models across distributed edge devices without exposing raw data, perfect for privacy-sensitive applications.
 
 ## 🤝 Contributing
 

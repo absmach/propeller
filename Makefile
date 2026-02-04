@@ -120,6 +120,13 @@ lint:
 	golangci-lint run  --config .golangci.yaml
 	cd proplet && cargo check --release && cargo fmt --all -- --check && cargo clippy -- -D warnings
 
+test:
+	go test -v ./manager
+
+test-all:
+	go test -v ./...
+	cd proplet && cargo test --release
+
 start-supermq:
 	docker compose -f docker/compose.yaml --env-file docker/.env up -d
 
@@ -143,6 +150,8 @@ help:
 	@echo "  install:          install the binary i.e copies to GOBIN"
 	@echo "  clean:            clean the build directory and Rust target"
 	@echo "  lint:             run golangci-lint"
+	@echo "  test:             run FL unit and integration tests"
+	@echo "  test-all:         run all tests (Go and Rust)"
 	@echo "  dockers:          build and push all Docker images (Go and Rust services)"
 	@echo "  dockers_dev:      build all Go service dev Docker images"
 	@echo "  dockers_rust:     build all Rust service Docker images"

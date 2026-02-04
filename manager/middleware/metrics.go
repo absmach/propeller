@@ -142,3 +142,48 @@ func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 
 	return mm.svc.Subscribe(ctx)
 }
+
+func (mm *metricsMiddleware) ConfigureExperiment(ctx context.Context, config manager.ExperimentConfig) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "configure-experiment").Add(1)
+		mm.latency.With("method", "configure-experiment").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.ConfigureExperiment(ctx, config)
+}
+
+func (mm *metricsMiddleware) GetFLTask(ctx context.Context, roundID, propletID string) (manager.FLTask, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-fl-task").Add(1)
+		mm.latency.With("method", "get-fl-task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetFLTask(ctx, roundID, propletID)
+}
+
+func (mm *metricsMiddleware) PostFLUpdate(ctx context.Context, update manager.FLUpdate) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "post-fl-update").Add(1)
+		mm.latency.With("method", "post-fl-update").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.PostFLUpdate(ctx, update)
+}
+
+func (mm *metricsMiddleware) PostFLUpdateCBOR(ctx context.Context, updateData []byte) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "post-fl-update-cbor").Add(1)
+		mm.latency.With("method", "post-fl-update-cbor").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.PostFLUpdateCBOR(ctx, updateData)
+}
+
+func (mm *metricsMiddleware) GetRoundStatus(ctx context.Context, roundID string) (manager.RoundStatus, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-round-status").Add(1)
+		mm.latency.With("method", "get-round-status").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetRoundStatus(ctx, roundID)
+}

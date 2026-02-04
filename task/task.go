@@ -33,9 +33,24 @@ func (s State) String() string {
 	}
 }
 
+type Mode string
+
+const (
+	ModeInfer Mode = "infer"
+	ModeTrain Mode = "train"
+)
+
+type TaskKind string
+
+const (
+	TaskKindStandard  TaskKind = "standard"
+	TaskKindFederated TaskKind = "federated"
+)
+
 type Task struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`
+	Kind              TaskKind                   `json:"kind,omitempty"`
 	State             State                      `json:"state"`
 	ImageURL          string                     `json:"image_url,omitempty"`
 	File              []byte                     `json:"file,omitempty"`
@@ -53,6 +68,7 @@ type Task struct {
 	FinishTime        time.Time                  `json:"finish_time"`
 	CreatedAt         time.Time                  `json:"created_at"`
 	UpdatedAt         time.Time                  `json:"updated_at"`
+	Mode              Mode                       `json:"mode,omitempty"`
 }
 
 type TaskPage struct {
