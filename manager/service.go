@@ -211,20 +211,6 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{
-		"id":                 t.ID,
-		"name":               t.Name,
-		"state":              t.State,
-		"image_url":          t.ImageURL,
-		"file":               t.File,
-		"inputs":             t.Inputs,
-		"cli_args":           t.CLIArgs,
-		"daemon":             t.Daemon,
-		"env":                t.Env,
-		"encrypted":          t.Encrypted,
-		"kbs_resource_path":  t.KBSResourcePath,
-		"monitoring_profile": t.MonitoringProfile,
-	}
 
 	var p proplet.Proplet
 	switch t.PropletID {
@@ -233,7 +219,6 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		if err != nil {
 			return err
 		}
-		svc.logger.InfoContext(ctx, "selected proplet for task", "proplet_id", p.ID)
 	default:
 		p, err = svc.GetProplet(ctx, t.PropletID)
 		if err != nil {
@@ -251,11 +236,6 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	t.PropletID = p.ID
 
 	if err := svc.persistTaskBeforeStart(ctx, &t); err != nil {
-		return err
-	}
-
-	topic := fmt.Sprintf("%s/control/proplet/%s/start", svc.baseTopic, p.ID)
-	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
 		return err
 	}
 
@@ -295,7 +275,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	topic := fmt.Sprintf("%s/control/proplet/%s/stop", svc.baseTopic, p.ID)
+	topic := fmt.Sprintf("%s/control/proplet/%s/stop", svc.baseTopic, propletID)
 
 	if err := svc.pubsub.Publish(ctx, topic, t); err != nil {
 		return err
@@ -852,9 +832,11 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		"env":                t.Env,
 		"monitoring_profile": t.MonitoringProfile,
 		"proplet_id":         propletID,
+		"encrypted":          t.Encrypted,
+		"kbs_resource_path":  t.KBSResourcePath,
 	}
 
-	topic := svc.baseTopic + "/control/manager/start"
+	topic := fmt.Sprintf("%s/control/proplet/%s/start", svc.baseTopic, propletID)
 
 	return svc.pubsub.Publish(ctx, topic, payload)
 }
