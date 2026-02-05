@@ -15,7 +15,6 @@ embed-proplet/modules
 embed-proplet/tools
 embed-proplet/zephyr
 
-.proplet_locks
 # ML-WASM example generated files
 examples/ml-wasm/mymodel.pkl
 examples/ml-wasm/mymodel.wasm
