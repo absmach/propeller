@@ -14,12 +14,21 @@ type Service interface {
 	DeleteProplet(ctx context.Context, propletID string) error
 
 	CreateTask(ctx context.Context, task task.Task) (task.Task, error)
+	CreateWorkflow(ctx context.Context, tasks []task.Task) ([]task.Task, error)
+	CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (string, []task.Task, error)
 	GetTask(ctx context.Context, taskID string) (task.Task, error)
+	GetJob(ctx context.Context, jobID string) ([]task.Task, error)
+	ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error)
+	StartJob(ctx context.Context, jobID string) error
+	StopJob(ctx context.Context, jobID string) error
 	ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error)
 	UpdateTask(ctx context.Context, task task.Task) (task.Task, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	StartTask(ctx context.Context, taskID string) error
 	StopTask(ctx context.Context, taskID string) error
+
+	GetTaskResults(ctx context.Context, taskID string) (any, error)
+	GetParentResults(ctx context.Context, taskID string) (map[string]any, error)
 
 	GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error)
 	GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error)

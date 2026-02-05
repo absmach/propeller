@@ -116,6 +116,12 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "get-task-metrics").ServeHTTP)
+			r.Get("/results", otelhttp.NewHandler(kithttp.NewServer(
+				getTaskResultsEndpoint(svc),
+				decodeEntityReq("taskID"),
+				api.EncodeResponse,
+				opts...,
+			), "get-task-results").ServeHTTP)
 		})
 	})
 
@@ -181,6 +187,48 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 			api.EncodeResponse,
 			opts...,
 		), "get-round-status").ServeHTTP)
+	})
+
+	mux.Post("/workflows", otelhttp.NewHandler(kithttp.NewServer(
+		createWorkflowEndpoint(svc),
+		decodeWorkflowReq,
+		api.EncodeResponse,
+		opts...,
+	), "create-workflow").ServeHTTP)
+
+	mux.Route("/jobs", func(r chi.Router) {
+		r.Post("/", otelhttp.NewHandler(kithttp.NewServer(
+			createJobEndpoint(svc),
+			decodeJobReq,
+			api.EncodeResponse,
+			opts...,
+		), "create-job").ServeHTTP)
+		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
+			listJobsEndpoint(svc),
+			decodeListEntityReq,
+			api.EncodeResponse,
+			opts...,
+		), "list-jobs").ServeHTTP)
+		r.Route("/{jobID}", func(r chi.Router) {
+			r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
+				getJobEndpoint(svc),
+				decodeEntityReq("jobID"),
+				api.EncodeResponse,
+				opts...,
+			), "get-job").ServeHTTP)
+			r.Post("/start", otelhttp.NewHandler(kithttp.NewServer(
+				startJobEndpoint(svc),
+				decodeEntityReq("jobID"),
+				api.EncodeResponse,
+				opts...,
+			), "start-job").ServeHTTP)
+			r.Post("/stop", otelhttp.NewHandler(kithttp.NewServer(
+				stopJobEndpoint(svc),
+				decodeEntityReq("jobID"),
+				api.EncodeResponse,
+				opts...,
+			), "stop-job").ServeHTTP)
+		})
 	})
 
 	mux.Get("/health", supermq.Health("manager", instanceID))
@@ -282,4 +330,30 @@ func decodeMetricsReq(key string) kithttp.DecodeRequestFunc {
 			limit:  l,
 		}, nil
 	}
+}
+
+func decodeWorkflowReq(_ context.Context, r *http.Request) (any, error) {
+	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
+		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
+	}
+
+	var req workflowReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, errors.Join(err, apiutil.ErrValidation)
+	}
+
+	return req, nil
+}
+
+func decodeJobReq(_ context.Context, r *http.Request) (any, error) {
+	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
+		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
+	}
+
+	var req jobReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, errors.Join(err, apiutil.ErrValidation)
+	}
+
+	return req, nil
 }

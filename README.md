@@ -12,6 +12,7 @@
 - 🛠️ **Powerful Service Mesh**: Integrates with **[SuperMQ](https://github.com/absmach)** for secure, efficient IoT device communication.
 - 🔒 **Security at the Core**: Propeller ensures secure workload execution and communication for IoT environments.
 - 🤖 **Federated Learning**: Built-in support for federated machine learning workflows with FedAvg aggregation, enabling privacy-preserving distributed training across edge devices.
+- 📋 **Job Orchestration**: Group multiple tasks into jobs with configurable execution modes (parallel, sequential, or dependency-based), enabling complex multi-step workflows with fail-fast semantics.
 
 ## 🛠️ How It Works
 

@@ -8,9 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/0x6flab/namegenerator"
+	"github.com/absmach/propeller/pkg/dag"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
@@ -21,9 +24,13 @@ import (
 )
 
 const (
-	defOffset         = 0
-	defLimit          = 100
-	aliveHistoryLimit = 10
+	defOffset                 = 0
+	defLimit                  = 100
+	aliveHistoryLimit         = 10
+	ExecutionModeParallel     = "parallel"
+	ExecutionModeSequential   = "sequential"
+	ExecutionModeConfigurable = "configurable"
+	EnvJobExecutionMode       = "JOB_EXECUTION_MODE"
 )
 
 var (
@@ -42,6 +49,7 @@ type service struct {
 	logger           *slog.Logger
 	flCoordinatorURL string
 	httpClient       *http.Client
+	coordinator      *WorkflowCoordinator
 }
 
 func NewService(
@@ -72,6 +80,7 @@ func NewService(
 		flCoordinatorURL: coordinatorURL,
 		httpClient:       httpClient,
 	}
+	svc.coordinator = NewWorkflowCoordinator(repos.Tasks, svc, logger)
 
 	return svc
 }
@@ -126,6 +135,29 @@ func (svc *service) DeleteProplet(ctx context.Context, propletID string) error {
 }
 
 func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, error) {
+	if len(t.DependsOn) > 0 && t.WorkflowID == "" {
+		return task.Task{}, errors.New("workflow_id is required when depends_on is specified")
+	}
+
+	if len(t.DependsOn) > 0 && t.WorkflowID != "" {
+		workflowTasks, err := svc.getWorkflowTasks(ctx, t.WorkflowID)
+		if err != nil {
+			return task.Task{}, fmt.Errorf("failed to get workflow tasks: %w", err)
+		}
+
+		allTasks := make([]task.Task, len(workflowTasks), len(workflowTasks)+1)
+		copy(allTasks, workflowTasks)
+		allTasks = append(allTasks, t)
+
+		if err := dag.ValidateDependenciesExist(allTasks); err != nil {
+			return task.Task{}, fmt.Errorf("dependency validation failed: %w", err)
+		}
+
+		if err := dag.ValidateDAG(allTasks); err != nil {
+			return task.Task{}, fmt.Errorf("DAG validation failed: %w", err)
+		}
+	}
+
 	t.ID = uuid.NewString()
 	t.CreatedAt = time.Now()
 
@@ -140,6 +172,269 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 	}
 
 	return t, nil
+}
+
+func (svc *service) CreateWorkflow(ctx context.Context, tasks []task.Task) ([]task.Task, error) {
+	if len(tasks) == 0 {
+		return nil, errors.New("workflow must contain at least one task")
+	}
+
+	workflowID := uuid.NewString()
+	for i := range tasks {
+		if tasks[i].WorkflowID != "" {
+			workflowID = tasks[i].WorkflowID
+
+			break
+		}
+	}
+
+	for i := range tasks {
+		tasks[i].WorkflowID = workflowID
+		if tasks[i].ID == "" {
+			tasks[i].ID = uuid.NewString()
+		}
+		tasks[i].CreatedAt = time.Now()
+	}
+
+	if err := dag.ValidateDependenciesExist(tasks); err != nil {
+		return nil, fmt.Errorf("dependency validation failed: %w", err)
+	}
+
+	if err := dag.ValidateDAG(tasks); err != nil {
+		return nil, fmt.Errorf("DAG validation failed: %w", err)
+	}
+
+	for i := range tasks {
+		if tasks[i].RunIf != "" && tasks[i].RunIf != task.RunIfSuccess && tasks[i].RunIf != task.RunIfFailure {
+			return nil, fmt.Errorf("invalid run_if value for task %s: must be 'success' or 'failure'", tasks[i].ID)
+		}
+	}
+
+	createdTasks := make([]task.Task, 0, len(tasks))
+	for i := range tasks {
+		t := tasks[i]
+		created, err := svc.taskRepo.Create(ctx, t)
+		if err != nil {
+			for j := range createdTasks {
+				created := &createdTasks[j]
+				_ = svc.taskRepo.Delete(ctx, created.ID)
+			}
+
+			return nil, fmt.Errorf("failed to create task %s: %w", t.ID, err)
+		}
+		createdTasks = append(createdTasks, created)
+	}
+
+	return createdTasks, nil
+}
+
+func (svc *service) CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (string, []task.Task, error) {
+	if len(tasks) == 0 {
+		return "", nil, errors.New("job must contain at least one task")
+	}
+
+	jobID := uuid.NewString()
+	for i := range tasks {
+		if tasks[i].JobID != "" {
+			jobID = tasks[i].JobID
+
+			break
+		}
+	}
+
+	for i := range tasks {
+		tasks[i].JobID = jobID
+		if tasks[i].ID == "" {
+			tasks[i].ID = uuid.NewString()
+		}
+		tasks[i].CreatedAt = time.Now()
+
+		if executionMode != "" {
+			if tasks[i].Env == nil {
+				tasks[i].Env = make(map[string]string)
+			}
+			tasks[i].Env["_job_execution_mode"] = executionMode
+		}
+
+		if name != "" {
+			if tasks[i].Env == nil {
+				tasks[i].Env = make(map[string]string)
+			}
+			tasks[i].Env["_job_name"] = name
+		}
+	}
+
+	if err := dag.ValidateDependenciesExist(tasks); err != nil {
+		return "", nil, fmt.Errorf("dependency validation failed: %w", err)
+	}
+
+	if err := dag.ValidateDAG(tasks); err != nil {
+		return "", nil, fmt.Errorf("DAG validation failed: %w", err)
+	}
+
+	createdTasks := make([]task.Task, 0, len(tasks))
+	for i := range tasks {
+		t := tasks[i]
+		created, err := svc.taskRepo.Create(ctx, t)
+		if err != nil {
+			for j := range createdTasks {
+				created := createdTasks[j]
+				_ = svc.taskRepo.Delete(ctx, created.ID)
+			}
+
+			return "", nil, fmt.Errorf("failed to create task %s: %w", t.ID, err)
+		}
+		createdTasks = append(createdTasks, created)
+	}
+
+	return jobID, createdTasks, nil
+}
+
+func (svc *service) GetJob(ctx context.Context, jobID string) ([]task.Task, error) {
+	return svc.getJobTasks(ctx, jobID)
+}
+
+func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error) {
+	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	if err != nil {
+		return JobPage{}, err
+	}
+
+	jobMap := make(map[string][]task.Task)
+	for i := range allTasks {
+		if allTasks[i].JobID != "" {
+			jobMap[allTasks[i].JobID] = append(jobMap[allTasks[i].JobID], allTasks[i])
+		}
+	}
+
+	jobs := make([]JobSummary, 0, len(jobMap))
+	for jobID, tasks := range jobMap {
+		summary := computeJobSummary(jobID, tasks)
+		jobs = append(jobs, summary)
+	}
+	total := uint64(len(jobs))
+	if offset >= total {
+		return JobPage{
+			Offset: offset,
+			Limit:  limit,
+			Total:  total,
+			Jobs:   []JobSummary{},
+		}, nil
+	}
+
+	end := min(offset+limit, total)
+	paginatedJobs := jobs[offset:end]
+
+	return JobPage{
+		Offset: offset,
+		Limit:  limit,
+		Total:  total,
+		Jobs:   paginatedJobs,
+	}, nil
+}
+
+func computeJobSummary(jobID string, tasks []task.Task) JobSummary {
+	if len(tasks) == 0 {
+		return JobSummary{
+			JobID: jobID,
+			State: task.Pending,
+			Tasks: []task.Task{},
+		}
+	}
+
+	name := ""
+	if tasks[0].Env != nil {
+		if n, ok := tasks[0].Env["_job_name"]; ok {
+			name = n
+		}
+	}
+
+	state := ComputeJobState(tasks)
+
+	var startTime, finishTime, createdAt time.Time
+	hasStartTime := false
+	hasFinishTime := false
+	hasCreatedAt := false
+
+	for i := range tasks {
+		t := &tasks[i]
+		if !t.CreatedAt.IsZero() {
+			if !hasCreatedAt || t.CreatedAt.Before(createdAt) {
+				createdAt = t.CreatedAt
+				hasCreatedAt = true
+			}
+		}
+		if !t.StartTime.IsZero() {
+			if !hasStartTime || t.StartTime.Before(startTime) {
+				startTime = t.StartTime
+				hasStartTime = true
+			}
+		}
+		if !t.FinishTime.IsZero() {
+			if !hasFinishTime || t.FinishTime.After(finishTime) {
+				finishTime = t.FinishTime
+				hasFinishTime = true
+			}
+		}
+	}
+
+	return JobSummary{
+		JobID:      jobID,
+		Name:       name,
+		State:      state,
+		Tasks:      tasks,
+		StartTime:  startTime,
+		FinishTime: finishTime,
+		CreatedAt:  createdAt,
+	}
+}
+
+func ComputeJobState(tasks []task.Task) task.State {
+	if len(tasks) == 0 {
+		return task.Pending
+	}
+
+	hasFailed := false
+	hasRunning := false
+	hasScheduled := false
+	allCompleted := true
+	allSkipped := true
+
+	for i := range tasks {
+		t := &tasks[i]
+		switch t.State {
+		case task.Failed:
+			hasFailed = true
+			allCompleted = false
+			allSkipped = false
+		case task.Running:
+			hasRunning = true
+			allCompleted = false
+			allSkipped = false
+		case task.Scheduled:
+			hasScheduled = true
+			allCompleted = false
+			allSkipped = false
+		case task.Completed:
+			allSkipped = false
+		case task.Skipped:
+		case task.Pending:
+			allCompleted = false
+			allSkipped = false
+		}
+	}
+
+	if hasFailed {
+		return task.Failed
+	}
+	if hasRunning || hasScheduled {
+		return task.Running
+	}
+	if allCompleted || allSkipped {
+		return task.Completed
+	}
+
+	return task.Pending
 }
 
 func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, error) {
@@ -193,23 +488,12 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{
-		"id":                 t.ID,
-		"name":               t.Name,
-		"state":              t.State,
-		"image_url":          t.ImageURL,
-		"file":               t.File,
-		"inputs":             t.Inputs,
-		"cli_args":           t.CLIArgs,
-		"daemon":             t.Daemon,
-		"env":                t.Env,
-		"encrypted":          t.Encrypted,
-		"kbs_resource_path":  t.KBSResourcePath,
-		"monitoring_profile": t.MonitoringProfile,
+
+	if len(t.DependsOn) == 0 {
+		return svc.startTaskWithoutDeps(ctx, taskID, t)
 	}
 
-	topic := svc.baseTopic + "/control/manager/start"
-	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
+	if err := svc.checkTaskDependencies(ctx, taskID, t); err != nil {
 		return err
 	}
 
@@ -293,6 +577,57 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (svc *service) StartJob(ctx context.Context, jobID string) error {
+	tasks, err := svc.getJobTasks(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	if len(tasks) == 0 {
+		return fmt.Errorf("job %s has no tasks", jobID)
+	}
+
+	executionMode := strings.TrimSpace(os.Getenv(EnvJobExecutionMode))
+	if len(tasks) > 0 && tasks[0].Env != nil {
+		if mode, ok := tasks[0].Env["_job_execution_mode"]; ok {
+			executionMode = strings.TrimSpace(mode)
+		}
+	}
+	if executionMode == "" {
+		return fmt.Errorf("%s must be set", EnvJobExecutionMode)
+	}
+
+	if err := dag.ValidateDependenciesExist(tasks); err != nil {
+		return fmt.Errorf("dependency validation failed: %w", err)
+	}
+
+	if err := dag.ValidateDAG(tasks); err != nil {
+		return fmt.Errorf("DAG validation failed: %w", err)
+	}
+
+	switch executionMode {
+	case ExecutionModeParallel:
+		return svc.startJobParallel(ctx, tasks)
+	case ExecutionModeSequential:
+		return svc.startJobSequential(ctx, tasks)
+	case ExecutionModeConfigurable:
+		return svc.startJobConfigurable(ctx, tasks)
+	default:
+		return fmt.Errorf("invalid %s: %q (allowed: %q, %q, %q)", EnvJobExecutionMode, executionMode, ExecutionModeParallel, ExecutionModeSequential, ExecutionModeConfigurable)
+	}
+}
+
+func (svc *service) StopJob(ctx context.Context, jobID string) error {
+	tasks, err := svc.getJobTasks(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	svc.stopJobTasks(ctx, tasks)
+
+	return nil
+}
+
 func (svc *service) Subscribe(ctx context.Context) error {
 	topic := svc.baseTopic + "/#"
 	if err := svc.pubsub.Subscribe(ctx, topic, svc.handle(ctx)); err != nil {
@@ -333,6 +668,206 @@ func (svc *service) GetPropletMetrics(ctx context.Context, propletID string, off
 		Total:   total,
 		Metrics: metrics,
 	}, nil
+}
+
+func (svc *service) GetTaskResults(ctx context.Context, taskID string) (any, error) {
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	return t.Results, nil
+}
+
+func (svc *service) GetParentResults(ctx context.Context, taskID string) (map[string]any, error) {
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	parentResults := make(map[string]any)
+	for _, depID := range t.DependsOn {
+		dep, err := svc.GetTask(ctx, depID)
+		if err != nil {
+			svc.logger.WarnContext(ctx, "failed to get parent task", "parent_id", depID, "task_id", taskID, "error", err)
+
+			continue
+		}
+		if dep.State == task.Completed && dep.Results != nil {
+			parentResults[depID] = dep.Results
+		}
+	}
+
+	return parentResults, nil
+}
+
+func (svc *service) checkTaskDependencies(ctx context.Context, taskID string, t task.Task) error {
+	allDepsCompleted := true
+	for _, depID := range t.DependsOn {
+		dep, err := svc.GetTask(ctx, depID)
+		if err != nil {
+			return fmt.Errorf("failed to get dependency task %s: %w", depID, err)
+		}
+		if dep.State != task.Completed && dep.State != task.Failed && dep.State != task.Skipped {
+			allDepsCompleted = false
+
+			break
+		}
+	}
+
+	if !allDepsCompleted {
+		if t.WorkflowID != "" {
+			return svc.coordinator.CheckAndStartReadyTasks(ctx, t.WorkflowID)
+		}
+
+		return fmt.Errorf("task %s has unmet dependencies", taskID)
+	}
+
+	return nil
+}
+
+func (svc *service) startTaskWithoutDeps(ctx context.Context, taskID string, t task.Task) error {
+	parentResults, err := svc.GetParentResults(ctx, taskID)
+	if err != nil {
+		svc.logger.WarnContext(ctx, "failed to get parent results", "task_id", taskID, "error", err)
+		parentResults = make(map[string]any)
+	}
+
+	payload := map[string]any{
+		"id":                 t.ID,
+		"name":               t.Name,
+		"state":              t.State,
+		"image_url":          t.ImageURL,
+		"file":               t.File,
+		"inputs":             t.Inputs,
+		"cli_args":           t.CLIArgs,
+		"daemon":             t.Daemon,
+		"env":                t.Env,
+		"encrypted":          t.Encrypted,
+		"kbs_resource_path":  t.KBSResourcePath,
+		"monitoring_profile": t.MonitoringProfile,
+		"parent_results":     parentResults,
+	}
+
+	topic := svc.baseTopic + "/control/manager/start"
+	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
+		return err
+	}
+
+	var p proplet.Proplet
+	switch t.PropletID {
+	case "":
+		p, err = svc.SelectProplet(ctx, t)
+		if err != nil {
+			return err
+		}
+	default:
+		p, err = svc.GetProplet(ctx, t.PropletID)
+		if err != nil {
+			return err
+		}
+		if !p.Alive {
+			return fmt.Errorf("specified proplet %s is not alive", t.PropletID)
+		}
+	}
+
+	if err := svc.pinTaskToProplet(ctx, taskID, p.ID); err != nil {
+		return err
+	}
+
+	t.PropletID = p.ID
+
+	if err := svc.persistTaskBeforeStart(ctx, &t); err != nil {
+		return err
+	}
+
+	if err := svc.publishStart(ctx, t, p.ID); err != nil {
+		_ = svc.taskPropletRepo.Delete(ctx, taskID)
+
+		return err
+	}
+
+	if err := svc.bumpPropletTaskCount(ctx, p, +1); err != nil {
+		return err
+	}
+
+	if err := svc.markTaskRunning(ctx, &t); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (svc *service) startJobParallel(ctx context.Context, tasks []task.Task) error {
+	for i := range tasks {
+		t := &tasks[i]
+		if len(t.DependsOn) == 0 {
+			if err := svc.StartTask(ctx, t.ID); err != nil {
+				svc.stopJobTasks(ctx, tasks)
+
+				return fmt.Errorf("failed to start task %s: %w", t.ID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) startJobSequential(ctx context.Context, tasks []task.Task) error {
+	taskMap := make(map[string]task.Task)
+	for i := range tasks {
+		t := &tasks[i]
+		taskMap[t.ID] = *t
+	}
+
+	readyTasks := make([]task.Task, 0)
+	for i := range tasks {
+		t := &tasks[i]
+		if len(t.DependsOn) == 0 {
+			readyTasks = append(readyTasks, *t)
+		}
+	}
+
+	for i := range readyTasks {
+		t := &readyTasks[i]
+		if err := svc.StartTask(ctx, t.ID); err != nil {
+			svc.stopJobTasks(ctx, tasks)
+
+			return fmt.Errorf("failed to start task %s: %w", t.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) startJobConfigurable(ctx context.Context, tasks []task.Task) error {
+	readyTasks := make([]task.Task, 0)
+	for i := range tasks {
+		t := &tasks[i]
+		if len(t.DependsOn) == 0 {
+			readyTasks = append(readyTasks, *t)
+		}
+	}
+
+	for i := range readyTasks {
+		t := &readyTasks[i]
+		if err := svc.StartTask(ctx, t.ID); err != nil {
+			svc.stopJobTasks(ctx, tasks)
+
+			return fmt.Errorf("failed to start task %s: %w", t.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) stopJobTasks(ctx context.Context, tasks []task.Task) {
+	for i := range tasks {
+		t := &tasks[i]
+		if t.State == task.Running || t.State == task.Scheduled {
+			_ = svc.StopTask(ctx, t.ID)
+		}
+	}
 }
 
 func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]any) error {
@@ -427,141 +962,286 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 
 	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
 		t.Error = errMsg
+		t.State = task.Failed
 	}
 
 	if err := svc.taskRepo.Update(ctx, t); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-//nolint:gocognit // Complex function handles round start orchestration with multiple validation steps
-func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
-	return func(topic string, msg map[string]any) error {
-		go func() {
-			roundCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			defer cancel()
-
-			roundID, ok := msg["round_id"].(string)
-			if !ok || roundID == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid round_id")
-
-				return
-			}
-
-			if roundCtx.Err() != nil {
-				svc.logger.WarnContext(roundCtx, "context cancelled before processing round start", "round_id", roundID)
-
-				return
-			}
-
-			modelURI, ok := msg["model_uri"].(string)
-			if !ok || modelURI == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid model_uri")
-
-				return
-			}
-
-			taskWasmImage, ok := msg["task_wasm_image"].(string)
-			if !ok || taskWasmImage == "" {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid task_wasm_image")
-
-				return
-			}
-
-			participantsRaw, ok := msg["participants"].([]any)
-			if !ok || len(participantsRaw) == 0 {
-				svc.logger.ErrorContext(roundCtx, "missing or invalid participants")
-
-				return
-			}
-
-			hyperparams, _ := msg["hyperparams"].(map[string]any)
-
-			participants := make([]string, 0, len(participantsRaw))
-			for _, p := range participantsRaw {
-				if pid, ok := p.(string); ok && pid != "" {
-					participants = append(participants, pid)
-				}
-			}
-
-			if len(participants) == 0 {
-				svc.logger.ErrorContext(roundCtx, "no valid participants")
-
-				return
-			}
-
-			for _, propletID := range participants {
-				select {
-				case <-roundCtx.Done():
-					svc.logger.WarnContext(roundCtx, "context cancelled during round processing", "round_id", roundID, "processed", len(participants))
-
-					return
-				default:
-				}
-
-				p, err := svc.GetProplet(roundCtx, propletID)
-				if err != nil {
-					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
-
-					continue
-				}
-				if !p.Alive {
-					svc.logger.WarnContext(roundCtx, "skipping participant: proplet not alive", "proplet_id", propletID)
-
-					continue
-				}
-
-				t := task.Task{
-					Name:     fmt.Sprintf("fl-round-%s-%s", roundID, propletID),
-					Kind:     task.TaskKindStandard,
-					State:    task.Pending,
-					ImageURL: taskWasmImage,
-					Env: map[string]string{
-						"ROUND_ID":  roundID,
-						"MODEL_URI": modelURI,
-					},
-					PropletID: propletID,
-					CreatedAt: time.Now(),
-				}
-
-				if hyperparams != nil {
-					hyperparamsJSON, err := json.Marshal(hyperparams)
-					if err == nil {
-						t.Env["HYPERPARAMS"] = string(hyperparamsJSON)
-					}
-				}
-
-				created, err := svc.CreateTask(roundCtx, t)
-				if err != nil {
-					if roundCtx.Err() != nil {
-						svc.logger.WarnContext(roundCtx, "context cancelled during task creation", "round_id", roundID, "proplet_id", propletID)
-
-						return
-					}
-					svc.logger.ErrorContext(roundCtx, "failed to create task for participant", "proplet_id", propletID, "error", err)
-
-					continue
-				}
-
-				if err := svc.StartTask(roundCtx, created.ID); err != nil {
-					if roundCtx.Err() != nil {
-						svc.logger.WarnContext(roundCtx, "context cancelled during task start", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
-
-						return
-					}
-					svc.logger.ErrorContext(roundCtx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
-
-					continue
-				}
-
-				svc.logger.InfoContext(roundCtx, "launched task for FL round participant", "round_id", roundID, "proplet_id", propletID, "task_id", created.ID)
-			}
-		}()
+	if t.JobID == "" {
+		if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
+			svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
+		}
 
 		return nil
 	}
+
+	jobTasks, err := svc.getJobTasks(ctx, t.JobID)
+	if err != nil {
+		svc.logger.WarnContext(ctx, "failed to get job tasks", "job_id", t.JobID, "error", err)
+		if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
+			svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
+		}
+
+		return nil
+	}
+
+	if t.State == task.Failed {
+		svc.logger.InfoContext(ctx, "task failed, stopping remaining job tasks", "job_id", t.JobID, "task_id", taskID)
+		svc.stopJobTasks(ctx, jobTasks)
+		if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
+			svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
+		}
+
+		return nil
+	}
+
+	allCompleted := true
+	hasFailed := false
+	for i := range jobTasks {
+		jobTask := &jobTasks[i]
+		if jobTask.State != task.Completed && jobTask.State != task.Skipped {
+			allCompleted = false
+		}
+		if jobTask.State == task.Failed {
+			hasFailed = true
+		}
+	}
+
+	if allCompleted {
+		svc.logger.InfoContext(ctx, "job completed", "job_id", t.JobID)
+	}
+
+	if !allCompleted && !hasFailed {
+		svc.startJobDependentTasks(ctx, jobTasks, taskID)
+	}
+
+	if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
+		svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
+	}
+
+	return nil
+}
+
+func (svc *service) startJobDependentTasks(ctx context.Context, jobTasks []task.Task, completedTaskID string) {
+	for i := range jobTasks {
+		t := &jobTasks[i]
+		if t.State != task.Pending {
+			continue
+		}
+
+		if !svc.hasDependencyOnTask(t, completedTaskID) {
+			continue
+		}
+
+		if svc.allDependenciesComplete(ctx, t) {
+			if err := svc.StartTask(ctx, t.ID); err != nil {
+				svc.logger.WarnContext(ctx, "failed to start dependent task", "task_id", t.ID, "error", err)
+			}
+		}
+	}
+}
+
+func (svc *service) hasDependencyOnTask(t *task.Task, taskID string) bool {
+	return slices.Contains(t.DependsOn, taskID)
+}
+
+func (svc *service) allDependenciesComplete(ctx context.Context, t *task.Task) bool {
+	for _, checkDepID := range t.DependsOn {
+		dep, err := svc.GetTask(ctx, checkDepID)
+		if err != nil {
+			return false
+		}
+		if dep.State != task.Completed && dep.State != task.Skipped && dep.State != task.Failed {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (svc *service) handleRoundStart(ctx context.Context) func(topic string, msg map[string]any) error {
+	return func(topic string, msg map[string]any) error {
+		go svc.processRoundStart(ctx, msg)
+
+		return nil
+	}
+}
+
+func (svc *service) processRoundStart(ctx context.Context, msg map[string]any) {
+	roundCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	roundConfig, err := svc.parseRoundStartMessage(roundCtx, msg)
+	if err != nil {
+		return
+	}
+
+	participants := svc.extractParticipants(roundCtx, msg)
+	if len(participants) == 0 {
+		return
+	}
+
+	svc.launchTasksForParticipants(roundCtx, roundConfig, participants)
+}
+
+type roundConfig struct {
+	roundID       string
+	modelURI      string
+	taskWasmImage string
+	hyperparams   map[string]any
+}
+
+func (svc *service) parseRoundStartMessage(roundCtx context.Context, msg map[string]any) (roundConfig, error) {
+	roundID, ok := msg["round_id"].(string)
+	if !ok || roundID == "" {
+		svc.logger.ErrorContext(roundCtx, "missing or invalid round_id")
+
+		return roundConfig{}, errors.New("invalid round_id")
+	}
+
+	if roundCtx.Err() != nil {
+		svc.logger.WarnContext(roundCtx, "context cancelled before processing round start", "round_id", roundID)
+
+		return roundConfig{}, roundCtx.Err()
+	}
+
+	modelURI, ok := msg["model_uri"].(string)
+	if !ok || modelURI == "" {
+		svc.logger.ErrorContext(roundCtx, "missing or invalid model_uri")
+
+		return roundConfig{}, errors.New("invalid model_uri")
+	}
+
+	taskWasmImage, ok := msg["task_wasm_image"].(string)
+	if !ok || taskWasmImage == "" {
+		svc.logger.ErrorContext(roundCtx, "missing or invalid task_wasm_image")
+
+		return roundConfig{}, errors.New("invalid task_wasm_image")
+	}
+
+	participantsRaw, ok := msg["participants"].([]any)
+	if !ok || len(participantsRaw) == 0 {
+		svc.logger.ErrorContext(roundCtx, "missing or invalid participants")
+
+		return roundConfig{}, errors.New("invalid participants")
+	}
+
+	hyperparams, _ := msg["hyperparams"].(map[string]any)
+
+	return roundConfig{
+		roundID:       roundID,
+		modelURI:      modelURI,
+		taskWasmImage: taskWasmImage,
+		hyperparams:   hyperparams,
+	}, nil
+}
+
+func (svc *service) extractParticipants(roundCtx context.Context, msg map[string]any) []string {
+	participantsRaw, ok := msg["participants"].([]any)
+	if !ok || len(participantsRaw) == 0 {
+		return nil
+	}
+
+	participants := make([]string, 0, len(participantsRaw))
+	for _, p := range participantsRaw {
+		if pid, ok := p.(string); ok && pid != "" {
+			participants = append(participants, pid)
+		}
+	}
+
+	if len(participants) == 0 {
+		svc.logger.ErrorContext(roundCtx, "no valid participants")
+	}
+
+	return participants
+}
+
+func (svc *service) launchTasksForParticipants(roundCtx context.Context, config roundConfig, participants []string) {
+	for _, propletID := range participants {
+		if roundCtx.Err() != nil {
+			svc.logger.WarnContext(roundCtx, "context cancelled during round processing", "round_id", config.roundID, "processed", len(participants))
+
+			return
+		}
+
+		if !svc.isPropletAvailable(roundCtx, propletID) {
+			continue
+		}
+
+		svc.launchTaskForParticipant(roundCtx, config, propletID)
+	}
+}
+
+func (svc *service) isPropletAvailable(roundCtx context.Context, propletID string) bool {
+	p, err := svc.GetProplet(roundCtx, propletID)
+	if err != nil {
+		svc.logger.WarnContext(roundCtx, "skipping participant: proplet not found", "proplet_id", propletID, "error", err)
+
+		return false
+	}
+
+	if !p.Alive {
+		svc.logger.WarnContext(roundCtx, "skipping participant: proplet not alive", "proplet_id", propletID)
+
+		return false
+	}
+
+	return true
+}
+
+func (svc *service) launchTaskForParticipant(roundCtx context.Context, config roundConfig, propletID string) {
+	t := svc.createRoundTask(config, propletID)
+
+	created, err := svc.CreateTask(roundCtx, t)
+	if err != nil {
+		if roundCtx.Err() != nil {
+			svc.logger.WarnContext(roundCtx, "context cancelled during task creation", "round_id", config.roundID, "proplet_id", propletID)
+
+			return
+		}
+		svc.logger.ErrorContext(roundCtx, "failed to create task for participant", "proplet_id", propletID, "error", err)
+
+		return
+	}
+
+	if err := svc.StartTask(roundCtx, created.ID); err != nil {
+		if roundCtx.Err() != nil {
+			svc.logger.WarnContext(roundCtx, "context cancelled during task start", "round_id", config.roundID, "proplet_id", propletID, "task_id", created.ID)
+
+			return
+		}
+		svc.logger.ErrorContext(roundCtx, "failed to start task for participant", "proplet_id", propletID, "task_id", created.ID, "error", err)
+
+		return
+	}
+
+	svc.logger.InfoContext(roundCtx, "launched task for FL round participant", "round_id", config.roundID, "proplet_id", propletID, "task_id", created.ID)
+}
+
+func (svc *service) createRoundTask(config roundConfig, propletID string) task.Task {
+	t := task.Task{
+		Name:      fmt.Sprintf("fl-round-%s-%s", config.roundID, propletID),
+		Kind:      task.TaskKindStandard,
+		State:     task.Pending,
+		ImageURL:  config.taskWasmImage,
+		PropletID: propletID,
+		CreatedAt: time.Now(),
+		Env: map[string]string{
+			"ROUND_ID":  config.roundID,
+			"MODEL_URI": config.modelURI,
+		},
+	}
+
+	if config.hyperparams != nil {
+		hyperparamsJSON, err := json.Marshal(config.hyperparams)
+		if err == nil {
+			t.Env["HYPERPARAMS"] = string(hyperparamsJSON)
+		}
+	}
+
+	return t
 }
 
 func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) error {
@@ -795,4 +1475,36 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 
 	return svc.taskRepo.Update(ctx, *t)
+}
+
+func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
+	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for i := range allTasks {
+		if allTasks[i].WorkflowID == workflowID {
+			tasks = append(tasks, allTasks[i])
+		}
+	}
+
+	return tasks, nil
+}
+
+func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task, error) {
+	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for i := range allTasks {
+		if allTasks[i].JobID == jobID {
+			tasks = append(tasks, allTasks[i])
+		}
+	}
+
+	return tasks, nil
 }
