@@ -150,7 +150,7 @@ func main() {
 	if err := os.WriteFile(lockFile, []byte{}, 0644); err != nil {
 		logger.Error(fmt.Sprintf("failed to clear %s: %v", lockFile, err))
 	} else {
-		logger.Info(fmt.Sprintf("cleared contents of %s", lockFile))
+		logger.Info("cleared contents of " + lockFile)
 	}
 
 	hs := httpserver.NewServer(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
