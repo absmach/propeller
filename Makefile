@@ -160,3 +160,4 @@ help:
 	@echo "  start-supermq:    start the supermq docker compose"
 	@echo "  stop-supermq:     stop the supermq docker compose"
 	@echo "  help:             display this help message"
+
