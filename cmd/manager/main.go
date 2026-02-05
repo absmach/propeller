@@ -147,7 +147,7 @@ func main() {
 
 	// Clear the contents of the .proplet_locks file to ensure all are useable on start
 	lockFile := ".proplet_locks"
-	if err := os.WriteFile(lockFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(lockFile, []byte{}, 0o644); err != nil {
 		logger.Error(fmt.Sprintf("failed to clear %s: %v", lockFile, err))
 	} else {
 		logger.Info("cleared contents of " + lockFile)
