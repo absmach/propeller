@@ -47,7 +47,8 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
-	Storage     storage.Config
+	StorageType string  `env:"MANAGER_STORAGE_TYPE" envDefault:"badger"` // "memory", "badger", "postgres", or "sqlite"
+	DataDir     string  `env:"MANAGER_DATA_DIR"     envDefault:"./data"`
 }
 
 func main() {
@@ -117,7 +118,16 @@ func main() {
 		return
 	}
 
-	repos, err := storage.NewRepositories(cfg.Storage)
+	storageCfg := storage.Config{
+		Type:    cfg.StorageType,
+		DataDir: cfg.DataDir,
+	}
+
+	if cfg.StorageType == "memory" {
+		logger.Info("using in-memory storage")
+	}
+
+	repos, err := storage.NewRepositories(storageCfg)
 	if err != nil {
 		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
 
@@ -142,6 +152,10 @@ func main() {
 
 		return
 	}
+
+	g.Go(func() error {
+		return svc.StartCronScheduler(ctx)
+	})
 
 	httpServerConfig := server.Config{Port: defHTTPPort}
 	if err := env.ParseWithOptions(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {

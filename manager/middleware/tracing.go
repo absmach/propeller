@@ -278,3 +278,10 @@ func (tm *tracing) GetRoundStatus(ctx context.Context, roundID string) (resp man
 
 	return tm.svc.GetRoundStatus(ctx, roundID)
 }
+
+func (tm *tracing) StartCronScheduler(ctx context.Context) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "start-cron-scheduler")
+	defer span.End()
+
+	return tm.svc.StartCronScheduler(ctx)
+}

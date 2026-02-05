@@ -268,3 +268,12 @@ func (mm *metricsMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 
 	return mm.svc.GetRoundStatus(ctx, roundID)
 }
+
+func (mm *metricsMiddleware) StartCronScheduler(ctx context.Context) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "start-cron-scheduler").Add(1)
+		mm.latency.With("method", "start-cron-scheduler").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StartCronScheduler(ctx)
+}

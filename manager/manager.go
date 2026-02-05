@@ -50,4 +50,5 @@ type Service interface {
 	// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
 
 	Subscribe(ctx context.Context) error
+	StartCronScheduler(ctx context.Context) error
 }
