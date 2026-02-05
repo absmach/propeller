@@ -138,6 +138,10 @@ func main() {
 		return
 	}
 
+	g.Go(func() error {
+		return svc.StartCronScheduler(ctx)
+	})
+
 	httpServerConfig := server.Config{Port: defHTTPPort}
 	if err := env.ParseWithOptions(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {
 		logger.Error(fmt.Sprintf("failed to load %s HTTP server configuration : %s", svcName, err.Error()))
