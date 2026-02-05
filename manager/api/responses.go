@@ -17,6 +17,10 @@ var (
 	_ supermq.Response = (*messageResponse)(nil)
 	_ supermq.Response = (*taskMetricsResponse)(nil)
 	_ supermq.Response = (*propletMetricsResponse)(nil)
+	_ supermq.Response = (*workflowResponse)(nil)
+	_ supermq.Response = (*taskResultsResponse)(nil)
+	_ supermq.Response = (*jobResponse)(nil)
+	_ supermq.Response = (*listJobResponse)(nil)
 )
 
 type propletResponse struct {
@@ -159,4 +163,71 @@ func (p propletMetricsResponse) Headers() map[string]string {
 
 func (p propletMetricsResponse) Empty() bool {
 	return false
+}
+
+type workflowResponse struct {
+	Tasks []task.Task `json:"tasks"`
+}
+
+func (w workflowResponse) Code() int {
+	return http.StatusCreated
+}
+
+func (w workflowResponse) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (w workflowResponse) Empty() bool {
+	return len(w.Tasks) == 0
+}
+
+type taskResultsResponse struct {
+	Results any `json:"results"`
+}
+
+func (t taskResultsResponse) Code() int {
+	return http.StatusOK
+}
+
+func (t taskResultsResponse) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (t taskResultsResponse) Empty() bool {
+	return t.Results == nil
+}
+
+type jobResponse struct {
+	JobID string      `json:"job_id"`
+	Tasks []task.Task `json:"tasks"`
+}
+
+func (j jobResponse) Code() int {
+	return http.StatusCreated
+}
+
+func (j jobResponse) Headers() map[string]string {
+	return map[string]string{
+		"Location": "/jobs/" + j.JobID,
+	}
+}
+
+func (j jobResponse) Empty() bool {
+	return len(j.Tasks) == 0
+}
+
+type listJobResponse struct {
+	manager.JobPage
+}
+
+func (l listJobResponse) Code() int {
+	return http.StatusOK
+}
+
+func (l listJobResponse) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (l listJobResponse) Empty() bool {
+	return len(l.Jobs) == 0
 }

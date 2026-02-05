@@ -140,6 +140,81 @@ func (tm *tracing) GetPropletMetrics(ctx context.Context, propletID string, offs
 	return tm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
 }
 
+func (tm *tracing) CreateWorkflow(ctx context.Context, tasks []task.Task) (resp []task.Task, err error) {
+	ctx, span := tm.tracer.Start(ctx, "create-workflow", trace.WithAttributes(
+		attribute.Int("task_count", len(tasks)),
+	))
+	defer span.End()
+
+	return tm.svc.CreateWorkflow(ctx, tasks)
+}
+
+func (tm *tracing) CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (jobID string, resp []task.Task, err error) {
+	ctx, span := tm.tracer.Start(ctx, "create-job", trace.WithAttributes(
+		attribute.String("job_name", name),
+		attribute.String("execution_mode", executionMode),
+		attribute.Int("task_count", len(tasks)),
+	))
+	defer span.End()
+
+	return tm.svc.CreateJob(ctx, name, tasks, executionMode)
+}
+
+func (tm *tracing) GetJob(ctx context.Context, jobID string) (resp []task.Task, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-job", trace.WithAttributes(
+		attribute.String("job_id", jobID),
+	))
+	defer span.End()
+
+	return tm.svc.GetJob(ctx, jobID)
+}
+
+func (tm *tracing) ListJobs(ctx context.Context, offset, limit uint64) (resp manager.JobPage, err error) {
+	ctx, span := tm.tracer.Start(ctx, "list-jobs", trace.WithAttributes(
+		attribute.Int64("offset", int64(offset)),
+		attribute.Int64("limit", int64(limit)),
+	))
+	defer span.End()
+
+	return tm.svc.ListJobs(ctx, offset, limit)
+}
+
+func (tm *tracing) StartJob(ctx context.Context, jobID string) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "start-job", trace.WithAttributes(
+		attribute.String("job_id", jobID),
+	))
+	defer span.End()
+
+	return tm.svc.StartJob(ctx, jobID)
+}
+
+func (tm *tracing) StopJob(ctx context.Context, jobID string) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "stop-job", trace.WithAttributes(
+		attribute.String("job_id", jobID),
+	))
+	defer span.End()
+
+	return tm.svc.StopJob(ctx, jobID)
+}
+
+func (tm *tracing) GetTaskResults(ctx context.Context, taskID string) (resp any, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-task-results", trace.WithAttributes(
+		attribute.String("task_id", taskID),
+	))
+	defer span.End()
+
+	return tm.svc.GetTaskResults(ctx, taskID)
+}
+
+func (tm *tracing) GetParentResults(ctx context.Context, taskID string) (resp map[string]any, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-parent-results", trace.WithAttributes(
+		attribute.String("task_id", taskID),
+	))
+	defer span.End()
+
+	return tm.svc.GetParentResults(ctx, taskID)
+}
+
 func (tm *tracing) Subscribe(ctx context.Context) (err error) {
 	ctx, span := tm.tracer.Start(ctx, "subscribe")
 	defer span.End()

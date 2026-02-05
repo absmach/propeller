@@ -134,6 +134,78 @@ func (mm *metricsMiddleware) GetPropletMetrics(ctx context.Context, propletID st
 	return mm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
 }
 
+func (mm *metricsMiddleware) CreateWorkflow(ctx context.Context, tasks []task.Task) ([]task.Task, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "create-workflow").Add(1)
+		mm.latency.With("method", "create-workflow").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.CreateWorkflow(ctx, tasks)
+}
+
+func (mm *metricsMiddleware) CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (string, []task.Task, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "create-job").Add(1)
+		mm.latency.With("method", "create-job").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.CreateJob(ctx, name, tasks, executionMode)
+}
+
+func (mm *metricsMiddleware) GetJob(ctx context.Context, jobID string) ([]task.Task, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-job").Add(1)
+		mm.latency.With("method", "get-job").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetJob(ctx, jobID)
+}
+
+func (mm *metricsMiddleware) ListJobs(ctx context.Context, offset, limit uint64) (manager.JobPage, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "list-jobs").Add(1)
+		mm.latency.With("method", "list-jobs").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.ListJobs(ctx, offset, limit)
+}
+
+func (mm *metricsMiddleware) StartJob(ctx context.Context, jobID string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "start-job").Add(1)
+		mm.latency.With("method", "start-job").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StartJob(ctx, jobID)
+}
+
+func (mm *metricsMiddleware) StopJob(ctx context.Context, jobID string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "stop-job").Add(1)
+		mm.latency.With("method", "stop-job").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.StopJob(ctx, jobID)
+}
+
+func (mm *metricsMiddleware) GetTaskResults(ctx context.Context, taskID string) (any, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-task-results").Add(1)
+		mm.latency.With("method", "get-task-results").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetTaskResults(ctx, taskID)
+}
+
+func (mm *metricsMiddleware) GetParentResults(ctx context.Context, taskID string) (map[string]any, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-parent-results").Add(1)
+		mm.latency.With("method", "get-parent-results").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetParentResults(ctx, taskID)
+}
+
 func (mm *metricsMiddleware) Subscribe(ctx context.Context) error {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "subscribe").Add(1)

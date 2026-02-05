@@ -70,6 +70,41 @@ type SDK interface {
 	//  task, _ := sdk.StopTask("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
 	//  fmt.Println(task)
 	StopTask(id string) error
+
+	// CreateJob creates a new job with multiple tasks.
+	//
+	// example:
+	//  req := sdk.JobRequest{
+	//    Name: "my-job",
+	//    Tasks: []sdk.Task{...},
+	//    ExecutionMode: "parallel",
+	//  }
+	//  job, _ := sdk.CreateJob(req)
+	CreateJob(req JobRequest) (JobResponse, error)
+
+	// GetJob gets a job by id.
+	//
+	// example:
+	//  job, _ := sdk.GetJob("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
+	GetJob(jobID string) (JobResponse, error)
+
+	// ListJobs lists jobs.
+	//
+	// example:
+	//  jobPage, _ := sdk.ListJobs(0, 10)
+	ListJobs(offset uint64, limit uint64) (JobPage, error)
+
+	// StartJob starts a job.
+	//
+	// example:
+	//  _ := sdk.StartJob("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
+	StartJob(jobID string) error
+
+	// StopJob stops a job.
+	//
+	// example:
+	//  _ := sdk.StopJob("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
+	StopJob(jobID string) error
 }
 
 type propSDK struct {

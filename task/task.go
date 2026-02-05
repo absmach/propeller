@@ -14,6 +14,7 @@ const (
 	Running
 	Completed
 	Failed
+	Skipped
 )
 
 func (s State) String() string {
@@ -28,6 +29,8 @@ func (s State) String() string {
 		return "Completed"
 	case Failed:
 		return "Failed"
+	case Skipped:
+		return "Skipped"
 	default:
 		return "Unknown"
 	}
@@ -47,6 +50,11 @@ const (
 	TaskKindFederated TaskKind = "federated"
 )
 
+const (
+	RunIfSuccess = "success"
+	RunIfFailure = "failure"
+)
+
 type Task struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`
@@ -61,6 +69,10 @@ type Task struct {
 	Encrypted         bool                       `json:"encrypted"`
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
 	PropletID         string                     `json:"proplet_id,omitempty"`
+	DependsOn         []string                   `json:"depends_on,omitempty"`
+	RunIf             string                     `json:"run_if,omitempty"`
+	WorkflowID        string                     `json:"workflow_id,omitempty"`
+	JobID             string                     `json:"job_id,omitempty"`
 	Results           any                        `json:"results,omitempty"`
 	Error             string                     `json:"error,omitempty"`
 	MonitoringProfile *proplet.MonitoringProfile `json:"monitoring_profile,omitempty"`
