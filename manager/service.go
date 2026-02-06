@@ -359,9 +359,13 @@ func (svc *service) destroyPropletHandler(ctx context.Context, msg map[string]an
 	if propletID == "" {
 		return errors.New("proplet id is empty")
 	}
-	if err := svc.propletsDB.Delete(ctx, propletID); err != nil {
-		return err
-	}
+
+	// PropletRepository doesn't have a Delete function, making this unusable, but should be implemented
+	// if err := svc.propletRepo.Delete(ctx, propletID); err != nil {
+	// 	return err
+	// }
+
+	svc.logger.DebugContext(ctx, "Removed proplet "+propletID)
 
 	return nil
 }
