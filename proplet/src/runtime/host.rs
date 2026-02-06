@@ -80,13 +80,7 @@ impl Runtime for HostRuntime {
             cmd.arg("--invoke").arg(&config.function_name);
         }
 
-        // Add wasmtime-specific flags for WASI support
-        if self.runtime_path.contains("wasmtime") {
-            cmd.arg("run");
-            cmd.arg("-S").arg("nn"); // Enable wasi-nn for ML inference
-            cmd.arg("--dir=/home/proplet/fixture::fixture"); // Map fixture directory
-        }
-
+        // cli_args are passed directly to the runtime (e.g., -S nn, --dir=fixture)
         for arg in &config.cli_args {
             cmd.arg(arg);
         }
@@ -113,17 +107,6 @@ impl Runtime for HostRuntime {
         }
 
         cmd.envs(&config.env);
-
-        // Inherit critical system environment variables for OpenVINO/wasi-nn
-        if let Ok(ld_path) = std::env::var("LD_LIBRARY_PATH") {
-            cmd.env("LD_LIBRARY_PATH", ld_path);
-        }
-        if let Ok(openvino_dir) = std::env::var("INTEL_OPENVINO_DIR") {
-            cmd.env("INTEL_OPENVINO_DIR", openvino_dir);
-        }
-        if let Ok(openvino_cmake) = std::env::var("OpenVINO_DIR") {
-            cmd.env("OpenVINO_DIR", openvino_cmake);
-        }
 
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
