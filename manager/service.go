@@ -32,10 +32,10 @@ var (
 )
 
 type service struct {
-	tasksDB          storage.Storage
-	propletsDB       storage.Storage
-	taskPropletDB    storage.Storage
-	metricsDB        storage.Storage
+	taskRepo         storage.TaskRepository
+	propletRepo      storage.PropletRepository
+	taskPropletRepo  storage.TaskPropletRepository
+	metricsRepo      storage.MetricsRepository
 	scheduler        scheduler.Scheduler
 	baseTopic        string
 	pubsub           mqtt.PubSub
@@ -45,7 +45,7 @@ type service struct {
 }
 
 func NewService(
-	tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage,
+	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
 ) Service {
@@ -61,10 +61,10 @@ func NewService(
 	}
 
 	svc := &service{
-		tasksDB:          tasksDB,
-		propletsDB:       propletsDB,
-		taskPropletDB:    taskPropletDB,
-		metricsDB:        metricsDB,
+		taskRepo:         repos.Tasks,
+		propletRepo:      repos.Proplets,
+		taskPropletRepo:  repos.TaskProplets,
+		metricsRepo:      repos.Metrics,
 		scheduler:        s,
 		baseTopic:        fmt.Sprintf(baseTopic, domainID, channelID),
 		pubsub:           pubsub,
@@ -77,35 +77,22 @@ func NewService(
 }
 
 func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
-	data, err := svc.propletsDB.Get(ctx, propletID)
+	w, err := svc.propletRepo.Get(ctx, propletID)
 	if err != nil {
 		return proplet.Proplet{}, err
 	}
-
-	w, ok := data.(proplet.Proplet)
-	if !ok {
-		return proplet.Proplet{}, pkgerrors.ErrInvalidData
-	}
-
 	w.SetAlive()
 
 	return w, nil
 }
 
 func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
-	data, total, err := svc.propletsDB.List(ctx, offset, limit)
+	proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
 	if err != nil {
 		return proplet.PropletPage{}, err
 	}
-
-	proplets := make([]proplet.Proplet, 0, len(data))
-	for i := range data {
-		w, ok := data[i].(proplet.Proplet)
-		if !ok {
-			return proplet.PropletPage{}, pkgerrors.ErrInvalidData
-		}
-		w.SetAlive()
-		proplets = append(proplets, w)
+	for i := range proplets {
+		proplets[i].SetAlive()
 	}
 
 	return proplet.PropletPage{
@@ -134,7 +121,8 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 		t.Kind = task.TaskKindStandard
 	}
 
-	if err := svc.tasksDB.Create(ctx, t.ID, t); err != nil {
+	t, err := svc.taskRepo.Create(ctx, t)
+	if err != nil {
 		return task.Task{}, err
 	}
 
@@ -142,32 +130,13 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 }
 
 func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, error) {
-	data, err := svc.tasksDB.Get(ctx, taskID)
-	if err != nil {
-		return task.Task{}, err
-	}
-
-	t, ok := data.(task.Task)
-	if !ok {
-		return task.Task{}, pkgerrors.ErrInvalidData
-	}
-
-	return t, nil
+	return svc.taskRepo.Get(ctx, taskID)
 }
 
 func (svc *service) ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error) {
-	data, total, err := svc.tasksDB.List(ctx, offset, limit)
+	tasks, total, err := svc.taskRepo.List(ctx, offset, limit)
 	if err != nil {
 		return task.TaskPage{}, err
-	}
-
-	tasks := make([]task.Task, 0, len(data))
-	for i := range data {
-		t, ok := data[i].(task.Task)
-		if !ok {
-			return task.TaskPage{}, pkgerrors.ErrInvalidData
-		}
-		tasks = append(tasks, t)
 	}
 
 	return task.TaskPage{
@@ -195,7 +164,7 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 		dbT.File = t.File
 	}
 
-	if err := svc.tasksDB.Update(ctx, dbT.ID, dbT); err != nil {
+	if err := svc.taskRepo.Update(ctx, dbT); err != nil {
 		return task.Task{}, err
 	}
 
@@ -203,7 +172,7 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
-	return svc.tasksDB.Delete(ctx, taskID)
+	return svc.taskRepo.Delete(ctx, taskID)
 }
 
 func (svc *service) StartTask(ctx context.Context, taskID string) error {
@@ -259,7 +228,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	}
 
 	if err := svc.publishStart(ctx, t, p.ID); err != nil {
-		_ = svc.taskPropletDB.Delete(ctx, taskID)
+		_ = svc.taskPropletRepo.Delete(ctx, taskID)
 
 		return err
 	}
@@ -281,23 +250,18 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	data, err := svc.taskPropletDB.Get(ctx, taskID)
+	propletID, err := svc.taskPropletRepo.Get(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	propellerID, ok := data.(string)
-	if !ok || propellerID == "" {
-		return pkgerrors.ErrInvalidData
-	}
-
-	p, err := svc.GetProplet(ctx, propellerID)
+	p, err := svc.GetProplet(ctx, propletID)
 	if err != nil {
 		return err
 	}
 
 	stopPayload := map[string]any{
 		"id":         t.ID,
-		"proplet_id": propellerID,
+		"proplet_id": propletID,
 	}
 
 	topic := svc.baseTopic + "/control/manager/stop"
@@ -305,7 +269,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	if err := svc.taskPropletDB.Delete(ctx, taskID); err != nil {
+	if err := svc.taskPropletRepo.Delete(ctx, taskID); err != nil {
 		return err
 	}
 
@@ -330,39 +294,11 @@ func (svc *service) Subscribe(ctx context.Context) error {
 	return nil
 }
 
-func filterAndPaginateMetrics[T any](data []any, offset, limit uint64, filterFn func(any) (T, bool)) (entities []T, total uint64) {
-	var filtered []T
-	for _, item := range data {
-		if value, ok := filterFn(item); ok {
-			filtered = append(filtered, value)
-		}
-	}
-
-	totalFiltered := uint64(len(filtered))
-
-	if offset >= totalFiltered {
-		return []T{}, totalFiltered
-	}
-
-	start := offset
-	end := min(offset+limit, totalFiltered)
-
-	return filtered[start:end], totalFiltered
-}
-
 func (svc *service) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (TaskMetricsPage, error) {
-	data, _, err := svc.metricsDB.List(ctx, 0, 100000)
+	metrics, total, err := svc.metricsRepo.ListTaskMetrics(ctx, taskID, offset, limit)
 	if err != nil {
 		return TaskMetricsPage{}, err
 	}
-
-	metrics, total := filterAndPaginateMetrics(data, offset, limit, func(item any) (TaskMetrics, bool) {
-		if m, ok := item.(TaskMetrics); ok && m.TaskID == taskID {
-			return m, true
-		}
-
-		return TaskMetrics{}, false
-	})
 
 	return TaskMetricsPage{
 		Offset:  offset,
@@ -373,18 +309,10 @@ func (svc *service) GetTaskMetrics(ctx context.Context, taskID string, offset, l
 }
 
 func (svc *service) GetPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) (PropletMetricsPage, error) {
-	data, _, err := svc.metricsDB.List(ctx, 0, 100000)
+	metrics, total, err := svc.metricsRepo.ListPropletMetrics(ctx, propletID, offset, limit)
 	if err != nil {
 		return PropletMetricsPage{}, err
 	}
-
-	metrics, total := filterAndPaginateMetrics(data, offset, limit, func(item any) (PropletMetrics, bool) {
-		if m, ok := item.(PropletMetrics); ok && m.PropletID == propletID {
-			return m, true
-		}
-
-		return PropletMetrics{}, false
-	})
 
 	return PropletMetricsPage{
 		Offset:  offset,
@@ -429,7 +357,7 @@ func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any
 		ID:   propletID,
 		Name: namegen.Generate(),
 	}
-	if err := svc.propletsDB.Create(ctx, p.ID, p); err != nil {
+	if err := svc.propletRepo.Create(ctx, p); err != nil {
 		return err
 	}
 
@@ -458,7 +386,7 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]an
 	if len(p.AliveHistory) > aliveHistoryLimit {
 		p.AliveHistory = p.AliveHistory[1:]
 	}
-	if err := svc.propletsDB.Update(ctx, propletID, p); err != nil {
+	if err := svc.propletRepo.Update(ctx, p); err != nil {
 		return err
 	}
 
@@ -488,7 +416,7 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		t.Error = errMsg
 	}
 
-	if err := svc.tasksDB.Update(ctx, t.ID, t); err != nil {
+	if err := svc.taskRepo.Update(ctx, t); err != nil {
 		return err
 	}
 
@@ -659,8 +587,7 @@ func (svc *service) handleTaskMetrics(ctx context.Context, msg map[string]any) e
 		taskMetrics.Aggregated = svc.parseAggregatedMetrics(aggData)
 	}
 
-	key := fmt.Sprintf("%s:%d", taskID, taskMetrics.Timestamp.UnixNano())
-	if err := svc.metricsDB.Create(ctx, key, taskMetrics); err != nil {
+	if err := svc.metricsRepo.CreateTaskMetrics(ctx, taskMetrics); err != nil {
 		svc.logger.WarnContext(ctx, "failed to store task metrics", "error", err, "task_id", taskID)
 
 		return err
@@ -701,8 +628,7 @@ func (svc *service) handlePropletMetrics(ctx context.Context, msg map[string]any
 		propletMetrics.Memory = svc.parseMemoryMetrics(memData)
 	}
 
-	key := fmt.Sprintf("%s:%d", propletID, propletMetrics.Timestamp.UnixNano())
-	if err := svc.metricsDB.Create(ctx, key, propletMetrics); err != nil {
+	if err := svc.metricsRepo.CreatePropletMetrics(ctx, propletMetrics); err != nil {
 		svc.logger.WarnContext(ctx, "failed to store proplet metrics", "error", err, "proplet_id", propletID)
 
 		return err
@@ -814,13 +740,13 @@ func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetric
 }
 
 func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID string) error {
-	return svc.taskPropletDB.Create(ctx, taskID, propletID)
+	return svc.taskPropletRepo.Create(ctx, taskID, propletID)
 }
 
 func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 
-	return svc.tasksDB.Update(ctx, t.ID, *t)
+	return svc.taskRepo.Update(ctx, *t)
 }
 
 func (svc *service) publishStart(ctx context.Context, t task.Task, propletID string) error {
@@ -847,7 +773,7 @@ func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet,
 	newCount := max(int64(p.TaskCount)+delta, 0)
 	p.TaskCount = uint64(newCount)
 
-	return svc.propletsDB.Update(ctx, p.ID, p)
+	return svc.propletRepo.Update(ctx, p)
 }
 
 func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
@@ -855,5 +781,5 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	t.StartTime = time.Now()
 	t.UpdatedAt = time.Now()
 
-	return svc.tasksDB.Update(ctx, t.ID, *t)
+	return svc.taskRepo.Update(ctx, *t)
 }
