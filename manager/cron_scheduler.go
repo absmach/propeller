@@ -16,11 +16,11 @@ const (
 )
 
 type CronScheduler struct {
-	tasksDB   storage.Storage
-	service   Service
-	logger    *slog.Logger
+	tasksDB       storage.Storage
+	service       Service
+	logger        *slog.Logger
 	checkInterval time.Duration
-	stopChan  chan struct{}
+	stopChan      chan struct{}
 }
 
 func NewCronScheduler(tasksDB storage.Storage, service Service, logger *slog.Logger) *CronScheduler {
@@ -34,6 +34,10 @@ func NewCronScheduler(tasksDB storage.Storage, service Service, logger *slog.Log
 }
 
 func (cs *CronScheduler) Start(ctx context.Context) error {
+	if err := cs.loadScheduledTasks(ctx); err != nil {
+		cs.logger.Warn("failed to load scheduled tasks from storage", slog.String("error", err.Error()))
+	}
+
 	ticker := time.NewTicker(cs.checkInterval)
 	defer ticker.Stop()
 
@@ -184,6 +188,45 @@ func (cs *CronScheduler) UnscheduleTask(ctx context.Context, taskID string) erro
 
 	if err := cs.tasksDB.Update(ctx, updatedTask.ID, updatedTask); err != nil {
 		return fmt.Errorf("failed to unschedule task: %w", err)
+	}
+
+	return nil
+}
+
+func (cs *CronScheduler) loadScheduledTasks(ctx context.Context) error {
+	data, _, err := cs.tasksDB.List(ctx, 0, 10000)
+	if err != nil {
+		return fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	loadedCount := 0
+	for i := range data {
+		t, ok := data[i].(task.Task)
+		if !ok {
+			continue
+		}
+
+		if t.Schedule == "" {
+			continue
+		}
+
+		now := time.Now()
+		if t.NextRun.IsZero() || t.NextRun.Before(now) {
+			if err := cs.updateNextRun(ctx, t); err != nil {
+				cs.logger.Warn("failed to update next run for scheduled task on load",
+					slog.String("task_id", t.ID),
+					slog.String("error", err.Error()))
+				continue
+			}
+			loadedCount++
+		} else {
+			loadedCount++
+		}
+	}
+
+	if loadedCount > 0 {
+		cs.logger.Info("loaded scheduled tasks from storage",
+			slog.Int("count", loadedCount))
 	}
 
 	return nil

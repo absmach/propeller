@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/absmach/propeller"
@@ -47,6 +48,8 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
+	StorageType string  `env:"MANAGER_STORAGE_TYPE" envDefault:"file"` // "memory" or "file"
+	DataDir     string  `env:"MANAGER_DATA_DIR"     envDefault:"./data"`
 }
 
 func main() {
@@ -116,11 +119,47 @@ func main() {
 		return
 	}
 
+	var tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage
+
+	if cfg.StorageType == "memory" {
+		logger.Info("using in-memory storage")
+		tasksDB = storage.NewInMemoryStorage()
+		propletsDB = storage.NewInMemoryStorage()
+		taskPropletDB = storage.NewInMemoryStorage()
+		metricsDB = storage.NewInMemoryStorage()
+	} else {
+		logger.Info("using file-based persistent storage", slog.String("data_dir", cfg.DataDir))
+
+		tasksDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "tasks"))
+		if err != nil {
+			logger.Error("failed to initialize tasks storage", slog.String("error", err.Error()))
+			return
+		}
+
+		propletsDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "proplets"))
+		if err != nil {
+			logger.Error("failed to initialize proplets storage", slog.String("error", err.Error()))
+			return
+		}
+
+		taskPropletDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "task_proplet"))
+		if err != nil {
+			logger.Error("failed to initialize task-proplet storage", slog.String("error", err.Error()))
+			return
+		}
+
+		metricsDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "metrics"))
+		if err != nil {
+			logger.Error("failed to initialize metrics storage", slog.String("error", err.Error()))
+			return
+		}
+	}
+
 	svc := manager.NewService(
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
+		tasksDB,
+		propletsDB,
+		taskPropletDB,
+		metricsDB,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
 		cfg.DomainID,
