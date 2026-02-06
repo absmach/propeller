@@ -28,6 +28,40 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+func initFileStorage(dataDir string, logger *slog.Logger) (tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage, err error) {
+	logger.Info("using file-based persistent storage", slog.String("data_dir", dataDir))
+
+	tasksDB, err = storage.NewFileStorage(filepath.Join(dataDir, "tasks"))
+	if err != nil {
+		logger.Error("failed to initialize tasks storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	propletsDB, err = storage.NewFileStorage(filepath.Join(dataDir, "proplets"))
+	if err != nil {
+		logger.Error("failed to initialize proplets storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	taskPropletDB, err = storage.NewFileStorage(filepath.Join(dataDir, "task_proplet"))
+	if err != nil {
+		logger.Error("failed to initialize task-proplet storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	metricsDB, err = storage.NewFileStorage(filepath.Join(dataDir, "metrics"))
+	if err != nil {
+		logger.Error("failed to initialize metrics storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	return tasksDB, propletsDB, taskPropletDB, metricsDB, nil
+}
+
 const (
 	svcName       = "manager"
 	defHTTPPort   = "7070"
@@ -128,29 +162,8 @@ func main() {
 		taskPropletDB = storage.NewInMemoryStorage()
 		metricsDB = storage.NewInMemoryStorage()
 	} else {
-		logger.Info("using file-based persistent storage", slog.String("data_dir", cfg.DataDir))
-
-		tasksDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "tasks"))
+		tasksDB, propletsDB, taskPropletDB, metricsDB, err = initFileStorage(cfg.DataDir, logger)
 		if err != nil {
-			logger.Error("failed to initialize tasks storage", slog.String("error", err.Error()))
-			return
-		}
-
-		propletsDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "proplets"))
-		if err != nil {
-			logger.Error("failed to initialize proplets storage", slog.String("error", err.Error()))
-			return
-		}
-
-		taskPropletDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "task_proplet"))
-		if err != nil {
-			logger.Error("failed to initialize task-proplet storage", slog.String("error", err.Error()))
-			return
-		}
-
-		metricsDB, err = storage.NewFileStorage(filepath.Join(cfg.DataDir, "metrics"))
-		if err != nil {
-			logger.Error("failed to initialize metrics storage", slog.String("error", err.Error()))
 			return
 		}
 	}

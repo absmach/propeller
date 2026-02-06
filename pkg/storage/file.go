@@ -21,6 +21,7 @@ const (
 
 type fileStorage struct {
 	sync.RWMutex
+
 	dataDir string
 }
 
@@ -34,17 +35,13 @@ func NewFileStorage(dataDir string) (Storage, error) {
 		dataDir = defaultDataDir
 	}
 
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
 	return &fileStorage{
 		dataDir: dataDir,
 	}, nil
-}
-
-func (s *fileStorage) filePath(key string) string {
-	return filepath.Join(s.dataDir, key+".json")
 }
 
 func (s *fileStorage) Create(ctx context.Context, key string, value any) error {
@@ -79,6 +76,7 @@ func (s *fileStorage) Get(ctx context.Context, key string) (any, error) {
 		if os.IsNotExist(err) {
 			return nil, errors.ErrNotFound
 		}
+
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
@@ -104,13 +102,14 @@ func (s *fileStorage) Update(ctx context.Context, key string, value any) error {
 		if os.IsNotExist(err) {
 			return errors.ErrNotFound
 		}
+
 		return fmt.Errorf("failed to check file: %w", err)
 	}
 
 	return s.writeFile(ctx, filePath, value)
 }
 
-func (s *fileStorage) List(ctx context.Context, offset, limit uint64) ([]any, uint64, error) {
+func (s *fileStorage) List(ctx context.Context, offset, limit uint64) (result []any, total uint64, err error) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -127,17 +126,14 @@ func (s *fileStorage) List(ctx context.Context, offset, limit uint64) ([]any, ui
 	}
 	sort.Strings(files)
 
-	total := uint64(len(files))
+	total = uint64(len(files))
 	if offset >= total {
 		return nil, total, nil
 	}
 
-	end := offset + limit
-	if end > total {
-		end = total
-	}
+	end := min(offset+limit, total)
 
-	result := make([]any, 0, end-offset)
+	result = make([]any, 0, end-offset)
 	for i := offset; i < end; i++ {
 		key := files[i][:len(files[i])-5]
 		filePath := s.filePath(key)
@@ -152,6 +148,7 @@ func (s *fileStorage) List(ctx context.Context, offset, limit uint64) ([]any, ui
 			value, err := s.unmarshalByType(stored.Type, stored.Value)
 			if err == nil {
 				result = append(result, value)
+
 				continue
 			}
 		}
@@ -179,10 +176,15 @@ func (s *fileStorage) Delete(ctx context.Context, key string) error {
 		if os.IsNotExist(err) {
 			return errors.ErrNotFound
 		}
+
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 
 	return nil
+}
+
+func (s *fileStorage) filePath(key string) string {
+	return filepath.Join(s.dataDir, key+".json")
 }
 
 func (s *fileStorage) writeFile(ctx context.Context, filePath string, value any) error {
@@ -210,12 +212,13 @@ func (s *fileStorage) writeFile(ctx context.Context, filePath string, value any)
 	}
 
 	tmpPath := filePath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write temporary file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, filePath); err != nil {
 		_ = os.Remove(tmpPath)
+
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 
@@ -231,6 +234,7 @@ func (s *fileStorage) getTypeName(value any) string {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+
 	return t.String()
 }
 
@@ -241,24 +245,28 @@ func (s *fileStorage) unmarshalByType(typeName string, data json.RawMessage) (an
 		if err := json.Unmarshal(data, &t); err != nil {
 			return nil, err
 		}
+
 		return t, nil
 	case "proplet.Proplet":
 		var p proplet.Proplet
 		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, err
 		}
+
 		return p, nil
 	case "string":
 		var s string
 		if err := json.Unmarshal(data, &s); err != nil {
 			return nil, err
 		}
+
 		return s, nil
 	default:
 		var m map[string]any
 		if err := json.Unmarshal(data, &m); err != nil {
 			return nil, err
 		}
+
 		return m, nil
 	}
 }
@@ -287,5 +295,6 @@ func (s *fileStorage) unmarshalByDetection(data []byte) (any, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal data: %w", err)
 	}
+
 	return m, nil
 }

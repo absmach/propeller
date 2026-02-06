@@ -9,7 +9,7 @@ import (
 
 var (
 	ErrInvalidCronExpression = errors.New("invalid cron expression")
-	ErrInvalidTimezone        = errors.New("invalid timezone")
+	ErrInvalidTimezone       = errors.New("invalid timezone")
 )
 
 type CronSchedule struct {
@@ -36,6 +36,7 @@ func ParseCronExpression(expr string) (*CronSchedule, error) {
 
 func ValidateCronExpression(expr string) error {
 	_, err := ParseCronExpression(expr)
+
 	return err
 }
 

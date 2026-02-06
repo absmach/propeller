@@ -26,6 +26,7 @@ const (
 	defLimit          = 100
 	aliveHistoryLimit = 10
 	defaultPriority   = 50
+	defaultTimezone   = "UTC"
 )
 
 var (
@@ -155,7 +156,7 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 
 		timezone := t.Timezone
 		if timezone == "" {
-			timezone = "UTC"
+			timezone = defaultTimezone
 		}
 
 		t.NextRun = cron.CalculateNextRun(schedule, time.Now(), timezone)
@@ -244,7 +245,7 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 
 		timezone := t.Timezone
 		if timezone == "" {
-			timezone = "UTC"
+			timezone = defaultTimezone
 		}
 
 		dbT.Schedule = t.Schedule
@@ -263,16 +264,20 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 		return task.Task{}, err
 	}
 
-	if scheduleChanged && svc.cronScheduler != nil {
-		if dbT.Schedule != "" {
-			if err := svc.cronScheduler.ScheduleTask(ctx, dbT.ID); err != nil {
-				svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
-			}
-		} else {
-			if err := svc.cronScheduler.UnscheduleTask(ctx, dbT.ID); err != nil {
-				svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
-			}
+	if !scheduleChanged || svc.cronScheduler == nil {
+		return dbT, nil
+	}
+
+	if dbT.Schedule != "" {
+		if err := svc.cronScheduler.ScheduleTask(ctx, dbT.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
 		}
+
+		return dbT, nil
+	}
+
+	if err := svc.cronScheduler.UnscheduleTask(ctx, dbT.ID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
 	}
 
 	return dbT, nil
@@ -474,6 +479,14 @@ func (svc *service) GetPropletMetrics(ctx context.Context, propletID string, off
 		Total:   total,
 		Metrics: metrics,
 	}, nil
+}
+
+func (svc *service) StartCronScheduler(ctx context.Context) error {
+	if svc.cronScheduler == nil {
+		return nil
+	}
+
+	return svc.cronScheduler.Start(ctx)
 }
 
 func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]any) error {
@@ -938,12 +951,4 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 	t.UpdatedAt = time.Now()
 
 	return svc.tasksDB.Update(ctx, t.ID, *t)
-}
-
-func (svc *service) StartCronScheduler(ctx context.Context) error {
-	if svc.cronScheduler == nil {
-		return nil
-	}
-
-	return svc.cronScheduler.Start(ctx)
 }

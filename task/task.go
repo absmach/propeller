@@ -70,7 +70,7 @@ type Task struct {
 	UpdatedAt         time.Time                  `json:"updated_at"`
 	Mode              Mode                       `json:"mode,omitempty"`
 	Schedule          string                     `json:"schedule,omitempty"`
-	NextRun           time.Time                  `json:"next_run,omitempty"`
+	NextRun           time.Time                  `json:"next_run"`
 	IsRecurring       bool                       `json:"is_recurring,omitempty"`
 	Timezone          string                     `json:"timezone,omitempty"`
 	Priority          int                        `json:"priority,omitempty"`
