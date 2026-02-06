@@ -47,6 +47,7 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
+	Storage     storage.Config
 }
 
 func main() {
@@ -116,11 +117,15 @@ func main() {
 		return
 	}
 
+	repos, err := storage.NewRepositories(cfg.Storage)
+	if err != nil {
+		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
+
+		return
+	}
+
 	svc := manager.NewService(
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
+		repos,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
 		cfg.DomainID,

@@ -30,6 +30,7 @@ linters:
       enable-all: true
       disabled-checks:
         - hugeParam
+        - whyNoLint
   exclusions:
     generated: lax
     presets:
