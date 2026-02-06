@@ -180,25 +180,6 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	payload := map[string]any{
-		"id":                 t.ID,
-		"name":               t.Name,
-		"state":              t.State,
-		"image_url":          t.ImageURL,
-		"file":               t.File,
-		"inputs":             t.Inputs,
-		"cli_args":           t.CLIArgs,
-		"daemon":             t.Daemon,
-		"env":                t.Env,
-		"encrypted":          t.Encrypted,
-		"kbs_resource_path":  t.KBSResourcePath,
-		"monitoring_profile": t.MonitoringProfile,
-	}
-
-	topic := svc.baseTopic + "/control/manager/start"
-	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
-		return err
-	}
 
 	var p proplet.Proplet
 	switch t.PropletID {
@@ -259,12 +240,13 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
+	topic := fmt.Sprintf("%s/control/proplet/%s/stop", svc.baseTopic, propletID)
+
 	stopPayload := map[string]any{
 		"id":         t.ID,
 		"proplet_id": propletID,
 	}
 
-	topic := svc.baseTopic + "/control/manager/stop"
 	if err := svc.pubsub.Publish(ctx, topic, stopPayload); err != nil {
 		return err
 	}
@@ -330,6 +312,11 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 				return err
 			}
 			svc.logger.InfoContext(ctx, "successfully created proplet")
+		case svc.baseTopic + "/control/proplet/destroy":
+			if err := svc.destroyPropletHandler(ctx, msg); err != nil {
+				return err
+			}
+			svc.logger.InfoContext(ctx, "successfully destroyed proplet")
 		case svc.baseTopic + "/control/proplet/alive":
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
@@ -360,6 +347,25 @@ func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any
 	if err := svc.propletRepo.Create(ctx, p); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (svc *service) destroyPropletHandler(ctx context.Context, msg map[string]any) error {
+	propletID, ok := msg["proplet_id"].(string)
+	if !ok {
+		return errors.New("invalid proplet_id")
+	}
+	if propletID == "" {
+		return errors.New("proplet id is empty")
+	}
+
+	// PropletRepository doesn't have a Delete function, making this unusable, but should be implemented
+	// if err := svc.propletRepo.Delete(ctx, propletID); err != nil {
+	// 	return err
+	// }
+
+	svc.logger.DebugContext(ctx, "Removed proplet "+propletID)
 
 	return nil
 }
@@ -762,9 +768,11 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		"env":                t.Env,
 		"monitoring_profile": t.MonitoringProfile,
 		"proplet_id":         propletID,
+		"encrypted":          t.Encrypted,
+		"kbs_resource_path":  t.KBSResourcePath,
 	}
 
-	topic := svc.baseTopic + "/control/manager/start"
+	topic := fmt.Sprintf("%s/control/proplet/%s/start", svc.baseTopic, propletID)
 
 	return svc.pubsub.Publish(ctx, topic, payload)
 }

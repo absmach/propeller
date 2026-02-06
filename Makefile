@@ -83,7 +83,7 @@ $(SERVICES):
 	$(call compile_service,$(@))
 
 $(RUST_SERVICES):
-	cd proplet && cargo build --release
+	cd proplet && cargo build --release && cp target/release/proplet ../$(BUILD_DIR)/proplet
 
 $(DOCKERS):
 	$(call make_docker,$(@),$(GOARCH))
@@ -160,3 +160,4 @@ help:
 	@echo "  start-supermq:    start the supermq docker compose"
 	@echo "  stop-supermq:     stop the supermq docker compose"
 	@echo "  help:             display this help message"
+
