@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/absmach/propeller"
@@ -26,6 +27,40 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
 )
+
+func initFileStorage(dataDir string, logger *slog.Logger) (tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage, err error) {
+	logger.Info("using file-based persistent storage", slog.String("data_dir", dataDir))
+
+	tasksDB, err = storage.NewFileStorage(filepath.Join(dataDir, "tasks"))
+	if err != nil {
+		logger.Error("failed to initialize tasks storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	propletsDB, err = storage.NewFileStorage(filepath.Join(dataDir, "proplets"))
+	if err != nil {
+		logger.Error("failed to initialize proplets storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	taskPropletDB, err = storage.NewFileStorage(filepath.Join(dataDir, "task_proplet"))
+	if err != nil {
+		logger.Error("failed to initialize task-proplet storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	metricsDB, err = storage.NewFileStorage(filepath.Join(dataDir, "metrics"))
+	if err != nil {
+		logger.Error("failed to initialize metrics storage", slog.String("error", err.Error()))
+
+		return nil, nil, nil, nil, err
+	}
+
+	return tasksDB, propletsDB, taskPropletDB, metricsDB, nil
+}
 
 const (
 	svcName       = "manager"
@@ -47,6 +82,8 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
+	StorageType string  `env:"MANAGER_STORAGE_TYPE" envDefault:"file"` // "memory" or "file"
+	DataDir     string  `env:"MANAGER_DATA_DIR"     envDefault:"./data"`
 }
 
 func main() {
@@ -116,11 +153,26 @@ func main() {
 		return
 	}
 
+	var tasksDB, propletsDB, taskPropletDB, metricsDB storage.Storage
+
+	if cfg.StorageType == "memory" {
+		logger.Info("using in-memory storage")
+		tasksDB = storage.NewInMemoryStorage()
+		propletsDB = storage.NewInMemoryStorage()
+		taskPropletDB = storage.NewInMemoryStorage()
+		metricsDB = storage.NewInMemoryStorage()
+	} else {
+		tasksDB, propletsDB, taskPropletDB, metricsDB, err = initFileStorage(cfg.DataDir, logger)
+		if err != nil {
+			return
+		}
+	}
+
 	svc := manager.NewService(
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
-		storage.NewInMemoryStorage(),
+		tasksDB,
+		propletsDB,
+		taskPropletDB,
+		metricsDB,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
 		cfg.DomainID,
@@ -137,6 +189,10 @@ func main() {
 
 		return
 	}
+
+	g.Go(func() error {
+		return svc.StartCronScheduler(ctx)
+	})
 
 	httpServerConfig := server.Config{Port: defHTTPPort}
 	if err := env.ParseWithOptions(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {
