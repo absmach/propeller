@@ -80,6 +80,7 @@ impl Runtime for HostRuntime {
             cmd.arg("--invoke").arg(&config.function_name);
         }
 
+        // cli_args are passed directly to the runtime (e.g., -S nn, --dir=fixture)
         for arg in &config.cli_args {
             cmd.arg(arg);
         }

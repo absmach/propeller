@@ -1,3 +1,6 @@
+# Generic Dockerfile for Go services (manager, proxy)
+# For proplet images, use Dockerfile.proplet (base) or Dockerfile.proplet-wasinn (wasi-nn)
+
 FROM golang:1.25.5-alpine3.22 AS builder
 ARG SVC
 ARG GOARCH
@@ -8,8 +11,7 @@ ARG TIME
 
 WORKDIR /go/src/github.com/absmach/propeller
 COPY . .
-RUN apk update \
-    && apk add make upx\
+RUN apk add --no-cache make upx \
     && make $SVC \
     && upx build/$SVC \
     && mv build/$SVC /exe

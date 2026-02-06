@@ -138,6 +138,9 @@ services:
       SMQ_AUTH_ADAPTER_INSTANCE_ID: ${SMQ_AUTH_ADAPTER_INSTANCE_ID}
       SMQ_ES_URL: ${SMQ_ES_URL}
       SMQ_AUTH_CACHE_URL: ${SMQ_AUTH_CACHE_URL}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
+      SMQ_AUTH_KEYS_ACTIVE_KEY_PATH: ${SMQ_AUTH_KEYS_ACTIVE_KEY_PATH:+/keys/active.key}
+      SMQ_AUTH_KEYS_RETIRING_KEY_PATH: ${SMQ_AUTH_KEYS_RETIRING_KEY_PATH:+/keys/retiring.key}
     ports:
       - ${SMQ_AUTH_HTTP_PORT}:${SMQ_AUTH_HTTP_PORT}
       - ${SMQ_AUTH_GRPC_PORT}:${SMQ_AUTH_GRPC_PORT}
@@ -181,6 +184,16 @@ services:
       - type: bind
         source: ${SMQ_AUTH_CALLOUT_CLIENT_CA_CERTS:-ssl/certs/dummy/client_ca_certs}
         target: /auth-callout-client-ca${SMQ_AUTH_CALLOUT_CLIENT_CA_CERTS:+.crt}
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_AUTH_KEYS_ACTIVE_KEY_PATH:-./keys/active.key}
+        target: /keys/active.key
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${SMQ_AUTH_KEYS_RETIRING_KEY_PATH:-./keys/retiring.key}
+        target: /keys/retiring.key
         bind:
           create_host_path: true
 
@@ -252,6 +265,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_GROUPS_GRPC_URL: ${SMQ_GROUPS_GRPC_URL}
       SMQ_GROUPS_GRPC_TIMEOUT: ${SMQ_GROUPS_GRPC_TIMEOUT}
       SMQ_GROUPS_GRPC_CLIENT_CERT: ${SMQ_GROUPS_GRPC_CLIENT_CERT:+/groups-grpc-client.crt}
@@ -286,6 +300,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Auth gRPC mTLS server certificates
       - type: bind
@@ -481,6 +496,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_CHANNELS_URL: ${SMQ_CHANNELS_URL}
       SMQ_CHANNELS_GRPC_URL: ${SMQ_CHANNELS_GRPC_URL}
       SMQ_CHANNELS_GRPC_TIMEOUT: ${SMQ_CHANNELS_GRPC_TIMEOUT}
@@ -520,6 +536,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Clients gRPC server certificates
       - type: bind
@@ -671,6 +688,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_CLIENTS_GRPC_URL: ${SMQ_CLIENTS_GRPC_URL}
       SMQ_CLIENTS_GRPC_TIMEOUT: ${SMQ_CLIENTS_GRPC_TIMEOUT}
       SMQ_CLIENTS_GRPC_CLIENT_CERT: ${SMQ_CLIENTS_GRPC_CLIENT_CERT:+/clients-grpc-client.crt}
@@ -709,6 +727,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Channels gRPC server certificates
       - type: bind
@@ -868,6 +887,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_DOMAINS_GRPC_URL: ${SMQ_DOMAINS_GRPC_URL}
       SMQ_DOMAINS_GRPC_TIMEOUT: ${SMQ_DOMAINS_GRPC_TIMEOUT}
       SMQ_DOMAINS_GRPC_CLIENT_CERT: ${SMQ_DOMAINS_GRPC_CLIENT_CERT:+/domains-grpc-client.crt}
@@ -1052,6 +1072,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_SPICEDB_PRE_SHARED_KEY: ${SMQ_SPICEDB_PRE_SHARED_KEY}
       SMQ_SPICEDB_HOST: ${SMQ_SPICEDB_HOST}
       SMQ_SPICEDB_PORT: ${SMQ_SPICEDB_PORT}
@@ -1071,6 +1092,7 @@ services:
     networks:
       - supermq-base-net
     volumes:
+      - ./permission.yaml:/permission.yaml
       - ./spicedb/schema.zed:${SMQ_SPICEDB_SCHEMA_FILE}
       # Groups gRPC server certificates
       - type: bind
@@ -1305,6 +1327,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL}
       SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
       SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
@@ -1535,6 +1558,7 @@ services:
       SMQ_AUTH_GRPC_CLIENT_CERT: ${SMQ_AUTH_GRPC_CLIENT_CERT:+/auth-grpc-client.crt}
       SMQ_AUTH_GRPC_CLIENT_KEY: ${SMQ_AUTH_GRPC_CLIENT_KEY:+/auth-grpc-client.key}
       SMQ_AUTH_GRPC_SERVER_CA_CERTS: ${SMQ_AUTH_GRPC_SERVER_CA_CERTS:+/auth-grpc-server-ca.crt}
+      SMQ_AUTH_KEYS_ALGORITHM: ${SMQ_AUTH_KEYS_ALGORITHM}
       SMQ_MESSAGE_BROKER_URL: ${SMQ_MESSAGE_BROKER_URL}
       SMQ_JAEGER_URL: ${SMQ_JAEGER_URL}
       SMQ_JAEGER_TRACE_RATIO: ${SMQ_JAEGER_TRACE_RATIO}
@@ -1683,8 +1707,19 @@ services:
     # volumes:
     #   - ./config.toml:/config.toml
 
+  # Proplet - WebAssembly edge runtime
+  # Available images:
+  # Proplet image tags:
+  #   - latest   (base, lightweight)
+  #   - wasi-nn  (with wasi-nn/OpenVINO, x86_64 only)
+  #
+  # For wasi-nn support, set in .env:
+  #   1. PROPLET_IMAGE_TAG=wasi-nn
+  #   2. PROPLET_EXTERNAL_WASM_RUNTIME=wasmtime
+  # Then uncomment platform: linux/amd64 below
+  #   4. Uncomment fixture volume mount
   proplet:
-    image: ghcr.io/absmach/propeller/proplet:${PROP_RELEASE_TAG}
+    image: ghcr.io/absmach/propeller/proplet:${PROPLET_IMAGE_TAG:-latest}
     container_name: propeller-proplet
     restart: on-failure
     depends_on:
@@ -1711,12 +1746,19 @@ services:
       COORDINATOR_URL: ${COORDINATOR_URL:-http://coordinator-http:8080}
       MODEL_REGISTRY_URL: ${MODEL_REGISTRY_URL:-http://model-registry:8081}
       DATA_STORE_URL: ${DATA_STORE_URL:-http://local-data-store:8083}
+      DYLD_LIBRARY_PATH: "/opt/homebrew/lib"
     networks:
       - supermq-base-net
+    # Uncomment platform for wasi-nn image (OpenVINO requires x86_64)
+    # platform: linux/amd64
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
+    # config.toml is generated by running 'propeller-cli provision'
+    # To run wasi-nn examples, uncomment the fixture volume and create the directory with model files.
+    # See examples/wasi-nn/README.md for setup instructions.
     # volumes:
-    #   - ./config.toml:/home/proplet/config.toml
+    #   - ../config.toml:/config.toml
+    #   - ../fixture:/home/proplet/fixture
 
   proxy:
     image: ghcr.io/absmach/propeller/proxy:${PROP_RELEASE_TAG}
@@ -1744,5 +1786,5 @@ services:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
-    # volumes:
-    #   - ./config.toml:/config.toml
+  # volumes:
+  #   - ./config.toml:/config.toml

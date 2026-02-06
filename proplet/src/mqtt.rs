@@ -36,6 +36,7 @@ impl PubSub {
         mqtt_options.set_credentials(config.username, config.password);
         mqtt_options.set_max_packet_size(config.max_packet_size, config.max_packet_size);
         mqtt_options.set_inflight(config.inflight);
+        mqtt_options.set_clean_session(false);
 
         if use_tls {
             let transport = rumqttc::Transport::tls_with_default_config();

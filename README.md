@@ -22,7 +22,7 @@
 
 ![Propeller Orchestration Diagram](docs/architecture.svg)
 
-##  Documentation
+## Documentation
 
 For setup instructions, API references, and usage examples, see the documentation:
 🔗 [Documentation Link](https://docs.propeller.absmach.eu/)
@@ -34,6 +34,7 @@ For setup instructions, API references, and usage examples, see the documentatio
 - 🌎 **Smart Cities**: Power scalable IoT networks with efficient communication and dynamic workloads.
 - ☁️ **Serverless Applications**: Deploy FaaS applications leveraging Propeller's Wasm orchestration capabilities.
 - 🧠 **Federated Machine Learning**: Train machine learning models across distributed edge devices without exposing raw data, perfect for privacy-sensitive applications.
+- 🤖 **ML Inference**: Run machine learning models at the edge using wasi-nn with OpenVINO backend.
 
 ## 🤝 Contributing
 

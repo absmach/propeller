@@ -1,3 +1,9 @@
+# Base Proplet image (without wasi-nn support)
+# Lightweight Alpine-based image for standard WebAssembly workloads
+#
+# Build: docker build -f docker/Dockerfile.proplet -t ghcr.io/absmach/propeller/proplet:latest .
+# Tag:   ghcr.io/absmach/propeller/proplet:latest
+
 FROM rust:1.83-alpine AS builder
 
 ARG VERSION
@@ -30,9 +36,9 @@ ARG WASMTIME_VERSION=39.0.1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        wget \
-        xz-utils && \
+    ca-certificates \
+    wget \
+    xz-utils && \
     wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
     tar -xf wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
     mv wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/ && \

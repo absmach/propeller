@@ -35,3 +35,8 @@ jobs:
       - name: Build and push Docker images
         run: |
           make latest -j $(nproc)
+
+      - name: Build and push proplet wasi-nn image
+        run: |
+          make docker_proplet_wasinn
+          make push_proplet_wasinn
