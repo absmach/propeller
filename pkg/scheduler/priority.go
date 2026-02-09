@@ -3,25 +3,10 @@ package scheduler
 import (
 	"sort"
 
-	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/task"
 )
 
 const defaultPriority = 50
-
-type priorityScheduler struct {
-	base Scheduler
-}
-
-func NewPriority(base Scheduler) Scheduler {
-	return &priorityScheduler{
-		base: base,
-	}
-}
-
-func (ps *priorityScheduler) SelectProplet(t task.Task, proplets []proplet.Proplet) (proplet.Proplet, error) {
-	return ps.base.SelectProplet(t, proplets)
-}
 
 func GetReadyTasksByPriority(tasks []task.Task) []task.Task {
 	sorted := make([]task.Task, len(tasks))

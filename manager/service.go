@@ -60,7 +60,7 @@ func NewService(
 	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
-) Service {
+) (Service, *CronScheduler) {
 	coordinatorURL := os.Getenv("COORDINATOR_URL")
 	var httpClient *http.Client
 	if coordinatorURL != "" {
@@ -86,9 +86,10 @@ func NewService(
 	}
 	svc.coordinator = NewWorkflowCoordinator(repos.Tasks, svc, logger)
 
-	svc.cronScheduler = NewCronScheduler(repos.Tasks, svc, logger)
+	cronSched := NewCronScheduler(repos.Tasks, svc, logger)
+	svc.cronScheduler = cronSched
 
-	return svc
+	return svc, cronSched
 }
 
 func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
@@ -177,13 +178,9 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 	}
 
 	if t.Schedule != "" {
-		if err := cron.ValidateCronExpression(t.Schedule); err != nil {
-			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
-		}
-
 		schedule, err := cron.ParseCronExpression(t.Schedule)
 		if err != nil {
-			return task.Task{}, fmt.Errorf("failed to parse cron expression: %w", err)
+			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
 		}
 
 		timezone := t.Timezone
@@ -511,13 +508,9 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 
 	scheduleChanged := false
 	if t.Schedule != "" && t.Schedule != dbT.Schedule {
-		if err := cron.ValidateCronExpression(t.Schedule); err != nil {
-			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
-		}
-
 		schedule, err := cron.ParseCronExpression(t.Schedule)
 		if err != nil {
-			return task.Task{}, fmt.Errorf("failed to parse cron expression: %w", err)
+			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
 		}
 
 		timezone := t.Timezone

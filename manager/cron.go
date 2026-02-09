@@ -7,13 +7,12 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/pkg/cron"
+	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/task"
 )
 
-const (
-	defaultCronCheckInterval = 1 * time.Minute
-)
+const defaultCronCheckInterval = time.Minute
 
 type CronScheduler struct {
 	tasksDB       storage.TaskRepository
@@ -101,16 +100,18 @@ func (cs *CronScheduler) processScheduledTasks(ctx context.Context) error {
 	}
 
 	now := time.Now()
+	var dueTasks []task.Task
 	for i := range tasks {
 		t := tasks[i]
-
-		if t.Schedule == "" {
-			continue
+		if t.Schedule != "" && !t.NextRun.IsZero() && !t.NextRun.After(now) {
+			dueTasks = append(dueTasks, t)
 		}
+	}
 
-		if t.NextRun.IsZero() || t.NextRun.After(now) {
-			continue
-		}
+	dueTasks = scheduler.GetReadyTasksByPriority(dueTasks)
+
+	for i := range dueTasks {
+		t := dueTasks[i]
 
 		if err := cs.triggerScheduledTask(ctx, t); err != nil {
 			cs.logger.Error("failed to trigger scheduled task",

@@ -7,14 +7,11 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-var (
-	ErrInvalidCronExpression = errors.New("invalid cron expression")
-	ErrInvalidTimezone       = errors.New("invalid timezone")
-)
+var ErrInvalidCronExpression = errors.New("invalid cron expression")
 
 type CronSchedule struct {
-	Parser cron.Parser
-	Spec   cron.Schedule
+	parser cron.Parser
+	spec   cron.Schedule
 }
 
 func ParseCronExpression(expr string) (*CronSchedule, error) {
@@ -29,8 +26,8 @@ func ParseCronExpression(expr string) (*CronSchedule, error) {
 	}
 
 	return &CronSchedule{
-		Parser: parser,
-		Spec:   spec,
+		parser: parser,
+		spec:   spec,
 	}, nil
 }
 
@@ -41,7 +38,7 @@ func ValidateCronExpression(expr string) error {
 }
 
 func CalculateNextRun(schedule *CronSchedule, from time.Time, timezone string) time.Time {
-	if schedule == nil || schedule.Spec == nil {
+	if schedule == nil || schedule.spec == nil {
 		return time.Time{}
 	}
 
@@ -55,7 +52,7 @@ func CalculateNextRun(schedule *CronSchedule, from time.Time, timezone string) t
 	}
 
 	localTime := from.In(loc)
-	nextRun := schedule.Spec.Next(localTime)
+	nextRun := schedule.spec.Next(localTime)
 
 	return nextRun
 }

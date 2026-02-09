@@ -47,8 +47,6 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
-	StorageType string  `env:"MANAGER_STORAGE_TYPE" envDefault:"badger"` // "memory", "badger", "postgres", or "sqlite"
-	DataDir     string  `env:"MANAGER_DATA_DIR"     envDefault:"./data"`
 }
 
 func main() {
@@ -118,13 +116,11 @@ func main() {
 		return
 	}
 
-	storageCfg := storage.Config{
-		Type:    cfg.StorageType,
-		DataDir: cfg.DataDir,
-	}
+	storageCfg := storage.Config{}
+	if err := env.Parse(&storageCfg); err != nil {
+		logger.Error("failed to load storage configuration", slog.String("error", err.Error()))
 
-	if cfg.StorageType == "memory" {
-		logger.Info("using in-memory storage")
+		return
 	}
 
 	repos, err := storage.NewRepositories(storageCfg)
@@ -134,7 +130,7 @@ func main() {
 		return
 	}
 
-	svc := manager.NewService(
+	svc, cronScheduler := manager.NewService(
 		repos,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
@@ -154,7 +150,7 @@ func main() {
 	}
 
 	g.Go(func() error {
-		return svc.StartCronScheduler(ctx)
+		return cronScheduler.Start(ctx)
 	})
 
 	httpServerConfig := server.Config{Port: defHTTPPort}

@@ -554,19 +554,3 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 	return lm.svc.GetRoundStatus(ctx, roundID)
 }
 
-func (lm *loggingMiddleware) StartCronScheduler(ctx context.Context) (err error) {
-	defer func(begin time.Time) {
-		args := []any{
-			slog.String("duration", time.Since(begin).String()),
-		}
-		if err != nil {
-			args = append(args, slog.Any("error", err))
-			lm.logger.Warn("Start cron scheduler failed", args...)
-
-			return
-		}
-		lm.logger.Info("Start cron scheduler completed successfully", args...)
-	}(time.Now())
-
-	return lm.svc.StartCronScheduler(ctx)
-}

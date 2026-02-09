@@ -24,8 +24,6 @@ type Config struct {
 	SQLitePath string `env:"MANAGER_SQLITE_PATH" envDefault:"./propeller.db"`
 
 	BadgerPath string `env:"MANAGER_BADGER_PATH" envDefault:"./data/badger"`
-
-	DataDir string `env:"MANAGER_DATA_DIR" envDefault:"./data"`
 }
 
 type Repositories struct {
