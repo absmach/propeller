@@ -99,7 +99,6 @@ int task_monitor_start(const char *task_id)
   monitored_task_t *task = &g_monitored_tasks[slot];
   memset(task, 0, sizeof(*task));
 
-  task->in_use = true;
   strncpy(task->task_id, task_id, MAX_TASK_ID_LEN - 1);
   task->task_id[MAX_TASK_ID_LEN - 1] = '\0';
   task->start_time_ms = k_uptime_get();
@@ -111,6 +110,8 @@ int task_monitor_start(const char *task_id)
   task->memory_sum = task->current.memory_bytes;
   task->memory_max = task->current.memory_bytes;
   task->sample_count = 1;
+
+  task->in_use = true;
 
   k_mutex_unlock(&g_task_monitor_mutex);
 

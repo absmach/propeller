@@ -149,7 +149,7 @@ func handle(logger *slog.Logger, containerChan chan<- string) func(topic string,
 
 			return nil
 		case <-ctx.Done():
-			logger.Error("Channel full, request timed out waiting for available slot",
+			logger.Error("Channel full, request timed out waiting for containerChan slot",
 				slog.String("app_name", appName))
 
 			return errors.New("timeout waiting for container channel slot")

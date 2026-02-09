@@ -127,7 +127,7 @@ void publish_results_with_error(const char *domain_id,
                                 const char *results,
                                 const char *error_msg);
 
- * @brief Publish task-level metrics for a specific task.
+/** @brief Publish task-level metrics for a specific task.
  *
  * Publishes CPU, memory, and timing metrics for a running or recently
  * completed WASM task.
