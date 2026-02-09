@@ -10,6 +10,9 @@ use tracing::info;
 use wasmtime::*;
 use wasmtime_wasi::WasiCtxBuilder;
 
+// Epoch deadline sets the number of epochs that can elapse before a running WASM function is interrupted.
+const EPOCH_DEADLINE: u64 = 100;
+
 pub struct WasmtimeRuntime {
     engine: Engine,
     tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
@@ -70,7 +73,8 @@ impl Runtime for WasmtimeRuntime {
             .instantiate(&mut store, &module)
             .context("Failed to instantiate Wasmtime module")?;
 
-        store.set_epoch_deadline(1);
+        // Set epoch deadline for interruption (allow stop_app to terminate infinite loops)
+        store.set_epoch_deadline(EPOCH_DEADLINE);
 
         if config.daemon {
             info!("Running in daemon mode for task: {}", config.id);
