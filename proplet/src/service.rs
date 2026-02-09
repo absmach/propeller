@@ -58,6 +58,8 @@ pub struct PropletService {
     monitor: Arc<SystemMonitor>,
     metrics_collector: Arc<Mutex<MetricsCollector>>,
     http_client: HttpClient,
+    start_path: String,
+    stop_path: String,
 }
 
 impl PropletService {
@@ -73,6 +75,9 @@ impl PropletService {
                 HttpClient::new()
             });
 
+        let start_path = format!("control/proplet/{}/start", config.client_id);
+        let stop_path = format!("control/proplet/{}/stop", config.client_id);
+
         let service = Self {
             config,
             proplet: Arc::new(Mutex::new(proplet)),
@@ -85,6 +90,8 @@ impl PropletService {
             monitor,
             metrics_collector,
             http_client,
+            start_path,
+            stop_path,
         };
 
         service.start_chunk_expiry_task();
@@ -193,14 +200,14 @@ impl PropletService {
         let start_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            &format!("control/proplet/{}/start", self.config.client_id),
+            &self.start_path,
         );
         self.pubsub.subscribe(&start_topic, qos).await?;
 
         let stop_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
-            &format!("control/proplet/{}/stop", self.config.client_id),
+            &self.stop_path,
         );
         self.pubsub.subscribe(&stop_topic, qos).await?;
 
@@ -363,15 +370,9 @@ impl PropletService {
             debug!("Raw message payload: {}", payload_str);
         }
 
-        if msg
-            .topic
-            .contains(&format!("control/proplet/{}/start", self.config.client_id))
-        {
+        if msg.topic.contains(&self.start_path) {
             self.handle_start_command(msg).await
-        } else if msg
-            .topic
-            .contains(&format!("control/proplet/{}/stop", self.config.client_id))
-        {
+        } else if msg.topic.contains(&self.stop_path) {
             self.handle_stop_command(msg).await
         } else if msg.topic.contains("registry/server") {
             self.handle_chunk(msg).await
