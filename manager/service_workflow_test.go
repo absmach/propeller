@@ -1,9 +1,11 @@
+// Copyright (c) Abstract Machines
+// SPDX-License-Identifier: Apache-2.0
+
 package manager_test
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/task"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testWorkflowID = "test-workflow"
@@ -44,6 +47,7 @@ func (m *mockPubSub) Unsubscribe(_ context.Context, _ string) error {
 	return nil
 }
 
+// errContains checks if err contains the target error.
 func errContains(err, target error) bool {
 	if err == nil {
 		return target == nil
@@ -69,7 +73,7 @@ func newService(t *testing.T) manager.Service {
 }
 
 func TestCreateWorkflow(t *testing.T) {
-	svc := newService(t)
+	t.Parallel()
 
 	cases := []struct {
 		desc    string
@@ -118,10 +122,12 @@ func TestCreateWorkflow(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			svc := newService(t)
 			created, err := svc.CreateWorkflow(context.Background(), tc.tasks)
-			assert.True(t, errContains(err, tc.err), fmt.Sprintf("%s: expected %v got %v\n", tc.desc, tc.err, err))
+			assert.True(t, errContains(err, tc.err), "%s: expected %v got %v", tc.desc, tc.err, err)
 			if tc.err == nil {
-				assert.Equal(t, tc.taskLen, len(created))
+				assert.Len(t, created, tc.taskLen)
 				assert.NotEmpty(t, created[0].WorkflowID)
 				for i := 1; i < len(created); i++ {
 					assert.Equal(t, created[0].WorkflowID, created[i].WorkflowID)
@@ -132,32 +138,40 @@ func TestCreateWorkflow(t *testing.T) {
 }
 
 func TestCreateTask(t *testing.T) {
-	svc := newService(t)
-
-	prereq, err := svc.CreateTask(context.Background(), task.Task{Name: "Prereq", WorkflowID: testWorkflowID})
-	assert.Nil(t, err)
+	t.Parallel()
 
 	cases := []struct {
-		desc string
-		task task.Task
-		err  error
+		desc  string
+		setup func(t *testing.T, svc manager.Service) task.Task
+		err   error
 	}{
 		{
 			desc: "create task with workflow id successfully",
-			task: task.Task{Name: "Task 2", WorkflowID: testWorkflowID, DependsOn: []string{prereq.ID}},
-			err:  nil,
+			setup: func(t *testing.T, svc manager.Service) task.Task {
+				t.Helper()
+				prereq, err := svc.CreateTask(context.Background(), task.Task{Name: "Prereq", WorkflowID: testWorkflowID})
+				require.NoError(t, err)
+
+				return task.Task{Name: "Task 2", WorkflowID: testWorkflowID, DependsOn: []string{prereq.ID}}
+			},
+			err: nil,
 		},
 		{
 			desc: "create task with depends_on without workflow_id",
-			task: task.Task{Name: "Task 1", DependsOn: []string{"some-task"}},
-			err:  errWorkflowRequired,
+			setup: func(_ *testing.T, _ manager.Service) task.Task {
+				return task.Task{Name: "Task 1", DependsOn: []string{"some-task"}}
+			},
+			err: errWorkflowRequired,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			created, err := svc.CreateTask(context.Background(), tc.task)
-			assert.True(t, errContains(err, tc.err), fmt.Sprintf("%s: expected %v got %v\n", tc.desc, tc.err, err))
+			t.Parallel()
+			svc := newService(t)
+			taskInput := tc.setup(t, svc)
+			created, err := svc.CreateTask(context.Background(), taskInput)
+			assert.True(t, errContains(err, tc.err), "%s: expected %v got %v", tc.desc, tc.err, err)
 			if tc.err == nil {
 				assert.NotEmpty(t, created.ID)
 			}
@@ -166,128 +180,155 @@ func TestCreateTask(t *testing.T) {
 }
 
 func TestGetTaskResults(t *testing.T) {
-	svc := newService(t)
-
-	created, err := svc.CreateTask(context.Background(), task.Task{Name: "Task 1"})
-	assert.Nil(t, err)
+	t.Parallel()
 
 	cases := []struct {
-		desc   string
-		taskID string
-		err    error
+		desc  string
+		setup func(t *testing.T, svc manager.Service) string
+		err   error
 	}{
 		{
-			desc:   "get task results successfully",
-			taskID: created.ID,
-			err:    nil,
+			desc: "get task results successfully",
+			setup: func(t *testing.T, svc manager.Service) string {
+				t.Helper()
+				created, err := svc.CreateTask(context.Background(), task.Task{Name: "Task 1"})
+				require.NoError(t, err)
+
+				return created.ID
+			},
+			err: nil,
 		},
 		{
-			desc:   "get task results with non-existing task",
-			taskID: "nonexistent",
-			err:    pkgerrors.ErrNotFound,
+			desc: "get task results with non-existing task",
+			setup: func(_ *testing.T, _ manager.Service) string {
+				return "nonexistent"
+			},
+			err: pkgerrors.ErrNotFound,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := svc.GetTaskResults(context.Background(), tc.taskID)
-			assert.True(t, errContains(err, tc.err), fmt.Sprintf("%s: expected %v got %v\n", tc.desc, tc.err, err))
+			t.Parallel()
+			svc := newService(t)
+			taskID := tc.setup(t, svc)
+			_, err := svc.GetTaskResults(context.Background(), taskID)
+			assert.True(t, errContains(err, tc.err), "%s: expected %v got %v", tc.desc, tc.err, err)
 		})
 	}
 }
 
 func TestGetParentResults(t *testing.T) {
-	svc := newService(t)
-
-	workflowID := testWorkflowID
-
-	parent1, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent 1", WorkflowID: workflowID})
-	assert.Nil(t, err)
-
-	parent2, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent 2", WorkflowID: workflowID})
-	assert.Nil(t, err)
-
-	child, err := svc.CreateTask(context.Background(), task.Task{
-		Name:       "Child",
-		WorkflowID: workflowID,
-		DependsOn:  []string{parent1.ID, parent2.ID},
-	})
-	assert.Nil(t, err)
+	t.Parallel()
 
 	cases := []struct {
-		desc   string
-		taskID string
-		err    error
+		desc  string
+		setup func(t *testing.T, svc manager.Service) string
+		err   error
 	}{
 		{
-			desc:   "get parent results successfully",
-			taskID: child.ID,
-			err:    nil,
+			desc: "get parent results successfully",
+			setup: func(t *testing.T, svc manager.Service) string {
+				t.Helper()
+				parent1, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent 1", WorkflowID: testWorkflowID})
+				require.NoError(t, err)
+
+				parent2, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent 2", WorkflowID: testWorkflowID})
+				require.NoError(t, err)
+
+				child, err := svc.CreateTask(context.Background(), task.Task{
+					Name:       "Child",
+					WorkflowID: testWorkflowID,
+					DependsOn:  []string{parent1.ID, parent2.ID},
+				})
+				require.NoError(t, err)
+
+				return child.ID
+			},
+			err: nil,
 		},
 		{
-			desc:   "get parent results with non-existing task",
-			taskID: "nonexistent",
-			err:    pkgerrors.ErrNotFound,
+			desc: "get parent results with non-existing task",
+			setup: func(_ *testing.T, _ manager.Service) string {
+				return "nonexistent"
+			},
+			err: pkgerrors.ErrNotFound,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := svc.GetParentResults(context.Background(), tc.taskID)
-			assert.True(t, errContains(err, tc.err), fmt.Sprintf("%s: expected %v got %v\n", tc.desc, tc.err, err))
+			t.Parallel()
+			svc := newService(t)
+			taskID := tc.setup(t, svc)
+			_, err := svc.GetParentResults(context.Background(), taskID)
+			assert.True(t, errContains(err, tc.err), "%s: expected %v got %v", tc.desc, tc.err, err)
 		})
 	}
 }
 
 func TestStartTask(t *testing.T) {
-	svc := newService(t)
-
-	workflowID := testWorkflowID
-
-	parent, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent", WorkflowID: workflowID})
-	assert.Nil(t, err)
-
-	child, err := svc.CreateTask(context.Background(), task.Task{
-		Name:       "Child",
-		WorkflowID: workflowID,
-		DependsOn:  []string{parent.ID},
-	})
-	assert.Nil(t, err)
+	t.Parallel()
 
 	cases := []struct {
-		desc   string
-		setup  func()
-		taskID string
-		check  func(t *testing.T)
+		desc  string
+		setup func(t *testing.T, svc manager.Service) string
+		check func(t *testing.T, svc manager.Service, taskID string)
 	}{
 		{
-			desc:   "start task with unmet dependencies",
-			setup:  func() {},
-			taskID: child.ID,
-			check: func(t *testing.T) {
+			desc: "start task with unmet dependencies",
+			setup: func(t *testing.T, svc manager.Service) string {
 				t.Helper()
-				childAfter, err := svc.GetTask(context.Background(), child.ID)
-				assert.Nil(t, err)
+				parent, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent", WorkflowID: testWorkflowID})
+				require.NoError(t, err)
+
+				child, err := svc.CreateTask(context.Background(), task.Task{
+					Name:       "Child",
+					WorkflowID: testWorkflowID,
+					DependsOn:  []string{parent.ID},
+				})
+				require.NoError(t, err)
+
+				return child.ID
+			},
+			check: func(t *testing.T, svc manager.Service, taskID string) {
+				t.Helper()
+				childAfter, err := svc.GetTask(context.Background(), taskID)
+				require.NoError(t, err)
 				assert.NotEqual(t, task.Running, childAfter.State)
 			},
 		},
 		{
 			desc: "start task after dependencies are met",
-			setup: func() {
+			setup: func(t *testing.T, svc manager.Service) string {
+				t.Helper()
+				parent, err := svc.CreateTask(context.Background(), task.Task{Name: "Parent", WorkflowID: testWorkflowID})
+				require.NoError(t, err)
+
+				child, err := svc.CreateTask(context.Background(), task.Task{
+					Name:       "Child",
+					WorkflowID: testWorkflowID,
+					DependsOn:  []string{parent.ID},
+				})
+				require.NoError(t, err)
+
 				parent.State = task.Completed
-				_, err := svc.UpdateTask(context.Background(), parent)
-				assert.Nil(t, err)
+				_, err = svc.UpdateTask(context.Background(), parent)
+				require.NoError(t, err)
+
+				return child.ID
 			},
-			taskID: child.ID,
-			check:  func(_ *testing.T) {},
+			check: func(_ *testing.T, _ manager.Service, _ string) {},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			tc.setup()
-			_ = svc.StartTask(context.Background(), tc.taskID)
-			tc.check(t)
+			t.Parallel()
+			svc := newService(t)
+			taskID := tc.setup(t, svc)
+			_ = svc.StartTask(context.Background(), taskID)
+			tc.check(t, svc, taskID)
 		})
 	}
 }
