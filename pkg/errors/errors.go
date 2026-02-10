@@ -27,6 +27,7 @@ var (
 	ErrChunkValidationFailed = errors.New("chunk validation failed")
 	ErrArtifactRequestFailed = errors.New("failed to request artifact")
 	ErrAppStartFailed        = errors.New("failed to start application")
+	ErrConflict              = errors.New("conflict")
 	ErrAppStopFailed         = errors.New("failed to stop application")
 	ErrChunksTimeout         = errors.New("timeout waiting for Wasm chunks")
 	ErrReassemblyFailed      = errors.New("failed to reassemble Wasm binary from chunks")

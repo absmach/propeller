@@ -11,6 +11,7 @@ type Service interface {
 	GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error)
 	ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error)
 	SelectProplet(ctx context.Context, task task.Task) (proplet.Proplet, error)
+	DeleteProplet(ctx context.Context, propletID string) error
 
 	CreateTask(ctx context.Context, task task.Task) (task.Task, error)
 	GetTask(ctx context.Context, taskID string) (task.Task, error)

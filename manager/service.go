@@ -112,6 +112,19 @@ func (svc *service) SelectProplet(ctx context.Context, t task.Task) (proplet.Pro
 	return svc.scheduler.SelectProplet(t, proplets.Proplets)
 }
 
+func (svc *service) DeleteProplet(ctx context.Context, propletID string) error {
+	p, err := svc.propletRepo.Get(ctx, propletID)
+	if err != nil {
+		return err
+	}
+
+	if p.TaskCount > 0 {
+		return fmt.Errorf("%w: proplet %s has %d active tasks", pkgerrors.ErrConflict, propletID, p.TaskCount)
+	}
+
+	return svc.propletRepo.Delete(ctx, propletID)
+}
+
 func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, error) {
 	t.ID = uuid.NewString()
 	t.CreatedAt = time.Now()

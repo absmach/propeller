@@ -45,6 +45,12 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "get-proplet").ServeHTTP)
+			r.Delete("/", otelhttp.NewHandler(kithttp.NewServer(
+				deletePropletEndpoint(svc),
+				decodeEntityReq("propletID"),
+				api.EncodeResponse,
+				opts...,
+			), "delete-proplet").ServeHTTP)
 			r.Get("/metrics", otelhttp.NewHandler(kithttp.NewServer(
 				getPropletMetricsEndpoint(svc),
 				decodeMetricsReq("propletID"),

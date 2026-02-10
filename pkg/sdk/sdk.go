@@ -70,6 +70,13 @@ type SDK interface {
 	//  task, _ := sdk.StopTask("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
 	//  fmt.Println(task)
 	StopTask(id string) error
+
+	// DeleteProplet deletes a proplet by id.
+	//
+	// example:
+	//  err := sdk.DeleteProplet("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
+	//  fmt.Println(err)
+	DeleteProplet(id string) error
 }
 
 type propSDK struct {

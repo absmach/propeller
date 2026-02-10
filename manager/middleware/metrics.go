@@ -53,6 +53,15 @@ func (mm *metricsMiddleware) SelectProplet(ctx context.Context, t task.Task) (pr
 	return mm.svc.SelectProplet(ctx, t)
 }
 
+func (mm *metricsMiddleware) DeleteProplet(ctx context.Context, id string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "delete-proplet").Add(1)
+		mm.latency.With("method", "delete-proplet").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.DeleteProplet(ctx, id)
+}
+
 func (mm *metricsMiddleware) CreateTask(ctx context.Context, t task.Task) (task.Task, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "create-task").Add(1)

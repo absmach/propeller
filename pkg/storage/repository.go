@@ -20,6 +20,7 @@ type PropletRepository interface {
 	Get(ctx context.Context, id string) (proplet.Proplet, error)
 	Update(ctx context.Context, p proplet.Proplet) error
 	List(ctx context.Context, offset, limit uint64) ([]proplet.Proplet, uint64, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type TaskPropletRepository interface {

@@ -44,6 +44,8 @@ func EncodeError(_ context.Context, err error, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusBadRequest)
 	case errors.Is(err, pkgerrors.ErrNotFound):
 		w.WriteHeader(http.StatusNotFound)
+	case errors.Is(err, pkgerrors.ErrConflict):
+		w.WriteHeader(http.StatusConflict)
 	default:
 		w.WriteHeader(http.StatusInternalServerError)
 	}
