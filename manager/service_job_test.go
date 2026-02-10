@@ -13,7 +13,7 @@ import (
 
 func TestCreateJob(t *testing.T) {
 	t.Parallel()
-	svc := setupTestService(t)
+	svc := newService(t)
 
 	tasks := []task.Task{
 		{Name: "task1", State: task.Pending},
@@ -25,13 +25,11 @@ func TestCreateJob(t *testing.T) {
 	assert.NotEmpty(t, jobID)
 	assert.Len(t, createdTasks, 2)
 
-	// Verify all tasks have the same JobID
 	for _, task := range createdTasks {
 		assert.Equal(t, jobID, task.JobID)
 		assert.NotEmpty(t, task.ID)
 	}
 
-	// Verify execution mode is stored in Env
 	if createdTasks[0].Env != nil {
 		assert.Equal(t, "parallel", createdTasks[0].Env["_job_execution_mode"])
 		assert.Equal(t, "test-job", createdTasks[0].Env["_job_name"])
@@ -40,7 +38,7 @@ func TestCreateJob(t *testing.T) {
 
 func TestGetJob(t *testing.T) {
 	t.Parallel()
-	svc := setupTestService(t)
+	svc := newService(t)
 
 	jobID := uuid.NewString()
 	tasks := []task.Task{
@@ -48,13 +46,11 @@ func TestGetJob(t *testing.T) {
 		{ID: uuid.NewString(), Name: "task2", JobID: jobID, State: task.Pending},
 	}
 
-	// Create tasks manually
 	for _, taskItem := range tasks {
 		_, err := svc.CreateTask(context.Background(), taskItem)
 		require.NoError(t, err)
 	}
 
-	// Get job
 	jobTasks, err := svc.GetJob(context.Background(), jobID)
 	require.NoError(t, err)
 	assert.Len(t, jobTasks, 2)
