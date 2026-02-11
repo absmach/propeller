@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/0x6flab/namegenerator"
+	"github.com/absmach/propeller/pkg/cron"
 	"github.com/absmach/propeller/pkg/dag"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/mqtt"
@@ -27,6 +28,8 @@ const (
 	defOffset                 = 0
 	defLimit                  = 100
 	aliveHistoryLimit         = 10
+	defaultPriority           = 50
+	defaultTimezone           = "UTC"
 	ExecutionModeParallel     = "parallel"
 	ExecutionModeSequential   = "sequential"
 	ExecutionModeConfigurable = "configurable"
@@ -44,6 +47,7 @@ type service struct {
 	taskPropletRepo  storage.TaskPropletRepository
 	metricsRepo      storage.MetricsRepository
 	scheduler        scheduler.Scheduler
+	cronScheduler    CronScheduler
 	baseTopic        string
 	pubsub           mqtt.PubSub
 	logger           *slog.Logger
@@ -56,7 +60,7 @@ func NewService(
 	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
-) Service {
+) (Service, CronScheduler) {
 	coordinatorURL := os.Getenv("COORDINATOR_URL")
 	var httpClient *http.Client
 	if coordinatorURL != "" {
@@ -82,7 +86,10 @@ func NewService(
 	}
 	svc.coordinator = NewWorkflowCoordinator(repos.Tasks, svc, logger)
 
-	return svc
+	cronSched := NewCronScheduler(repos.Tasks, svc, logger)
+	svc.cronScheduler = cronSched
+
+	return svc, cronSched
 }
 
 func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
@@ -166,9 +173,33 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 		t.Kind = task.TaskKindStandard
 	}
 
+	if t.Priority == 0 {
+		t.Priority = defaultPriority
+	}
+
+	if t.Schedule != "" {
+		schedule, err := cron.ParseCronExpression(t.Schedule)
+		if err != nil {
+			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
+		}
+
+		timezone := t.Timezone
+		if timezone == "" {
+			timezone = defaultTimezone
+		}
+
+		t.NextRun = cron.CalculateNextRun(schedule, time.Now(), timezone)
+	}
+
 	t, err := svc.taskRepo.Create(ctx, t)
 	if err != nil {
 		return task.Task{}, err
+	}
+
+	if t.Schedule != "" && svc.cronScheduler != nil {
+		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to schedule task in cron scheduler", "error", err, "task_id", t.ID)
+		}
 	}
 
 	return t, nil
@@ -471,15 +502,64 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 	if t.File != nil {
 		dbT.File = t.File
 	}
+	if t.Priority != 0 {
+		dbT.Priority = t.Priority
+	}
+
+	scheduleChanged := false
+	if t.Schedule != "" && t.Schedule != dbT.Schedule {
+		schedule, err := cron.ParseCronExpression(t.Schedule)
+		if err != nil {
+			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
+		}
+
+		timezone := t.Timezone
+		if timezone == "" {
+			timezone = defaultTimezone
+		}
+
+		dbT.Schedule = t.Schedule
+		dbT.IsRecurring = t.IsRecurring
+		dbT.Timezone = timezone
+		dbT.NextRun = cron.CalculateNextRun(schedule, time.Now(), timezone)
+		scheduleChanged = true
+	} else if t.Schedule == "" && dbT.Schedule != "" {
+		dbT.Schedule = ""
+		dbT.NextRun = time.Time{}
+		dbT.IsRecurring = false
+		scheduleChanged = true
+	}
 
 	if err := svc.taskRepo.Update(ctx, dbT); err != nil {
 		return task.Task{}, err
+	}
+
+	if !scheduleChanged || svc.cronScheduler == nil {
+		return dbT, nil
+	}
+
+	if dbT.Schedule != "" {
+		if err := svc.cronScheduler.ScheduleTask(ctx, dbT.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
+		}
+
+		return dbT, nil
+	}
+
+	if err := svc.cronScheduler.UnscheduleTask(ctx, dbT.ID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
 	}
 
 	return dbT, nil
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
+	if svc.cronScheduler != nil {
+		if err := svc.cronScheduler.UnscheduleTask(ctx, taskID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to unschedule task from cron scheduler", "error", err, "task_id", taskID)
+		}
+	}
+
 	return svc.taskRepo.Delete(ctx, taskID)
 }
 
@@ -699,6 +779,14 @@ func (svc *service) GetParentResults(ctx context.Context, taskID string) (map[st
 	}
 
 	return parentResults, nil
+}
+
+func (svc *service) StartCronScheduler(ctx context.Context) error {
+	if svc.cronScheduler == nil {
+		return nil
+	}
+
+	return svc.cronScheduler.Start(ctx)
 }
 
 func (svc *service) checkTaskDependencies(ctx context.Context, taskID string, t task.Task) error {

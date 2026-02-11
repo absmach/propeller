@@ -47,7 +47,6 @@ type config struct {
 	Server      server.Config
 	OTELURL     url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio  float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
-	Storage     storage.Config
 }
 
 func main() {
@@ -117,14 +116,21 @@ func main() {
 		return
 	}
 
-	repos, err := storage.NewRepositories(cfg.Storage)
+	storageCfg := storage.Config{}
+	if err := env.Parse(&storageCfg); err != nil {
+		logger.Error("failed to load storage configuration", slog.String("error", err.Error()))
+
+		return
+	}
+
+	repos, err := storage.NewRepositories(storageCfg)
 	if err != nil {
 		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
 
 		return
 	}
 
-	svc := manager.NewService(
+	svc, cronScheduler := manager.NewService(
 		repos,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
@@ -142,6 +148,10 @@ func main() {
 
 		return
 	}
+
+	g.Go(func() error {
+		return cronScheduler.Start(ctx)
+	})
 
 	httpServerConfig := server.Config{Port: defHTTPPort}
 	if err := env.ParseWithOptions(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {

@@ -43,7 +43,9 @@ func newService(t *testing.T) manager.Service {
 	pubsub.On("Disconnect", mock.Anything).Return(nil).Maybe()
 	logger := slog.Default()
 
-	return manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", logger)
+	svc, _ := manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", logger)
+
+	return svc
 }
 
 func TestCreateWorkflow(t *testing.T) {
