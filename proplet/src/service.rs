@@ -51,7 +51,6 @@ pub struct PropletService {
     proplet: Arc<Mutex<Proplet>>,
     pubsub: PubSub,
     runtime: Arc<dyn Runtime>,
-    #[cfg(feature = "tee")]
     tee_runtime: Option<Arc<dyn Runtime>>,
     chunk_assembly: Arc<Mutex<HashMap<String, ChunkAssemblyState>>>,
     running_tasks: Arc<Mutex<HashMap<String, TaskState>>>,
@@ -78,7 +77,6 @@ impl PropletService {
             proplet: Arc::new(Mutex::new(proplet)),
             pubsub,
             runtime,
-            #[cfg(feature = "tee")]
             tee_runtime: None,
             chunk_assembly: Arc::new(Mutex::new(HashMap::new())),
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -92,7 +90,6 @@ impl PropletService {
         service
     }
 
-    #[cfg(feature = "tee")]
     pub fn with_tee_runtime(
         config: PropletConfig,
         pubsub: PubSub,
@@ -102,6 +99,13 @@ impl PropletService {
         let proplet = Proplet::new(config.instance_id.clone(), "proplet".to_string());
         let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
         let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
+        let http_client = HttpClient::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|e| {
+                warn!("Failed to create HTTP client, using default: {}", e);
+                HttpClient::new()
+            });
 
         let service = Self {
             config,
@@ -113,6 +117,7 @@ impl PropletService {
             running_tasks: Arc::new(Mutex::new(HashMap::new())),
             monitor,
             metrics_collector,
+            http_client,
         };
 
         service.start_chunk_expiry_task();
@@ -120,7 +125,6 @@ impl PropletService {
         service
     }
 
-    #[cfg(feature = "tee")]
     #[allow(dead_code)]
     pub fn set_tee_runtime(&mut self, tee_runtime: Arc<dyn Runtime>) {
         self.tee_runtime = Some(tee_runtime);
@@ -363,7 +367,6 @@ impl PropletService {
 
         info!("Received start command for task: {}", req.id);
 
-        #[cfg(feature = "tee")]
         let runtime = if req.encrypted {
             if let Some(ref tee_runtime) = self.tee_runtime {
                 tee_runtime.clone()
@@ -378,21 +381,6 @@ impl PropletService {
                 return Err(anyhow::anyhow!("TEE runtime not available"));
             }
         } else {
-            self.runtime.clone()
-        };
-
-        #[cfg(not(feature = "tee"))]
-        let runtime = {
-            if req.encrypted {
-                error!("TEE support not compiled in but encrypted workload requested");
-                self.publish_result(
-                    &req.id,
-                    Vec::new(),
-                    Some("TEE support not compiled in".to_string()),
-                )
-                .await?;
-                return Err(anyhow::anyhow!("TEE support not compiled in"));
-            }
             self.runtime.clone()
         };
 

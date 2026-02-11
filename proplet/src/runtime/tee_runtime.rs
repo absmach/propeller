@@ -17,42 +17,30 @@ use tracing::warn;
 use crate::config::PropletConfig;
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 
-#[cfg(feature = "tee")]
 use attestation_agent::{AttestationAPIs, AttestationAgent};
 
 pub struct TeeWasmRuntime {
     config: PropletConfig,
-    #[cfg(feature = "tee")]
     attestation_agent: Option<AttestationAgent>,
 }
 
 impl TeeWasmRuntime {
     pub async fn new(config: &PropletConfig) -> Result<Self> {
-        #[cfg(feature = "tee")]
-        {
-            let mut agent = AttestationAgent::new(config.aa_config_path.as_deref())
-                .context("Failed to create attestation agent")?;
-            agent.init().await?;
+        let mut agent = AttestationAgent::new(config.aa_config_path.as_deref())
+            .context("Failed to create attestation agent")?;
+        agent.init().await?;
 
-            if config.tee_enabled {
-                Self::setup_keyprovider_config()
-                    .context("Failed to setup keyprovider config when TEE is enabled")?;
-            }
-
-            return Ok(Self {
-                config: config.clone(),
-                attestation_agent: Some(agent),
-            });
+        if config.tee_enabled {
+            Self::setup_keyprovider_config()
+                .context("Failed to setup keyprovider config when TEE is enabled")?;
         }
 
-        #[cfg(not(feature = "tee"))]
         Ok(Self {
             config: config.clone(),
-            attestation_agent: None,
+            attestation_agent: Some(agent),
         })
     }
 
-    #[cfg(feature = "tee")]
     fn setup_keyprovider_config() -> Result<()> {
         if let Ok(existing_path) = std::env::var("OCICRYPT_KEYPROVIDER_CONFIG") {
             if std::path::Path::new(&existing_path).exists() {
@@ -65,7 +53,7 @@ impl TeeWasmRuntime {
             .parent()
             .expect("Config path should always have a parent directory");
 
-        std::fs::create_dir_all(&config_dir)
+        std::fs::create_dir_all(config_dir)
             .context("Failed to create keyprovider config directory")?;
 
         let keyprovider_addr = "127.0.0.1:50011";
@@ -89,7 +77,6 @@ impl TeeWasmRuntime {
         Ok(())
     }
 
-    #[cfg(feature = "tee")]
     async fn pull_and_decrypt_wasm(&self, oci_reference: &str) -> Result<PathBuf> {
         let image_ref = Reference::try_from(oci_reference.to_string())
             .context("Failed to parse image reference")?;
@@ -228,19 +215,11 @@ impl TeeWasmRuntime {
         ))
     }
 
-    #[cfg(not(feature = "tee"))]
-    async fn pull_and_decrypt_wasm(&self, _oci_reference: &str) -> Result<PathBuf> {
-        Err(anyhow::anyhow!(
-            "TEE support is not enabled. Please compile with 'tee' feature."
-        ))
-    }
-
     fn run_wasm(&self, wasm_path: &PathBuf, config: &StartConfig) -> Result<Vec<u8>> {
         let runtime_path = self
             .config
             .external_wasm_runtime
-            .as_ref()
-            .map(|s| s.as_str())
+            .as_deref()
             .unwrap_or("wasmtime");
 
         let mut cmd = Command::new(runtime_path);
@@ -333,18 +312,15 @@ impl TeeWasmRuntime {
 #[async_trait]
 impl Runtime for TeeWasmRuntime {
     async fn start_app(&self, _ctx: RuntimeContext, config: StartConfig) -> Result<Vec<u8>> {
-        #[cfg(feature = "tee")]
-        {
-            if let Some(ref agent) = self.attestation_agent {
-                let _evidence = agent
-                    .get_evidence(b"wasm-runner")
-                    .await
-                    .context("Failed to get TEE evidence")?;
-            }
+        if let Some(ref agent) = self.attestation_agent {
+            let _evidence = agent
+                .get_evidence(b"wasm-runner")
+                .await
+                .context("Failed to get TEE evidence")?;
         }
 
         if !config.wasm_binary.is_empty() {
-            return Ok(self.run_wasm_embedded(&config.wasm_binary, &config)?);
+            return self.run_wasm_embedded(&config.wasm_binary, &config);
         }
 
         if !config.cli_args.is_empty() {
