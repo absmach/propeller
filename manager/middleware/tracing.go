@@ -5,7 +5,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

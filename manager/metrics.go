@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/pkg/storage"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 type (

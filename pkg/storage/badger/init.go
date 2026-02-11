@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 	"github.com/dgraph-io/badger/v4"
 )
 

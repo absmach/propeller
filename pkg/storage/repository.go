@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 type TaskRepository interface {

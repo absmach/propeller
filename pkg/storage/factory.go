@@ -8,7 +8,7 @@ import (
 	"github.com/absmach/propeller/pkg/storage/badger"
 	"github.com/absmach/propeller/pkg/storage/postgres"
 	"github.com/absmach/propeller/pkg/storage/sqlite"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 type Config struct {

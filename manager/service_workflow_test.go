@@ -14,7 +14,7 @@ import (
 	mqttmocks "github.com/absmach/propeller/pkg/mqtt/mocks"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 	smqerrors "github.com/absmach/supermq/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

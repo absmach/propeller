@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/absmach/propeller/manager"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 func TestEvaluateConditionalExecution_Success(t *testing.T) {

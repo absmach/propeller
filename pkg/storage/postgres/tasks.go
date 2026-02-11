@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 type taskRepo struct {
