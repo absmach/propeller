@@ -76,7 +76,7 @@ func (wc *WorkflowCoordinator) CheckAndStartReadyTasks(ctx context.Context, work
 	completed := make(map[string]task.State)
 	for i := range tasks {
 		t := &tasks[i]
-		if t.State == task.Completed || t.State == task.Failed || t.State == task.Skipped {
+		if t.State == task.Completed || t.State == task.Failed || t.State == task.Skipped || t.State == task.Interrupted {
 			completed[t.ID] = t.State
 		}
 	}

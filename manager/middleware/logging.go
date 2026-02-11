@@ -553,3 +553,37 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 
 	return lm.svc.GetRoundStatus(ctx, roundID)
 }
+
+func (lm *loggingMiddleware) Shutdown(ctx context.Context) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Shutdown failed", args...)
+
+			return
+		}
+		lm.logger.Info("Shutdown completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.Shutdown(ctx)
+}
+
+func (lm *loggingMiddleware) RecoverInterruptedTasks(ctx context.Context) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Recover interrupted tasks failed", args...)
+
+			return
+		}
+		lm.logger.Info("Recover interrupted tasks completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.RecoverInterruptedTasks(ctx)
+}

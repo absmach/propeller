@@ -115,18 +115,23 @@ latest: dockers dockers_rust
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) mocks
 all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
 
 clean:
 	rm -rf build
 	cd proplet && cargo clean
 
+mocks:
+	@echo "Generating mocks..."
+	@which mockery > /dev/null || (echo "mockery not found. Please install it from https://vektra.github.io/mockery/latest/installation/" && exit 1)
+	mockery --config .mockery.yaml
+
 lint:
 	golangci-lint run  --config .golangci.yaml
 	cd proplet && cargo check --release && cargo fmt --all -- --check && cargo clippy -- -D warnings
 
-test:
+test: mocks
 	go test -v ./manager
 
 test-all:
@@ -183,4 +188,5 @@ help:
 	@echo "  latest:           build and push all Go service Docker images"
 	@echo "  start-supermq:    start the supermq docker compose"
 	@echo "  stop-supermq:     stop the supermq docker compose"
+	@echo "  mocks:            generate mockery mocks for all interfaces"
 	@echo "  help:             display this help message"

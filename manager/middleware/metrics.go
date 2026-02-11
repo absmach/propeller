@@ -268,3 +268,21 @@ func (mm *metricsMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 
 	return mm.svc.GetRoundStatus(ctx, roundID)
 }
+
+func (mm *metricsMiddleware) Shutdown(ctx context.Context) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "shutdown").Add(1)
+		mm.latency.With("method", "shutdown").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.Shutdown(ctx)
+}
+
+func (mm *metricsMiddleware) RecoverInterruptedTasks(ctx context.Context) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "recover-interrupted-tasks").Add(1)
+		mm.latency.With("method", "recover-interrupted-tasks").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.RecoverInterruptedTasks(ctx)
+}

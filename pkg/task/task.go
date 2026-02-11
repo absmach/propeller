@@ -15,6 +15,7 @@ const (
 	Completed
 	Failed
 	Skipped
+	Interrupted
 )
 
 func (s State) String() string {
@@ -31,6 +32,8 @@ func (s State) String() string {
 		return "Failed"
 	case Skipped:
 		return "Skipped"
+	case Interrupted:
+		return "Interrupted"
 	default:
 		return "Unknown"
 	}
