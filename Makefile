@@ -56,7 +56,7 @@ define make_docker_rust
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TIME=$(TIME) \
-		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
 		-f docker/Dockerfile.$(svc) .
 endef
 
@@ -66,7 +66,7 @@ define make_docker_rust_dev
 	docker build \
 		--no-cache \
 		--build-arg SVC=$(svc) \
-		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
 		-f docker/Dockerfile.$(svc).dev ./proplet/target/release
 endef
 
@@ -83,7 +83,7 @@ $(SERVICES):
 	$(call compile_service,$(@))
 
 $(RUST_SERVICES):
-	cd proplet && cargo build --release
+	cd proplet && cargo build --release && cp target/release/proplet ../build
 
 $(DOCKERS):
 	$(call make_docker,$(@),$(GOARCH))
