@@ -161,6 +161,10 @@ func (a *postgresPropletAdapter) List(ctx context.Context, offset, limit uint64)
 	return a.repo.List(ctx, offset, limit)
 }
 
+func (a *postgresPropletAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
 type postgresTaskPropletAdapter struct {
 	repo postgres.TaskPropletRepository
 }
@@ -287,6 +291,10 @@ func (a *sqlitePropletAdapter) List(ctx context.Context, offset, limit uint64) (
 	return a.repo.List(ctx, offset, limit)
 }
 
+func (a *sqlitePropletAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
 type sqliteTaskPropletAdapter struct {
 	repo sqlite.TaskPropletRepository
 }
@@ -411,6 +419,10 @@ func (a *badgerPropletAdapter) Update(ctx context.Context, p proplet.Proplet) er
 
 func (a *badgerPropletAdapter) List(ctx context.Context, offset, limit uint64) ([]proplet.Proplet, uint64, error) {
 	return a.repo.List(ctx, offset, limit)
+}
+
+func (a *badgerPropletAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
 }
 
 type badgerTaskPropletAdapter struct {

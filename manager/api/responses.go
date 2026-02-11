@@ -40,7 +40,7 @@ func (w propletResponse) Code() int {
 func (w propletResponse) Headers() map[string]string {
 	if w.created {
 		return map[string]string{
-			"Location": "/tasks/" + w.ID,
+			"Location": "/proplets/" + w.ID,
 		}
 	}
 
@@ -48,7 +48,7 @@ func (w propletResponse) Headers() map[string]string {
 }
 
 func (w propletResponse) Empty() bool {
-	return false
+	return w.deleted
 }
 
 type listpropletResponse struct {
@@ -96,7 +96,7 @@ func (t taskResponse) Headers() map[string]string {
 }
 
 func (t taskResponse) Empty() bool {
-	return false
+	return t.deleted
 }
 
 type listTaskResponse struct {

@@ -108,6 +108,16 @@ func (r *propletRepo) List(ctx context.Context, offset, limit uint64) ([]proplet
 	return proplets, total, nil
 }
 
+func (r *propletRepo) Delete(ctx context.Context, id string) error {
+	query := `DELETE FROM proplets WHERE id = $1`
+
+	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
+		return fmt.Errorf("%w: %w", ErrDelete, err)
+	}
+
+	return nil
+}
+
 func (r *propletRepo) toProplet(dbp dbProplet) (proplet.Proplet, error) {
 	p := proplet.Proplet{
 		ID:        dbp.ID,

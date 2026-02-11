@@ -52,6 +52,26 @@ func getPropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	}
 }
 
+func deletePropletEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(entityReq)
+		if !ok {
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return propletResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		if err := svc.DeleteProplet(ctx, req.id); err != nil {
+			return propletResponse{}, err
+		}
+
+		return propletResponse{
+			deleted: true,
+		}, nil
+	}
+}
+
 func createTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(taskReq)
@@ -144,8 +164,7 @@ func deleteTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 			return taskResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		err := svc.DeleteTask(ctx, req.id)
-		if err != nil {
+		if err := svc.DeleteTask(ctx, req.id); err != nil {
 			return taskResponse{}, err
 		}
 

@@ -52,6 +52,15 @@ func (tm *tracing) SelectProplet(ctx context.Context, t task.Task) (resp proplet
 	return tm.svc.SelectProplet(ctx, t)
 }
 
+func (tm *tracing) DeleteProplet(ctx context.Context, id string) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "delete-proplet", trace.WithAttributes(
+		attribute.String("id", id),
+	))
+	defer span.End()
+
+	return tm.svc.DeleteProplet(ctx, id)
+}
+
 func (tm *tracing) CreateTask(ctx context.Context, t task.Task) (resp task.Task, err error) {
 	ctx, span := tm.tracer.Start(ctx, "create-task", trace.WithAttributes(
 		attribute.String("name", resp.Name),

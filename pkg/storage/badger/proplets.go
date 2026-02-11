@@ -77,3 +77,9 @@ func (r *propletRepo) List(ctx context.Context, offset, limit uint64) ([]proplet
 
 	return proplets, total, nil
 }
+
+func (r *propletRepo) Delete(ctx context.Context, id string) error {
+	key := []byte("proplet:" + id)
+
+	return r.db.delete(key)
+}

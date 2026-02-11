@@ -109,6 +109,10 @@ func (r *memoryPropletRepo) List(ctx context.Context, offset, limit uint64) ([]p
 	return proplets, total, nil
 }
 
+func (r *memoryPropletRepo) Delete(ctx context.Context, id string) error {
+	return r.storage.Delete(ctx, id)
+}
+
 type memoryTaskPropletRepo struct {
 	storage Storage
 }
