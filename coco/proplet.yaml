@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proplet
+  labels:
+    app: proplet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proplet
+  template:
+    metadata:
+      labels:
+        app: proplet
+    spec:
+      runtimeClassName: kata
+      containers:
+      - name: proplet
+        image: proplet:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PROPLET_LOG_LEVEL
+          value: "info"
+        - name: PROPLET_INSTANCE_ID
+          value: "proplet-k8s-001"
+        - name: PROPLET_CONFIG_FILE
+          value: "/etc/proplet/config.toml"
+        - name: PROPLET_CONFIG_SECTION
+          value: "proplet1"
+        - name: PROPLET_EXTERNAL_WASM_RUNTIME
+          value: "/usr/local/bin/wasmtime"
+        - name: PROPLET_MANAGER_K8S_NAMESPACE
+          value: "default"
+        - name: PROPLET_MQTT_ADDRESS
+          value: "tcp://localhost:1883"
+        - name: PROPLET_MQTT_TIMEOUT
+          value: "30"
+        - name: PROPLET_MQTT_QOS
+          value: "2"
+        - name: PROPLET_LIVELINESS_INTERVAL
+          value: "10"
+        # Since AA runs in the guest VM in CoCo (not sidecar), we access it via localhost
+        # if the network namespace is shared or via specific socket.
+        # Assuming standard loopback availability in the Pod for guest components provided by Kata 3.x+
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/proplet
+      volumes:
+      - name: config-volume
+        configMap:
+          name: proplet-config
