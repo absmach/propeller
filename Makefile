@@ -13,6 +13,8 @@ DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 DOCKERS_RUST = $(addprefix docker_,$(RUST_SERVICES))
 DOCKERS_RUST_DEV = $(addprefix docker_dev_,$(RUST_SERVICES))
 DOCKER_IMAGE_NAME_PREFIX ?= ghcr.io/absmach/propeller
+GOBIN ?= $(shell go env GOPATH)/bin
+MOCKERY_VERSION = 2.53.5
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -109,18 +111,24 @@ latest: dockers dockers_rust
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) mocks
 all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES)
 
 clean:
 	rm -rf build
 	cd proplet && cargo clean
 
+mocks: $(GOBIN)/mockery
+	@$(GOBIN)/mockery --config .mockery.yaml
+
+$(GOBIN)/mockery:
+	@go install github.com/vektra/mockery/v2@v$(MOCKERY_VERSION)
+
 lint:
 	golangci-lint run  --config .golangci.yaml
 	cd proplet && cargo check --release && cargo fmt --all -- --check && cargo clippy -- -D warnings
 
-test:
+test: mocks
 	go test -v ./manager
 
 test-all:
@@ -159,4 +167,5 @@ help:
 	@echo "  latest:           build and push all Go service Docker images"
 	@echo "  start-supermq:    start the supermq docker compose"
 	@echo "  stop-supermq:     stop the supermq docker compose"
+	@echo "  mocks:            generate mockery mocks for all interfaces"
 	@echo "  help:             display this help message"

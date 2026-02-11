@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/absmach/propeller"
@@ -28,10 +30,11 @@ import (
 )
 
 const (
-	svcName       = "manager"
-	defHTTPPort   = "7070"
-	envPrefixHTTP = "MANAGER_HTTP_"
-	configPath    = "config.toml"
+	svcName        = "manager"
+	defHTTPPort    = "7070"
+	envPrefixHTTP  = "MANAGER_HTTP_"
+	configPath     = "config.toml"
+	shutdownTimout = 30 * time.Second
 )
 
 type config struct {
@@ -50,9 +53,6 @@ type config struct {
 }
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
 	cfg := config{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
@@ -88,6 +88,10 @@ func main() {
 	})
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	g, ctx := errgroup.WithContext(ctx)
 
 	var tp trace.TracerProvider
 	switch cfg.OTELURL {
@@ -143,6 +147,10 @@ func main() {
 	counter, latency := prometheus.MakeMetrics(svcName, "api")
 	svc = middleware.Metrics(counter, latency, svc)
 
+	if err := svc.RecoverInterruptedTasks(ctx); err != nil {
+		logger.Error("failed to recover interrupted tasks", slog.String("error", err.Error()))
+	}
+
 	if err := svc.Subscribe(ctx); err != nil {
 		logger.Error("failed to subscribe to manager channel", slog.String("error", err.Error()))
 
@@ -160,17 +168,36 @@ func main() {
 		return
 	}
 
-	hs := httpserver.NewServer(ctx, cancel, svcName, httpServerConfig, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
+	hs := httpserver.NewServer(ctx, stop, svcName, httpServerConfig, api.MakeHandler(svc, logger, cfg.InstanceID), logger)
 
 	g.Go(func() error {
 		return hs.Start()
 	})
 
 	g.Go(func() error {
-		return server.StopSignalHandler(ctx, cancel, logger, svcName, hs)
+		return server.StopSignalHandler(ctx, stop, logger, svcName, hs)
 	})
 
 	if err := g.Wait(); err != nil {
 		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
 	}
+
+	// Coordinated shutdown.
+	logger.Info("initiating graceful shutdown")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimout)
+	defer shutdownCancel()
+
+	if err := svc.Shutdown(shutdownCtx); err != nil {
+		logger.Error("service shutdown error", slog.Any("error", err))
+	}
+
+	if err := mqttPubSub.Disconnect(shutdownCtx); err != nil {
+		logger.Error("mqtt disconnect error", slog.Any("error", err))
+	}
+
+	if err := repos.Closer.Close(); err != nil {
+		logger.Error("database close error", slog.Any("error", err))
+	}
+
+	logger.Info("graceful shutdown complete")
 }

@@ -1,0 +1,22 @@
+pkgname: mocks
+structname: "{{.InterfaceName}}"
+filename: "{{snakecase .InterfaceName}}.go"
+dir: "{{.InterfaceDirRelative}}/mocks"
+force-file-write: true
+
+packages:
+  github.com/absmach/propeller/manager:
+    interfaces:
+      Service:
+  github.com/absmach/propeller/pkg/storage:
+    interfaces:
+      TaskRepository:
+      PropletRepository:
+      TaskPropletRepository:
+      MetricsRepository:
+  github.com/absmach/propeller/pkg/mqtt:
+    interfaces:
+      PubSub:
+  github.com/absmach/propeller/pkg/scheduler:
+    interfaces:
+      Scheduler:
