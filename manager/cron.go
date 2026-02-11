@@ -14,7 +14,15 @@ import (
 
 const defaultCronCheckInterval = time.Minute
 
-type CronScheduler struct {
+// CronScheduler defines the behavior for managing cron-based task scheduling.
+type CronScheduler interface {
+	Start(ctx context.Context) error
+	Stop()
+	ScheduleTask(ctx context.Context, taskID string) error
+	UnscheduleTask(ctx context.Context, taskID string) error
+}
+
+type cronScheduler struct {
 	tasksDB       storage.TaskRepository
 	service       Service
 	logger        *slog.Logger
@@ -22,8 +30,8 @@ type CronScheduler struct {
 	stopChan      chan struct{}
 }
 
-func NewCronScheduler(tasksDB storage.TaskRepository, service Service, logger *slog.Logger) *CronScheduler {
-	return &CronScheduler{
+func NewCronScheduler(tasksDB storage.TaskRepository, service Service, logger *slog.Logger) CronScheduler {
+	return &cronScheduler{
 		tasksDB:       tasksDB,
 		service:       service,
 		logger:        logger,
@@ -32,7 +40,7 @@ func NewCronScheduler(tasksDB storage.TaskRepository, service Service, logger *s
 	}
 }
 
-func (cs *CronScheduler) Start(ctx context.Context) error {
+func (cs *cronScheduler) Start(ctx context.Context) error {
 	if err := cs.loadScheduledTasks(ctx); err != nil {
 		cs.logger.Warn("failed to load scheduled tasks from storage", slog.String("error", err.Error()))
 	}
@@ -60,11 +68,11 @@ func (cs *CronScheduler) Start(ctx context.Context) error {
 	}
 }
 
-func (cs *CronScheduler) Stop() {
+func (cs *cronScheduler) Stop() {
 	close(cs.stopChan)
 }
 
-func (cs *CronScheduler) ScheduleTask(ctx context.Context, taskID string) error {
+func (cs *cronScheduler) ScheduleTask(ctx context.Context, taskID string) error {
 	t, err := cs.tasksDB.Get(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
@@ -77,7 +85,7 @@ func (cs *CronScheduler) ScheduleTask(ctx context.Context, taskID string) error 
 	return cs.updateNextRun(ctx, t)
 }
 
-func (cs *CronScheduler) UnscheduleTask(ctx context.Context, taskID string) error {
+func (cs *cronScheduler) UnscheduleTask(ctx context.Context, taskID string) error {
 	t, err := cs.tasksDB.Get(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to get task: %w", err)
@@ -93,7 +101,7 @@ func (cs *CronScheduler) UnscheduleTask(ctx context.Context, taskID string) erro
 	return nil
 }
 
-func (cs *CronScheduler) processScheduledTasks(ctx context.Context) error {
+func (cs *cronScheduler) processScheduledTasks(ctx context.Context) error {
 	tasks, _, err := cs.tasksDB.List(ctx, 0, 10000)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
@@ -141,7 +149,7 @@ func (cs *CronScheduler) processScheduledTasks(ctx context.Context) error {
 	return nil
 }
 
-func (cs *CronScheduler) triggerScheduledTask(ctx context.Context, t task.Task) error {
+func (cs *cronScheduler) triggerScheduledTask(ctx context.Context, t task.Task) error {
 	cs.logger.Info("triggering scheduled task",
 		slog.String("task_id", t.ID),
 		slog.String("name", t.Name))
@@ -153,7 +161,7 @@ func (cs *CronScheduler) triggerScheduledTask(ctx context.Context, t task.Task) 
 	return nil
 }
 
-func (cs *CronScheduler) updateNextRun(ctx context.Context, t task.Task) error {
+func (cs *cronScheduler) updateNextRun(ctx context.Context, t task.Task) error {
 	schedule, err := cron.ParseCronExpression(t.Schedule)
 	if err != nil {
 		return fmt.Errorf("failed to parse cron expression: %w", err)
@@ -181,7 +189,7 @@ func (cs *CronScheduler) updateNextRun(ctx context.Context, t task.Task) error {
 	return nil
 }
 
-func (cs *CronScheduler) loadScheduledTasks(ctx context.Context) error {
+func (cs *cronScheduler) loadScheduledTasks(ctx context.Context) error {
 	tasks, _, err := cs.tasksDB.List(ctx, 0, 10000)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)

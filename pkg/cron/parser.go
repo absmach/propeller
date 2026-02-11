@@ -9,12 +9,20 @@ import (
 
 var ErrInvalidCronExpression = errors.New("invalid cron expression")
 
-type CronSchedule struct {
-	parser cron.Parser
-	spec   cron.Schedule
+// Schedule represents a parsed cron schedule that can compute the next run time.
+type Schedule interface {
+	Next(time.Time) time.Time
 }
 
-func ParseCronExpression(expr string) (*CronSchedule, error) {
+type cronSchedule struct {
+	spec cron.Schedule
+}
+
+func (cs *cronSchedule) Next(t time.Time) time.Time {
+	return cs.spec.Next(t)
+}
+
+func ParseCronExpression(expr string) (Schedule, error) {
 	if expr == "" {
 		return nil, ErrInvalidCronExpression
 	}
@@ -25,9 +33,8 @@ func ParseCronExpression(expr string) (*CronSchedule, error) {
 		return nil, ErrInvalidCronExpression
 	}
 
-	return &CronSchedule{
-		parser: parser,
-		spec:   spec,
+	return &cronSchedule{
+		spec: spec,
 	}, nil
 }
 
@@ -37,8 +44,8 @@ func ValidateCronExpression(expr string) error {
 	return err
 }
 
-func CalculateNextRun(schedule *CronSchedule, from time.Time, timezone string) time.Time {
-	if schedule == nil || schedule.spec == nil {
+func CalculateNextRun(schedule Schedule, from time.Time, timezone string) time.Time {
+	if schedule == nil {
 		return time.Time{}
 	}
 
@@ -52,7 +59,6 @@ func CalculateNextRun(schedule *CronSchedule, from time.Time, timezone string) t
 	}
 
 	localTime := from.In(loc)
-	nextRun := schedule.spec.Next(localTime)
 
-	return nextRun
+	return schedule.Next(localTime)
 }

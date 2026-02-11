@@ -47,7 +47,7 @@ type service struct {
 	taskPropletRepo  storage.TaskPropletRepository
 	metricsRepo      storage.MetricsRepository
 	scheduler        scheduler.Scheduler
-	cronScheduler    *CronScheduler
+	cronScheduler    CronScheduler
 	baseTopic        string
 	pubsub           mqtt.PubSub
 	logger           *slog.Logger
@@ -60,7 +60,7 @@ func NewService(
 	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	domainID, channelID string, logger *slog.Logger,
-) (Service, *CronScheduler) {
+) (Service, CronScheduler) {
 	coordinatorURL := os.Getenv("COORDINATOR_URL")
 	var httpClient *http.Client
 	if coordinatorURL != "" {
