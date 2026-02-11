@@ -553,4 +553,3 @@ func (lm *loggingMiddleware) GetRoundStatus(ctx context.Context, roundID string)
 
 	return lm.svc.GetRoundStatus(ctx, roundID)
 }
-
