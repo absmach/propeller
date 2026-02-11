@@ -142,6 +142,8 @@ func (r *memoryTaskPropletRepo) Delete(ctx context.Context, taskID string) error
 	return r.storage.Delete(ctx, taskID)
 }
 
+const maxMemoryFetch = 100000
+
 type memoryMetricsRepo struct {
 	storage Storage
 }
@@ -163,9 +165,13 @@ func (r *memoryMetricsRepo) CreatePropletMetrics(ctx context.Context, m PropletM
 }
 
 func (r *memoryMetricsRepo) ListTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) ([]TaskMetrics, uint64, error) {
-	data, _, err := r.storage.List(ctx, 0, 100000)
+	data, total, err := r.storage.List(ctx, 0, maxMemoryFetch)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	if total >= maxMemoryFetch {
+		return nil, 0, fmt.Errorf("metrics dataset exceeds maximum fetch size of %d, results may be truncated", maxMemoryFetch)
 	}
 
 	var filtered []TaskMetrics
@@ -179,21 +185,25 @@ func (r *memoryMetricsRepo) ListTaskMetrics(ctx context.Context, taskID string, 
 		}
 	}
 
-	total := uint64(len(filtered))
-	if offset >= total {
-		return []TaskMetrics{}, total, nil
+	filteredTotal := uint64(len(filtered))
+	if offset >= filteredTotal {
+		return []TaskMetrics{}, filteredTotal, nil
 	}
 
 	start := offset
-	end := min(offset+limit, total)
+	end := min(offset+limit, filteredTotal)
 
-	return filtered[start:end], total, nil
+	return filtered[start:end], filteredTotal, nil
 }
 
 func (r *memoryMetricsRepo) ListPropletMetrics(ctx context.Context, propletID string, offset, limit uint64) ([]PropletMetrics, uint64, error) {
-	data, _, err := r.storage.List(ctx, 0, 100000)
+	data, total, err := r.storage.List(ctx, 0, maxMemoryFetch)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	if total >= maxMemoryFetch {
+		return nil, 0, fmt.Errorf("metrics dataset exceeds maximum fetch size of %d, results may be truncated", maxMemoryFetch)
 	}
 
 	var filtered []PropletMetrics
@@ -207,13 +217,13 @@ func (r *memoryMetricsRepo) ListPropletMetrics(ctx context.Context, propletID st
 		}
 	}
 
-	total := uint64(len(filtered))
-	if offset >= total {
-		return []PropletMetrics{}, total, nil
+	filteredTotal := uint64(len(filtered))
+	if offset >= filteredTotal {
+		return []PropletMetrics{}, filteredTotal, nil
 	}
 
 	start := offset
-	end := min(offset+limit, total)
+	end := min(offset+limit, filteredTotal)
 
-	return filtered[start:end], total, nil
+	return filtered[start:end], filteredTotal, nil
 }

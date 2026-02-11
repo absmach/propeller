@@ -149,6 +149,10 @@ static void prepare_fds(struct mqtt_client *client) {
 
 static void clear_fds(void) { nfds = 0; }
 
+/* Forward declarations */
+static int http_get_json(const char *url, char *response_buffer, size_t buffer_size);
+static int extract_model_version_from_uri(const char *uri);
+
 static int poll_mqtt_socket(struct mqtt_client *client, int timeout) {
   prepare_fds(client);
   if (nfds <= 0) {
@@ -220,11 +224,16 @@ static void mqtt_event_handler(struct mqtt_client *client,
     if (g_current_task.is_fml_task && strlen(g_current_task.model_uri) > 0 &&
         strcmp(topic_str, g_current_task.model_uri) == 0) {
       LOG_INF("Received model from topic: %s (payload: %d bytes)", topic_str, (int)pub->message.payload.len);
-      
+
       size_t payload_size = MIN(pub->message.payload.len, sizeof(g_current_task.model_data) - 1);
       memcpy(g_current_task.model_data, payload, payload_size);
       g_current_task.model_data[payload_size] = '\0';
       g_current_task.model_data_fetched = true;
+
+      if (pub->message.payload.len > payload_size) {
+        LOG_WRN("Model data truncated from %d to %zu bytes, training may fail",
+                (int)pub->message.payload.len, payload_size);
+      }
       LOG_INF("Model data stored (size: %zu bytes)", payload_size);
     } else if (rtopic->size == strlen(start_topic) &&
         memcmp(rtopic->utf8, start_topic, rtopic->size) == 0) {
@@ -660,13 +669,15 @@ void handle_start_command(const char *payload) {
     if (http_get_json(model_url, http_response, sizeof(http_response)) == 0) {
       size_t response_len = strlen(http_response);
       if (response_len >= sizeof(g_current_task.model_data) - 1) {
-        LOG_ERR("Model data truncated (size >= %zu), training may fail", sizeof(g_current_task.model_data));
+        LOG_ERR("Model data too large (%zu >= %zu), cannot store, training will fail",
+                response_len, sizeof(g_current_task.model_data) - 1);
+      } else {
+        strncpy(g_current_task.model_data, http_response,
+                sizeof(g_current_task.model_data) - 1);
+        g_current_task.model_data[sizeof(g_current_task.model_data) - 1] = '\0';
+        g_current_task.model_data_fetched = true;
+        LOG_INF("Successfully fetched model v%d via HTTP and stored in MODEL_DATA", model_version);
       }
-      strncpy(g_current_task.model_data, http_response,
-              sizeof(g_current_task.model_data) - 1);
-      g_current_task.model_data[sizeof(g_current_task.model_data) - 1] = '\0';
-      g_current_task.model_data_fetched = true;
-      LOG_INF("Successfully fetched model v%d via HTTP and stored in MODEL_DATA", model_version);
     } else {
       LOG_WRN("HTTP model fetch failed, will use MQTT subscription for model topic: %s", t.model_uri);
     }
@@ -684,15 +695,17 @@ void handle_start_command(const char *payload) {
     if (http_get_json(dataset_url, http_response, sizeof(http_response)) == 0) {
       size_t response_len = strlen(http_response);
       if (response_len >= sizeof(g_current_task.dataset_data) - 1) {
-        LOG_ERR("Dataset data truncated (size >= %zu), training may fail", sizeof(g_current_task.dataset_data));
+        LOG_ERR("Dataset data too large (%zu >= %zu), cannot store, training will fail",
+                response_len, sizeof(g_current_task.dataset_data) - 1);
+      } else {
+        strncpy(g_current_task.dataset_data, http_response,
+                sizeof(g_current_task.dataset_data) - 1);
+        g_current_task.dataset_data[sizeof(g_current_task.dataset_data) - 1] = '\0';
+        g_current_task.dataset_data_fetched = true;
+        LOG_INF("Successfully fetched dataset via HTTP and stored in DATASET_DATA");
       }
-      strncpy(g_current_task.dataset_data, http_response,
-              sizeof(g_current_task.dataset_data) - 1);
-      g_current_task.dataset_data[sizeof(g_current_task.dataset_data) - 1] = '\0';
-      g_current_task.dataset_data_fetched = true;
-      LOG_INF("Successfully fetched dataset via HTTP and stored in DATASET_DATA");
     } else {
-      LOG_WRN("HTTP dataset fetch failed for proplet_id=%s (WASM client may use synthetic data)", 
+      LOG_WRN("HTTP dataset fetch failed for proplet_id=%s (WASM client may use synthetic data)",
               t.proplet_id);
     }
   }
@@ -933,6 +946,12 @@ static int http_get_json(const char *url, char *response_buffer, size_t buffer_s
         }
       } else if (header_buffer_len >= sizeof(header_buffer) - 1) {
         LOG_ERR("HTTP headers too long or malformed");
+        size_t body_len = (size_t)ret - (sizeof(header_buffer) - 1 - header_buffer_len);
+        if (body_len > 0 && total_received + body_len < buffer_size - 1) {
+          memcpy(response_buffer + total_received,
+                 chunk + (sizeof(header_buffer) - 1 - header_buffer_len), body_len);
+          total_received += body_len;
+        }
         zsock_close(sock);
         return -1;
       }

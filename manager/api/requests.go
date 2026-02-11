@@ -14,6 +14,56 @@ func (t *taskReq) validate() error {
 		return apiutil.ErrMissingName
 	}
 
+	if t.RunIf != "" && t.RunIf != task.RunIfSuccess && t.RunIf != task.RunIfFailure {
+		return apiutil.ErrValidation
+	}
+
+	return nil
+}
+
+type workflowReq struct {
+	Tasks []task.Task `json:"tasks"`
+}
+
+func (w *workflowReq) validate() error {
+	if len(w.Tasks) == 0 {
+		return apiutil.ErrValidation
+	}
+
+	for i := range w.Tasks {
+		if w.Tasks[i].Name == "" {
+			return apiutil.ErrMissingName
+		}
+
+		if w.Tasks[i].RunIf != "" && w.Tasks[i].RunIf != task.RunIfSuccess && w.Tasks[i].RunIf != task.RunIfFailure {
+			return apiutil.ErrValidation
+		}
+	}
+
+	return nil
+}
+
+type jobReq struct {
+	Name          string      `json:"name"`
+	Tasks         []task.Task `json:"tasks"`
+	ExecutionMode string      `json:"execution_mode,omitempty"`
+}
+
+func (j *jobReq) validate() error {
+	if len(j.Tasks) == 0 {
+		return apiutil.ErrValidation
+	}
+
+	for i := range j.Tasks {
+		if j.Tasks[i].Name == "" {
+			return apiutil.ErrMissingName
+		}
+
+		if j.Tasks[i].RunIf != "" && j.Tasks[i].RunIf != task.RunIfSuccess && j.Tasks[i].RunIf != task.RunIfFailure {
+			return apiutil.ErrValidation
+		}
+	}
+
 	return nil
 }
 

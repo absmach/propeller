@@ -290,6 +290,160 @@ func (lm *loggingMiddleware) GetPropletMetrics(ctx context.Context, propletID st
 	return lm.svc.GetPropletMetrics(ctx, propletID, offset, limit)
 }
 
+func (lm *loggingMiddleware) CreateWorkflow(ctx context.Context, tasks []task.Task) (resp []task.Task, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Int("task_count", len(tasks)),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Create workflow failed", args...)
+
+			return
+		}
+		lm.logger.Info("Create workflow completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.CreateWorkflow(ctx, tasks)
+}
+
+func (lm *loggingMiddleware) CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (jobID string, resp []task.Task, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("job_name", name),
+			slog.String("execution_mode", executionMode),
+			slog.Int("task_count", len(tasks)),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Create job failed", args...)
+
+			return
+		}
+		args = append(args, slog.String("job_id", jobID))
+		lm.logger.Info("Create job completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.CreateJob(ctx, name, tasks, executionMode)
+}
+
+func (lm *loggingMiddleware) GetJob(ctx context.Context, jobID string) (resp []task.Task, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("job_id", jobID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get job failed", args...)
+
+			return
+		}
+		args = append(args, slog.Int("task_count", len(resp)))
+		lm.logger.Info("Get job completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetJob(ctx, jobID)
+}
+
+func (lm *loggingMiddleware) ListJobs(ctx context.Context, offset, limit uint64) (resp manager.JobPage, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Uint64("offset", offset),
+			slog.Uint64("limit", limit),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("List jobs failed", args...)
+
+			return
+		}
+		args = append(args, slog.Int("job_count", len(resp.Jobs)), slog.Uint64("total", resp.Total))
+		lm.logger.Info("List jobs completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.ListJobs(ctx, offset, limit)
+}
+
+func (lm *loggingMiddleware) StartJob(ctx context.Context, jobID string) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("job_id", jobID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Start job failed", args...)
+
+			return
+		}
+		lm.logger.Info("Start job completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.StartJob(ctx, jobID)
+}
+
+func (lm *loggingMiddleware) StopJob(ctx context.Context, jobID string) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.String("job_id", jobID),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Stop job failed", args...)
+
+			return
+		}
+		lm.logger.Info("Stop job completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.StopJob(ctx, jobID)
+}
+
+func (lm *loggingMiddleware) GetTaskResults(ctx context.Context, taskID string) (resp any, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", taskID),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get task results failed", args...)
+
+			return
+		}
+		lm.logger.Info("Get task results completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetTaskResults(ctx, taskID)
+}
+
+func (lm *loggingMiddleware) GetParentResults(ctx context.Context, taskID string) (resp map[string]any, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", taskID),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get parent results failed", args...)
+
+			return
+		}
+		lm.logger.Info("Get parent results completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetParentResults(ctx, taskID)
+}
+
 func (lm *loggingMiddleware) Subscribe(ctx context.Context) (err error) {
 	defer func(begin time.Time) {
 		args := []any{
