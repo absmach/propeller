@@ -11,7 +11,7 @@ var ErrInvalidCronExpression = errors.New("invalid cron expression")
 
 // Schedule represents a parsed cron schedule that can compute the next run time.
 type Schedule interface {
-	Next(time.Time) time.Time
+	Next(t time.Time) time.Time
 }
 
 type cronSchedule struct {

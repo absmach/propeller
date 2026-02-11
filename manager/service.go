@@ -781,6 +781,14 @@ func (svc *service) GetParentResults(ctx context.Context, taskID string) (map[st
 	return parentResults, nil
 }
 
+func (svc *service) StartCronScheduler(ctx context.Context) error {
+	if svc.cronScheduler == nil {
+		return nil
+	}
+
+	return svc.cronScheduler.Start(ctx)
+}
+
 func (svc *service) checkTaskDependencies(ctx context.Context, taskID string, t task.Task) error {
 	allDepsCompleted := true
 	for _, depID := range t.DependsOn {
@@ -948,14 +956,6 @@ func (svc *service) stopJobTasks(ctx context.Context, tasks []task.Task) {
 			_ = svc.StopTask(ctx, t.ID)
 		}
 	}
-}
-
-func (svc *service) StartCronScheduler(ctx context.Context) error {
-	if svc.cronScheduler == nil {
-		return nil
-	}
-
-	return svc.cronScheduler.Start(ctx)
 }
 
 func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]any) error {
