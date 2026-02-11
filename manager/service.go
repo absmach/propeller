@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0x6flab/namegenerator"
@@ -45,6 +46,7 @@ type service struct {
 	taskRepo         storage.TaskRepository
 	propletRepo      storage.PropletRepository
 	taskPropletRepo  storage.TaskPropletRepository
+	jobRepo          storage.JobRepository
 	metricsRepo      storage.MetricsRepository
 	scheduler        scheduler.Scheduler
 	cronScheduler    CronScheduler
@@ -76,6 +78,7 @@ func NewService(
 		taskRepo:         repos.Tasks,
 		propletRepo:      repos.Proplets,
 		taskPropletRepo:  repos.TaskProplets,
+		jobRepo:          repos.Jobs,
 		metricsRepo:      repos.Metrics,
 		scheduler:        s,
 		baseTopic:        fmt.Sprintf(baseTopic, domainID, channelID),
@@ -273,26 +276,13 @@ func (svc *service) CreateJob(ctx context.Context, name string, tasks []task.Tas
 		}
 	}
 
+	now := time.Now()
 	for i := range tasks {
 		tasks[i].JobID = jobID
 		if tasks[i].ID == "" {
 			tasks[i].ID = uuid.NewString()
 		}
-		tasks[i].CreatedAt = time.Now()
-
-		if executionMode != "" {
-			if tasks[i].Env == nil {
-				tasks[i].Env = make(map[string]string)
-			}
-			tasks[i].Env["_job_execution_mode"] = executionMode
-		}
-
-		if name != "" {
-			if tasks[i].Env == nil {
-				tasks[i].Env = make(map[string]string)
-			}
-			tasks[i].Env["_job_name"] = name
-		}
+		tasks[i].CreatedAt = now
 	}
 
 	if err := dag.ValidateDependenciesExist(tasks); err != nil {
@@ -303,6 +293,19 @@ func (svc *service) CreateJob(ctx context.Context, name string, tasks []task.Tas
 		return "", nil, fmt.Errorf("DAG validation failed: %w", err)
 	}
 
+	if svc.jobRepo != nil {
+		job := storage.Job{
+			ID:            jobID,
+			Name:          name,
+			ExecutionMode: executionMode,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if _, err := svc.jobRepo.Create(ctx, job); err != nil {
+			return "", nil, fmt.Errorf("failed to create job: %w", err)
+		}
+	}
+
 	createdTasks := make([]task.Task, 0, len(tasks))
 	for i := range tasks {
 		t := tasks[i]
@@ -311,6 +314,9 @@ func (svc *service) CreateJob(ctx context.Context, name string, tasks []task.Tas
 			for j := range createdTasks {
 				created := createdTasks[j]
 				_ = svc.taskRepo.Delete(ctx, created.ID)
+			}
+			if svc.jobRepo != nil {
+				_ = svc.jobRepo.Delete(ctx, jobID)
 			}
 
 			return "", nil, fmt.Errorf("failed to create task %s: %w", t.ID, err)
@@ -326,6 +332,32 @@ func (svc *service) GetJob(ctx context.Context, jobID string) ([]task.Task, erro
 }
 
 func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error) {
+	if svc.jobRepo != nil {
+		storedJobs, total, err := svc.jobRepo.List(ctx, offset, limit)
+		if err != nil {
+			return JobPage{}, err
+		}
+
+		jobs := make([]JobSummary, 0, len(storedJobs))
+		for _, sj := range storedJobs {
+			tasks, err := svc.taskRepo.ListByJobID(ctx, sj.ID)
+			if err != nil {
+				return JobPage{}, err
+			}
+
+			summary := computeJobSummary(sj.ID, tasks)
+			summary.Name = sj.Name
+			jobs = append(jobs, summary)
+		}
+
+		return JobPage{
+			Offset: offset,
+			Limit:  limit,
+			Total:  total,
+			Jobs:   jobs,
+		}, nil
+	}
+
 	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
 	if err != nil {
 		return JobPage{}, err
@@ -374,11 +406,6 @@ func computeJobSummary(jobID string, tasks []task.Task) JobSummary {
 	}
 
 	name := ""
-	if tasks[0].Env != nil {
-		if n, ok := tasks[0].Env["_job_name"]; ok {
-			name = n
-		}
-	}
 
 	state := ComputeJobState(tasks)
 
@@ -569,12 +596,10 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	if len(t.DependsOn) == 0 {
-		return svc.startTaskWithoutDeps(ctx, taskID, t)
-	}
-
-	if err := svc.checkTaskDependencies(ctx, taskID, t); err != nil {
-		return err
+	if len(t.DependsOn) > 0 {
+		if err := svc.checkTaskDependencies(ctx, taskID, t); err != nil {
+			return err
+		}
 	}
 
 	var p proplet.Proplet
@@ -667,11 +692,15 @@ func (svc *service) StartJob(ctx context.Context, jobID string) error {
 		return fmt.Errorf("job %s has no tasks", jobID)
 	}
 
-	executionMode := strings.TrimSpace(os.Getenv(EnvJobExecutionMode))
-	if len(tasks) > 0 && tasks[0].Env != nil {
-		if mode, ok := tasks[0].Env["_job_execution_mode"]; ok {
-			executionMode = strings.TrimSpace(mode)
+	var executionMode string
+	if svc.jobRepo != nil {
+		job, err := svc.jobRepo.Get(ctx, jobID)
+		if err == nil {
+			executionMode = strings.TrimSpace(job.ExecutionMode)
 		}
+	}
+	if executionMode == "" {
+		executionMode = strings.TrimSpace(os.Getenv(EnvJobExecutionMode))
 	}
 	if executionMode == "" {
 		return fmt.Errorf("%s must be set", EnvJobExecutionMode)
@@ -790,103 +819,59 @@ func (svc *service) StartCronScheduler(ctx context.Context) error {
 }
 
 func (svc *service) checkTaskDependencies(ctx context.Context, taskID string, t task.Task) error {
-	allDepsCompleted := true
 	for _, depID := range t.DependsOn {
 		dep, err := svc.GetTask(ctx, depID)
 		if err != nil {
 			return fmt.Errorf("failed to get dependency task %s: %w", depID, err)
 		}
 		if dep.State != task.Completed && dep.State != task.Failed && dep.State != task.Skipped {
-			allDepsCompleted = false
+			if t.WorkflowID != "" {
+				if err := svc.coordinator.CheckAndStartReadyTasks(ctx, t.WorkflowID); err != nil {
+					svc.logger.WarnContext(ctx, "workflow coordinator error", "workflow_id", t.WorkflowID, "error", err)
+				}
+			}
 
-			break
+			return fmt.Errorf("task %s has unmet dependencies", taskID)
 		}
-	}
-
-	if !allDepsCompleted {
-		if t.WorkflowID != "" {
-			return svc.coordinator.CheckAndStartReadyTasks(ctx, t.WorkflowID)
-		}
-
-		return fmt.Errorf("task %s has unmet dependencies", taskID)
-	}
-
-	return nil
-}
-
-func (svc *service) startTaskWithoutDeps(ctx context.Context, taskID string, t task.Task) error {
-	parentResults, err := svc.GetParentResults(ctx, taskID)
-	if err != nil {
-		svc.logger.WarnContext(ctx, "failed to get parent results", "task_id", taskID, "error", err)
-		parentResults = make(map[string]any)
-	}
-
-	payload := map[string]any{
-		"id":                 t.ID,
-		"name":               t.Name,
-		"state":              t.State,
-		"image_url":          t.ImageURL,
-		"file":               t.File,
-		"inputs":             t.Inputs,
-		"cli_args":           t.CLIArgs,
-		"daemon":             t.Daemon,
-		"env":                t.Env,
-		"encrypted":          t.Encrypted,
-		"kbs_resource_path":  t.KBSResourcePath,
-		"monitoring_profile": t.MonitoringProfile,
-		"parent_results":     parentResults,
-	}
-
-	topic := svc.baseTopic + "/control/manager/start"
-	if err := svc.pubsub.Publish(ctx, topic, payload); err != nil {
-		return err
-	}
-
-	var p proplet.Proplet
-	switch t.PropletID {
-	case "":
-		p, err = svc.SelectProplet(ctx, t)
-		if err != nil {
-			return err
-		}
-	default:
-		p, err = svc.GetProplet(ctx, t.PropletID)
-		if err != nil {
-			return err
-		}
-		if !p.Alive {
-			return fmt.Errorf("specified proplet %s is not alive", t.PropletID)
-		}
-	}
-
-	if err := svc.pinTaskToProplet(ctx, taskID, p.ID); err != nil {
-		return err
-	}
-
-	t.PropletID = p.ID
-
-	if err := svc.persistTaskBeforeStart(ctx, &t); err != nil {
-		return err
-	}
-
-	if err := svc.publishStart(ctx, t, p.ID); err != nil {
-		_ = svc.taskPropletRepo.Delete(ctx, taskID)
-
-		return err
-	}
-
-	if err := svc.bumpPropletTaskCount(ctx, p, +1); err != nil {
-		return err
-	}
-
-	if err := svc.markTaskRunning(ctx, &t); err != nil {
-		return err
 	}
 
 	return nil
 }
 
 func (svc *service) startJobParallel(ctx context.Context, tasks []task.Task) error {
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(tasks))
+
+	for i := range tasks {
+		t := &tasks[i]
+		if len(t.DependsOn) == 0 {
+			wg.Add(1)
+			go func(taskID string) {
+				defer wg.Done()
+				if err := svc.StartTask(ctx, taskID); err != nil {
+					errCh <- fmt.Errorf("failed to start task %s: %w", taskID, err)
+				}
+			}(t.ID)
+		}
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		svc.stopJobTasks(ctx, tasks)
+
+		return errors.Join(errs...)
+	}
+
+	return nil
+}
+
+func (svc *service) startJobSequential(ctx context.Context, tasks []task.Task) error {
 	for i := range tasks {
 		t := &tasks[i]
 		if len(t.DependsOn) == 0 {
@@ -901,41 +886,14 @@ func (svc *service) startJobParallel(ctx context.Context, tasks []task.Task) err
 	return nil
 }
 
-func (svc *service) startJobSequential(ctx context.Context, tasks []task.Task) error {
-	taskMap := make(map[string]task.Task)
-	for i := range tasks {
-		t := &tasks[i]
-		taskMap[t.ID] = *t
-	}
-
-	readyTasks := make([]task.Task, 0)
-	for i := range tasks {
-		t := &tasks[i]
-		if len(t.DependsOn) == 0 {
-			readyTasks = append(readyTasks, *t)
-		}
-	}
-
-	for i := range readyTasks {
-		t := &readyTasks[i]
-		if err := svc.StartTask(ctx, t.ID); err != nil {
-			svc.stopJobTasks(ctx, tasks)
-
-			return fmt.Errorf("failed to start task %s: %w", t.ID, err)
-		}
-	}
-
-	return nil
-}
-
 func (svc *service) startJobConfigurable(ctx context.Context, tasks []task.Task) error {
-	readyTasks := make([]task.Task, 0)
-	for i := range tasks {
-		t := &tasks[i]
-		if len(t.DependsOn) == 0 {
-			readyTasks = append(readyTasks, *t)
-		}
+	sorted, err := dag.TopologicalSort(tasks)
+	if err != nil {
+		return fmt.Errorf("failed to sort tasks: %w", err)
 	}
+
+	completed := make(map[string]task.State)
+	readyTasks := dag.GetReadyTasks(sorted, completed)
 
 	for i := range readyTasks {
 		t := &readyTasks[i]
@@ -1541,8 +1499,19 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		"cli_args":           t.CLIArgs,
 		"daemon":             t.Daemon,
 		"env":                t.Env,
+		"encrypted":          t.Encrypted,
+		"kbs_resource_path":  t.KBSResourcePath,
 		"monitoring_profile": t.MonitoringProfile,
 		"proplet_id":         propletID,
+	}
+
+	if len(t.DependsOn) > 0 {
+		parentResults, err := svc.GetParentResults(ctx, t.ID)
+		if err != nil {
+			svc.logger.WarnContext(ctx, "failed to get parent results", "task_id", t.ID, "error", err)
+			parentResults = make(map[string]any)
+		}
+		payload["parent_results"] = parentResults
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
@@ -1566,33 +1535,9 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 }
 
 func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks := make([]task.Task, 0)
-	for i := range allTasks {
-		if allTasks[i].WorkflowID == workflowID {
-			tasks = append(tasks, allTasks[i])
-		}
-	}
-
-	return tasks, nil
+	return svc.taskRepo.ListByWorkflowID(ctx, workflowID)
 }
 
 func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task, error) {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks := make([]task.Task, 0)
-	for i := range allTasks {
-		if allTasks[i].JobID == jobID {
-			tasks = append(tasks, allTasks[i])
-		}
-	}
-
-	return tasks, nil
+	return svc.taskRepo.ListByJobID(ctx, jobID)
 }

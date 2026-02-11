@@ -78,6 +78,38 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
+func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	allTasks, _, err := r.List(ctx, 0, 100000)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for i := range allTasks {
+		if allTasks[i].WorkflowID == workflowID {
+			tasks = append(tasks, allTasks[i])
+		}
+	}
+
+	return tasks, nil
+}
+
+func (r *taskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	allTasks, _, err := r.List(ctx, 0, 100000)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for i := range allTasks {
+		if allTasks[i].JobID == jobID {
+			tasks = append(tasks, allTasks[i])
+		}
+	}
+
+	return tasks, nil
+}
+
 func (r *taskRepo) Delete(ctx context.Context, id string) error {
 	key := []byte("task:" + id)
 

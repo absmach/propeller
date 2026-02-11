@@ -20,6 +20,15 @@ func ValidateDAG(tasks []task.Task) error {
 		taskMap[t.ID] = *t
 	}
 
+	for i := range tasks {
+		t := &tasks[i]
+		for _, depID := range t.DependsOn {
+			if depID == t.ID {
+				return fmt.Errorf("%w: task %s depends on itself", ErrCircularDependency, t.ID)
+			}
+		}
+	}
+
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
 

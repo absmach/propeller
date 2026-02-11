@@ -38,6 +38,21 @@ func TestValidateDAG_CircularDependency(t *testing.T) {
 	}
 }
 
+func TestValidateDAG_SelfDependency(t *testing.T) {
+	t.Parallel()
+	tasks := []task.Task{
+		{ID: "task1", DependsOn: []string{"task1"}},
+	}
+
+	err := dag.ValidateDAG(tasks)
+	if err == nil {
+		t.Fatal("Expected error for self-dependency, got nil")
+	}
+	if !errors.Is(err, dag.ErrCircularDependency) {
+		t.Fatalf("Expected ErrCircularDependency, got: %v", err)
+	}
+}
+
 func TestValidateDAG_ComplexCycle(t *testing.T) {
 	t.Parallel()
 	tasks := []task.Task{
@@ -196,5 +211,42 @@ func TestGetReadyTasks_ExcludesTerminalStates(t *testing.T) {
 
 	if ready[0].ID != "task4" {
 		t.Errorf("Expected task4 to be ready, got %s", ready[0].ID)
+	}
+}
+
+func TestGetReadyTasks_FailedDependencyUnblocks(t *testing.T) {
+	t.Parallel()
+	tasks := []task.Task{
+		{ID: "task1", State: task.Failed, DependsOn: []string{}},
+		{ID: "task2", State: task.Pending, DependsOn: []string{"task1"}},
+	}
+
+	completed := map[string]task.State{
+		"task1": task.Failed,
+	}
+
+	ready := dag.GetReadyTasks(tasks, completed)
+
+	if len(ready) != 1 {
+		t.Fatalf("Expected 1 ready task (failed dep still unblocks), got %d", len(ready))
+	}
+
+	if ready[0].ID != "task2" {
+		t.Errorf("Expected task2 to be ready, got %s", ready[0].ID)
+	}
+}
+
+func TestTopologicalSort_SelfCycle(t *testing.T) {
+	t.Parallel()
+	tasks := []task.Task{
+		{ID: "task1", DependsOn: []string{"task1"}},
+	}
+
+	_, err := dag.TopologicalSort(tasks)
+	if err == nil {
+		t.Fatal("Expected error for self-cycle, got nil")
+	}
+	if !errors.Is(err, dag.ErrCircularDependency) {
+		t.Fatalf("Expected ErrCircularDependency, got: %v", err)
 	}
 }
