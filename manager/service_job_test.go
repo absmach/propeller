@@ -134,7 +134,7 @@ func TestListJobsPagination(t *testing.T) {
 	t.Parallel()
 	svc := newService(t)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _, err := svc.CreateJob(context.Background(), "job", []task.Task{
 			{Name: "t", State: task.Pending},
 		}, "parallel")

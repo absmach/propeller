@@ -22,10 +22,8 @@ func ValidateDAG(tasks []task.Task) error {
 
 	for i := range tasks {
 		t := &tasks[i]
-		for _, depID := range t.DependsOn {
-			if depID == t.ID {
-				return fmt.Errorf("%w: task %s depends on itself", ErrCircularDependency, t.ID)
-			}
+		if slices.Contains(t.DependsOn, t.ID) {
+			return fmt.Errorf("%w: task %s depends on itself", ErrCircularDependency, t.ID)
 		}
 	}
 

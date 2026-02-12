@@ -225,6 +225,16 @@ func (r *taskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, 
 	return r.scanTasks(ctx, query, jobID)
 }
 
+func (r *taskRepo) Delete(ctx context.Context, id string) error {
+	query := `DELETE FROM tasks WHERE id = $1`
+
+	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
+		return fmt.Errorf("%w: %w", ErrDelete, err)
+	}
+
+	return nil
+}
+
 func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]task.Task, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -262,16 +272,6 @@ func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]
 	return tasks, nil
 }
 
-func (r *taskRepo) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM tasks WHERE id = $1`
-
-	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
-		return fmt.Errorf("%w: %w", ErrDelete, err)
-	}
-
-	return nil
-}
-
 func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	t := task.Task{
 		ID:        dbt.ID,
@@ -287,20 +287,14 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.ImageURL != nil {
 		t.ImageURL = *dbt.ImageURL
 	}
-	if dbt.CLIArgs != nil {
-		if err := jsonUnmarshal(dbt.CLIArgs, &t.CLIArgs); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.CLIArgs, &t.CLIArgs); err != nil {
+		return task.Task{}, err
 	}
-	if dbt.Inputs != nil {
-		if err := jsonUnmarshal(dbt.Inputs, &t.Inputs); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Inputs, &t.Inputs); err != nil {
+		return task.Task{}, err
 	}
-	if dbt.Env != nil {
-		if err := jsonUnmarshal(dbt.Env, &t.Env); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Env, &t.Env); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.KBSResourcePath != nil {
 		t.KBSResourcePath = *dbt.KBSResourcePath
@@ -308,18 +302,14 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.PropletID != nil {
 		t.PropletID = *dbt.PropletID
 	}
-	if dbt.Results != nil {
-		if err := jsonUnmarshal(dbt.Results, &t.Results); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Results, &t.Results); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.Error != nil {
 		t.Error = *dbt.Error
 	}
-	if dbt.MonitoringProfile != nil {
-		if err := jsonUnmarshal(dbt.MonitoringProfile, &t.MonitoringProfile); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.MonitoringProfile, &t.MonitoringProfile); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.StartTime != nil && dbt.StartTime.Valid {
 		t.StartTime = dbt.StartTime.Time
@@ -333,10 +323,8 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.JobID != nil {
 		t.JobID = *dbt.JobID
 	}
-	if dbt.DependsOn != nil {
-		if err := jsonUnmarshal(dbt.DependsOn, &t.DependsOn); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.DependsOn, &t.DependsOn); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.RunIf != nil {
 		t.RunIf = *dbt.RunIf

@@ -858,7 +858,7 @@ func (svc *service) startJobParallel(ctx context.Context, tasks []task.Task) err
 	wg.Wait()
 	close(errCh)
 
-	var errs []error
+	errs := make([]error, 0, len(errCh))
 	for err := range errCh {
 		errs = append(errs, err)
 	}

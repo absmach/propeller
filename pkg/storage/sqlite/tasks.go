@@ -205,6 +205,16 @@ func (r *taskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, 
 	return r.scanTasks(ctx, query, jobID)
 }
 
+func (r *taskRepo) Delete(ctx context.Context, id string) error {
+	query := `DELETE FROM tasks WHERE id = ?`
+
+	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
+		return fmt.Errorf("%w: %w", ErrDelete, err)
+	}
+
+	return nil
+}
+
 func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]task.Task, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -240,16 +250,6 @@ func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]
 	}
 
 	return tasks, nil
-}
-
-func (r *taskRepo) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM tasks WHERE id = ?`
-
-	if _, err := r.db.ExecContext(ctx, query, id); err != nil {
-		return fmt.Errorf("%w: %w", ErrDelete, err)
-	}
-
-	return nil
 }
 
 func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
