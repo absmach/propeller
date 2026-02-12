@@ -23,3 +23,6 @@ examples/ml-wasm/mymodel.wasm
 *.env.bak
 *.bak
 .env.*.bak
+
+# Private keys
+docker/keys/*.key

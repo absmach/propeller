@@ -1747,7 +1747,6 @@ services:
       COORDINATOR_URL: ${COORDINATOR_URL:-http://coordinator-http:8080}
       MODEL_REGISTRY_URL: ${MODEL_REGISTRY_URL:-http://model-registry:8081}
       DATA_STORE_URL: ${DATA_STORE_URL:-http://local-data-store:8083}
-      DYLD_LIBRARY_PATH: "/opt/homebrew/lib"
     networks:
       - supermq-base-net
     # Uncomment platform for wasi-nn image (OpenVINO requires x86_64)
@@ -1787,5 +1786,5 @@ services:
       - supermq-base-net
     # To use a custom config.toml, uncomment the following line and ensure ./config.toml exists.
     # If you are using environment variables for configuration, leave this commented out.
-  # volumes:
-  #   - ./config.toml:/config.toml
+    # volumes:
+    #   - ./config.toml:/config.toml

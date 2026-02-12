@@ -17,6 +17,9 @@ WORKDIR /build
 
 RUN apk add --no-cache \
     musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    pkgconfig \
     upx
 
 COPY proplet/ ./
@@ -33,8 +36,9 @@ LABEL org.opencontainers.image.title="Propeller Proplet with wasi-nn"
 LABEL org.opencontainers.image.description="Propeller edge runtime with wasi-nn/OpenVINO support"
 
 ARG WASMTIME_VERSION=39.0.1
+ARG OPENVINO_VERSION=2025.4.0.20398.8fdad55727d
 
-# Install dependencies and wasmtime
+# Install dependencies, wasmtime, and OpenVINO, then remove build-time tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -45,15 +49,15 @@ RUN apt-get update && \
     wget -q https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
     tar -xf wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz && \
     mv wasmtime-v${WASMTIME_VERSION}-x86_64-linux/wasmtime /usr/local/bin/ && \
-    rm -rf wasmtime-v${WASMTIME_VERSION}-x86_64-linux*
-
-# Install OpenVINO Runtime 2025
-RUN mkdir -p /opt/intel && \
+    rm -rf wasmtime-v${WASMTIME_VERSION}-x86_64-linux* && \
+    mkdir -p /opt/intel && \
     cd /tmp && \
-    curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.4/linux/openvino_toolkit_ubuntu24_2025.4.0.20398.8fdad55727d_x86_64.tgz --output openvino.tgz && \
+    curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.4/linux/openvino_toolkit_ubuntu24_${OPENVINO_VERSION}_x86_64.tgz --output openvino.tgz && \
     tar -xf openvino.tgz && \
-    mv openvino_toolkit_ubuntu24_2025.4.0.* /opt/intel/openvino_2025 && \
+    mv openvino_toolkit_ubuntu24_${OPENVINO_VERSION}* /opt/intel/openvino_2025 && \
     rm -f /tmp/openvino.tgz && \
+    apt-get purge -y wget curl xz-utils && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
