@@ -14,7 +14,7 @@
 - **Federated Learning**: Built-in support for federated machine learning workflows with FedAvg aggregation, enabling privacy-preserving distributed training across edge devices.
 - **Job Orchestration**: Group multiple tasks into jobs with configurable execution modes (parallel, sequential, or dependency-based), enabling complex multi-step workflows with fail-fast semantics.
 
-## 🛠️ How It Works
+## How It Works
 
 1. **Develop in WebAssembly**: Write portable, lightweight Wasm workloads for your application.
 2. **Register Workloads**: Push your workloads to an OCI-compliant registry for easy deployment.
