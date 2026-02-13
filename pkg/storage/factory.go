@@ -32,10 +32,9 @@ type Repositories struct {
 	Proplets     PropletRepository
 	TaskProplets TaskPropletRepository
 	Metrics      MetricsRepository
-	Closer       io.Closer
 }
 
-func NewRepositories(cfg Config) (*Repositories, error) {
+func NewRepositories(cfg Config) (*Repositories, io.Closer, error) {
 	switch cfg.Type {
 	case "postgres":
 		return newPostgresRepositories(cfg)
@@ -46,11 +45,11 @@ func NewRepositories(cfg Config) (*Repositories, error) {
 	case "memory":
 		return newMemoryRepositories()
 	default:
-		return nil, fmt.Errorf("unsupported storage type: %s", cfg.Type)
+		return nil, nil, fmt.Errorf("unsupported storage type: %s", cfg.Type)
 	}
 }
 
-func newPostgresRepositories(cfg Config) (*Repositories, error) {
+func newPostgresRepositories(cfg Config) (*Repositories, io.Closer, error) {
 	db, err := postgres.NewDatabase(
 		cfg.PostgresHost,
 		cfg.PostgresPort,
@@ -60,7 +59,7 @@ func newPostgresRepositories(cfg Config) (*Repositories, error) {
 		cfg.PostgresSSLMode,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	repos := postgres.NewRepositories(db)
@@ -70,14 +69,13 @@ func newPostgresRepositories(cfg Config) (*Repositories, error) {
 		Proplets:     &postgresPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &postgresTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &postgresMetricsAdapter{repo: repos.Metrics},
-		Closer:       db,
-	}, nil
+	}, db, nil
 }
 
-func newSQLiteRepositories(cfg Config) (*Repositories, error) {
+func newSQLiteRepositories(cfg Config) (*Repositories, io.Closer, error) {
 	db, err := sqlite.NewDatabase(cfg.SQLitePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	repos := sqlite.NewRepositories(db)
@@ -87,14 +85,13 @@ func newSQLiteRepositories(cfg Config) (*Repositories, error) {
 		Proplets:     &sqlitePropletAdapter{repo: repos.Proplets},
 		TaskProplets: &sqliteTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &sqliteMetricsAdapter{repo: repos.Metrics},
-		Closer:       db,
-	}, nil
+	}, db, nil
 }
 
-func newBadgerRepositories(cfg Config) (*Repositories, error) {
+func newBadgerRepositories(cfg Config) (*Repositories, io.Closer, error) {
 	db, err := badger.NewDatabase(cfg.BadgerPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	repos := badger.NewRepositories(db)
@@ -104,11 +101,10 @@ func newBadgerRepositories(cfg Config) (*Repositories, error) {
 		Proplets:     &badgerPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &badgerTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &badgerMetricsAdapter{repo: repos.Metrics},
-		Closer:       db,
-	}, nil
+	}, db, nil
 }
 
-func newMemoryRepositories() (*Repositories, error) {
+func newMemoryRepositories() (*Repositories, io.Closer, error) {
 	taskStorage := NewInMemoryStorage()
 	propletStorage := NewInMemoryStorage()
 	taskPropletStorage := NewInMemoryStorage()
@@ -119,8 +115,7 @@ func newMemoryRepositories() (*Repositories, error) {
 		Proplets:     newMemoryPropletRepository(propletStorage),
 		TaskProplets: newMemoryTaskPropletRepository(taskPropletStorage),
 		Metrics:      newMemoryMetricsRepository(metricsStorage),
-		Closer:       io.NopCloser(nil),
-	}, nil
+	}, io.NopCloser(nil), nil
 }
 
 type postgresTaskAdapter struct {

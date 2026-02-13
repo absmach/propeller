@@ -18,6 +18,10 @@ const (
 	Interrupted
 )
 
+func (s State) IsTerminal() bool {
+	return s == Completed || s == Failed || s == Skipped || s == Interrupted
+}
+
 func (s State) String() string {
 	switch s {
 	case Pending:
