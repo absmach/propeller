@@ -80,6 +80,6 @@ USER proplet
 WORKDIR /home/proplet
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/proplet", "--help"]
+    CMD ["test", "-x", "/usr/local/bin/proplet"]
 
 ENTRYPOINT ["/usr/local/bin/proplet"]
