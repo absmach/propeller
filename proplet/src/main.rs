@@ -53,9 +53,15 @@ async fn main() -> Result<()> {
         config.instance_id
     );
 
+    let mqtt_client_id = if config.client_id.is_empty() {
+        config.instance_id.clone()
+    } else {
+        config.client_id.clone()
+    };
+
     let mqtt_config = MqttConfig {
         address: config.mqtt_address.clone(),
-        client_id: config.instance_id.to_string(),
+        client_id: mqtt_client_id,
         timeout: config.mqtt_timeout(),
         qos: config.qos(),
         keep_alive: config.mqtt_keep_alive(),

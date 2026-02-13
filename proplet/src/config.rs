@@ -162,15 +162,21 @@ impl PropletConfig {
         let mut config = Self::default();
 
         if let Ok(val) = env::var("PROPLET_LOG_LEVEL") {
-            config.log_level = val;
+            if !val.is_empty() {
+                config.log_level = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_INSTANCE_ID") {
-            config.instance_id = val;
+            if !val.is_empty() {
+                config.instance_id = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_ADDRESS") {
-            config.mqtt_address = val;
+            if !val.is_empty() {
+                config.mqtt_address = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_TIMEOUT") {
@@ -216,27 +222,39 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_DOMAIN_ID") {
-            config.domain_id = val;
+            if !val.is_empty() {
+                config.domain_id = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_CHANNEL_ID") {
-            config.channel_id = val;
+            if !val.is_empty() {
+                config.channel_id = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_CLIENT_ID") {
-            config.client_id = val;
+            if !val.is_empty() {
+                config.client_id = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_CLIENT_KEY") {
-            config.client_key = val;
+            if !val.is_empty() {
+                config.client_key = val;
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_MANAGER_K8S_NAMESPACE") {
-            config.k8s_namespace = Some(val);
+            if !val.is_empty() {
+                config.k8s_namespace = Some(val);
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_EXTERNAL_WASM_RUNTIME") {
-            config.external_wasm_runtime = Some(val);
+            if !val.is_empty() {
+                config.external_wasm_runtime = Some(val);
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_METRICS_INTERVAL") {

@@ -8,6 +8,7 @@ import (
 var (
 	defOffset uint64 = 0
 	defLimit  uint64 = 10
+	cliArgs   []string
 )
 
 var psdk sdk.SDK
@@ -16,11 +17,24 @@ func SetPropellerSDK(s sdk.SDK) {
 	psdk = s
 }
 
-var tasksCmd = []cobra.Command{
-	{
+func NewTasksCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tasks [create|view|update|delete|start|stop]",
+		Short: "Tasks manager",
+		Long:  `Create, view, update, delete, start, stop tasks.`,
+	}
+
+	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create task",
-		Long:  `Create task.`,
+		Long: `Create task with optional CLI arguments for wasmtime.
+
+Examples:
+  # Create a basic task
+  propeller-cli tasks create my-task
+
+  # Create a wasi-nn task with OpenVINO
+  propeller-cli tasks create wasi-nn-inference --cli-args="-S,nn,--dir=/home/proplet/fixture::fixture"`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if len(args) != 1 {
 				logUsageCmd(*cmd, cmd.Use)
@@ -29,7 +43,8 @@ var tasksCmd = []cobra.Command{
 			}
 
 			t, err := psdk.CreateTask(sdk.Task{
-				Name: args[0],
+				Name:    args[0],
+				CLIArgs: cliArgs,
 			})
 			if err != nil {
 				logErrorCmd(*cmd, err)
@@ -38,8 +53,16 @@ var tasksCmd = []cobra.Command{
 			}
 			logJSONCmd(*cmd, t)
 		},
-	},
-	{
+	}
+
+	createCmd.Flags().StringSliceVar(
+		&cliArgs,
+		"cli-args",
+		[]string{},
+		"CLI arguments to pass to wasmtime (comma-separated, e.g., -S,nn,--dir=/path::guest)",
+	)
+
+	viewCmd := &cobra.Command{
 		Use:   "view <id>",
 		Short: "View task",
 		Long:  `View task.`,
@@ -58,8 +81,9 @@ var tasksCmd = []cobra.Command{
 			}
 			logJSONCmd(*cmd, t)
 		},
-	},
-	{
+	}
+
+	updateCmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update task",
 		Long:  `Update task.`,
@@ -80,8 +104,9 @@ var tasksCmd = []cobra.Command{
 			}
 			logJSONCmd(*cmd, t)
 		},
-	},
-	{
+	}
+
+	deleteCmd := &cobra.Command{
 		Use:   "delete <id>",
 		Short: "Delete task",
 		Long:  `Delete task.`,
@@ -99,8 +124,9 @@ var tasksCmd = []cobra.Command{
 			}
 			logOKCmd(*cmd)
 		},
-	},
-	{
+	}
+
+	startCmd := &cobra.Command{
 		Use:   "start <id>",
 		Short: "Start task",
 		Long:  `Start task.`,
@@ -118,8 +144,9 @@ var tasksCmd = []cobra.Command{
 			}
 			logOKCmd(*cmd)
 		},
-	},
-	{
+	}
+
+	stopCmd := &cobra.Command{
 		Use:   "stop <id>",
 		Short: "Stop task",
 		Long:  `Stop task.`,
@@ -137,19 +164,14 @@ var tasksCmd = []cobra.Command{
 			}
 			logOKCmd(*cmd)
 		},
-	},
-}
-
-func NewTasksCmd() *cobra.Command {
-	cmd := cobra.Command{
-		Use:   "tasks [create|view|update|delete|start|stop]",
-		Short: "Tasks manager",
-		Long:  `Create, view,  update, delete, start, stop tasks.`,
 	}
 
-	for i := range tasksCmd {
-		cmd.AddCommand(&tasksCmd[i])
-	}
+	cmd.AddCommand(createCmd)
+	cmd.AddCommand(viewCmd)
+	cmd.AddCommand(updateCmd)
+	cmd.AddCommand(deleteCmd)
+	cmd.AddCommand(startCmd)
+	cmd.AddCommand(stopCmd)
 
 	cmd.PersistentFlags().Uint64VarP(
 		&defOffset,
@@ -167,5 +189,5 @@ func NewTasksCmd() *cobra.Command {
 		"Limit",
 	)
 
-	return &cmd
+	return cmd
 }

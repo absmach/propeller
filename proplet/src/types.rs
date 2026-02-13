@@ -738,4 +738,42 @@ mod tests {
         assert_eq!(chunk.chunk_idx, 999);
         assert_eq!(chunk.total_chunks, 1000);
     }
+
+    #[test]
+    fn test_start_request_cli_args_json_roundtrip() {
+        let cli_args = vec![
+            "-S".to_string(),
+            "nn".to_string(),
+            "--dir=/home/proplet/fixture::fixture".to_string(),
+        ];
+
+        let mut env = HashMap::new();
+        env.insert("OPENVINO_DIR".to_string(), "/opt/intel/openvino".to_string());
+
+        let req = StartRequest {
+            id: "wasi-nn-task".to_string(),
+            cli_args: cli_args.clone(),
+            name: "inference".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: "registry.example.com/wasi-nn:v1".to_string(),
+            inputs: vec![],
+            daemon: false,
+            env: Some(env.clone()),
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: StartRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.cli_args, cli_args);
+        assert_eq!(
+            deserialized.env.as_ref().unwrap().get("OPENVINO_DIR"),
+            Some(&"/opt/intel/openvino".to_string())
+        );
+    }
 }

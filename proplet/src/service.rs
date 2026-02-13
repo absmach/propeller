@@ -333,6 +333,17 @@ impl PropletService {
     }
 
     async fn handle_message(&self, msg: MqttMessage) -> Result<()> {
+        // Handle reconnection - re-subscribe to topics
+        if msg.is_reconnect {
+            info!("Reconnection detected, re-subscribing to topics");
+            if let Err(e) = self.subscribe_topics().await {
+                error!("Failed to re-subscribe after reconnection: {}", e);
+            } else {
+                info!("Successfully re-subscribed to topics after reconnection");
+            }
+            return Ok(());
+        }
+
         debug!("Handling message from topic: {}", msg.topic);
 
         if let Ok(payload_str) = String::from_utf8(msg.payload.clone()) {
