@@ -30,6 +30,7 @@ type Repositories struct {
 	Tasks        TaskRepository
 	Proplets     PropletRepository
 	TaskProplets TaskPropletRepository
+	Jobs         JobRepository
 	Metrics      MetricsRepository
 }
 
@@ -67,6 +68,7 @@ func newPostgresRepositories(cfg Config) (*Repositories, error) {
 		Tasks:        &postgresTaskAdapter{repo: repos.Tasks},
 		Proplets:     &postgresPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &postgresTaskPropletAdapter{repo: repos.TaskProplets},
+		Jobs:         &postgresJobAdapter{repo: repos.Jobs},
 		Metrics:      &postgresMetricsAdapter{repo: repos.Metrics},
 	}, nil
 }
@@ -83,6 +85,7 @@ func newSQLiteRepositories(cfg Config) (*Repositories, error) {
 		Tasks:        &sqliteTaskAdapter{repo: repos.Tasks},
 		Proplets:     &sqlitePropletAdapter{repo: repos.Proplets},
 		TaskProplets: &sqliteTaskPropletAdapter{repo: repos.TaskProplets},
+		Jobs:         &sqliteJobAdapter{repo: repos.Jobs},
 		Metrics:      &sqliteMetricsAdapter{repo: repos.Metrics},
 	}, nil
 }
@@ -99,6 +102,7 @@ func newBadgerRepositories(cfg Config) (*Repositories, error) {
 		Tasks:        &badgerTaskAdapter{repo: repos.Tasks},
 		Proplets:     &badgerPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &badgerTaskPropletAdapter{repo: repos.TaskProplets},
+		Jobs:         &badgerJobAdapter{repo: repos.Jobs},
 		Metrics:      &badgerMetricsAdapter{repo: repos.Metrics},
 	}, nil
 }
@@ -107,12 +111,14 @@ func newMemoryRepositories() (*Repositories, error) {
 	taskStorage := NewInMemoryStorage()
 	propletStorage := NewInMemoryStorage()
 	taskPropletStorage := NewInMemoryStorage()
+	jobStorage := NewInMemoryStorage()
 	metricsStorage := NewInMemoryStorage()
 
 	return &Repositories{
 		Tasks:        newMemoryTaskRepository(taskStorage),
 		Proplets:     newMemoryPropletRepository(propletStorage),
 		TaskProplets: newMemoryTaskPropletRepository(taskPropletStorage),
+		Jobs:         newMemoryJobRepository(jobStorage),
 		Metrics:      newMemoryMetricsRepository(metricsStorage),
 	}, nil
 }
@@ -135,6 +141,14 @@ func (a *postgresTaskAdapter) Update(ctx context.Context, t task.Task) error {
 
 func (a *postgresTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.List(ctx, offset, limit)
+}
+
+func (a *postgresTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID)
+}
+
+func (a *postgresTaskAdapter) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	return a.repo.ListByJobID(ctx, jobID)
 }
 
 func (a *postgresTaskAdapter) Delete(ctx context.Context, id string) error {
@@ -267,6 +281,14 @@ func (a *sqliteTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]t
 	return a.repo.List(ctx, offset, limit)
 }
 
+func (a *sqliteTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID)
+}
+
+func (a *sqliteTaskAdapter) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	return a.repo.ListByJobID(ctx, jobID)
+}
+
 func (a *sqliteTaskAdapter) Delete(ctx context.Context, id string) error {
 	return a.repo.Delete(ctx, id)
 }
@@ -397,6 +419,14 @@ func (a *badgerTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]t
 	return a.repo.List(ctx, offset, limit)
 }
 
+func (a *badgerTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID)
+}
+
+func (a *badgerTaskAdapter) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	return a.repo.ListByJobID(ctx, jobID)
+}
+
 func (a *badgerTaskAdapter) Delete(ctx context.Context, id string) error {
 	return a.repo.Delete(ctx, id)
 }
@@ -505,4 +535,133 @@ func (a *badgerMetricsAdapter) ListPropletMetrics(ctx context.Context, propletID
 	}
 
 	return result, total, nil
+}
+
+type postgresJobAdapter struct {
+	repo postgres.JobRepository
+}
+
+func (a *postgresJobAdapter) Create(ctx context.Context, j Job) (Job, error) {
+	pj := postgres.Job{
+		ID: j.ID, Name: j.Name, ExecutionMode: j.ExecutionMode,
+		CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
+	}
+	pj, err := a.repo.Create(ctx, pj)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: pj.ID, Name: pj.Name, ExecutionMode: pj.ExecutionMode, CreatedAt: pj.CreatedAt, UpdatedAt: pj.UpdatedAt}, nil
+}
+
+func (a *postgresJobAdapter) Get(ctx context.Context, id string) (Job, error) {
+	pj, err := a.repo.Get(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: pj.ID, Name: pj.Name, ExecutionMode: pj.ExecutionMode, CreatedAt: pj.CreatedAt, UpdatedAt: pj.UpdatedAt}, nil
+}
+
+func (a *postgresJobAdapter) List(ctx context.Context, offset, limit uint64) ([]Job, uint64, error) {
+	pjobs, total, err := a.repo.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	jobs := make([]Job, len(pjobs))
+	for i, pj := range pjobs {
+		jobs[i] = Job{ID: pj.ID, Name: pj.Name, ExecutionMode: pj.ExecutionMode, CreatedAt: pj.CreatedAt, UpdatedAt: pj.UpdatedAt}
+	}
+
+	return jobs, total, nil
+}
+
+func (a *postgresJobAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+type sqliteJobAdapter struct {
+	repo sqlite.JobRepository
+}
+
+func (a *sqliteJobAdapter) Create(ctx context.Context, j Job) (Job, error) {
+	sj := sqlite.Job{
+		ID: j.ID, Name: j.Name, ExecutionMode: j.ExecutionMode,
+		CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
+	}
+	sj, err := a.repo.Create(ctx, sj)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: sj.ID, Name: sj.Name, ExecutionMode: sj.ExecutionMode, CreatedAt: sj.CreatedAt, UpdatedAt: sj.UpdatedAt}, nil
+}
+
+func (a *sqliteJobAdapter) Get(ctx context.Context, id string) (Job, error) {
+	sj, err := a.repo.Get(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: sj.ID, Name: sj.Name, ExecutionMode: sj.ExecutionMode, CreatedAt: sj.CreatedAt, UpdatedAt: sj.UpdatedAt}, nil
+}
+
+func (a *sqliteJobAdapter) List(ctx context.Context, offset, limit uint64) ([]Job, uint64, error) {
+	sjobs, total, err := a.repo.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	jobs := make([]Job, len(sjobs))
+	for i, sj := range sjobs {
+		jobs[i] = Job{ID: sj.ID, Name: sj.Name, ExecutionMode: sj.ExecutionMode, CreatedAt: sj.CreatedAt, UpdatedAt: sj.UpdatedAt}
+	}
+
+	return jobs, total, nil
+}
+
+func (a *sqliteJobAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
+}
+
+type badgerJobAdapter struct {
+	repo badger.JobRepository
+}
+
+func (a *badgerJobAdapter) Create(ctx context.Context, j Job) (Job, error) {
+	bj := badger.Job{
+		ID: j.ID, Name: j.Name, ExecutionMode: j.ExecutionMode,
+		CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt,
+	}
+	bj, err := a.repo.Create(ctx, bj)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: bj.ID, Name: bj.Name, ExecutionMode: bj.ExecutionMode, CreatedAt: bj.CreatedAt, UpdatedAt: bj.UpdatedAt}, nil
+}
+
+func (a *badgerJobAdapter) Get(ctx context.Context, id string) (Job, error) {
+	bj, err := a.repo.Get(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+
+	return Job{ID: bj.ID, Name: bj.Name, ExecutionMode: bj.ExecutionMode, CreatedAt: bj.CreatedAt, UpdatedAt: bj.UpdatedAt}, nil
+}
+
+func (a *badgerJobAdapter) List(ctx context.Context, offset, limit uint64) ([]Job, uint64, error) {
+	bjobs, total, err := a.repo.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	jobs := make([]Job, len(bjobs))
+	for i, bj := range bjobs {
+		jobs[i] = Job{ID: bj.ID, Name: bj.Name, ExecutionMode: bj.ExecutionMode, CreatedAt: bj.CreatedAt, UpdatedAt: bj.UpdatedAt}
+	}
+
+	return jobs, total, nil
+}
+
+func (a *badgerJobAdapter) Delete(ctx context.Context, id string) error {
+	return a.repo.Delete(ctx, id)
 }

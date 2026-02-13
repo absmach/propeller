@@ -46,6 +46,23 @@ type TaskRepository interface {
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
 	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error)
+	ListByJobID(ctx context.Context, jobID string) ([]task.Task, error)
+	Delete(ctx context.Context, id string) error
+}
+
+type Job struct {
+	ID            string    `db:"id"`
+	Name          string    `db:"name"`
+	ExecutionMode string    `db:"execution_mode"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+type JobRepository interface {
+	Create(ctx context.Context, j Job) (Job, error)
+	Get(ctx context.Context, id string) (Job, error)
+	List(ctx context.Context, offset, limit uint64) ([]Job, uint64, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -74,6 +91,7 @@ type Repositories struct {
 	Tasks        TaskRepository
 	Proplets     PropletRepository
 	TaskProplets TaskPropletRepository
+	Jobs         JobRepository
 	Metrics      MetricsRepository
 }
 
@@ -82,6 +100,7 @@ func NewRepositories(db *Database) *Repositories {
 		Tasks:        NewTaskRepository(db),
 		Proplets:     NewPropletRepository(db),
 		TaskProplets: NewTaskPropletRepository(db),
+		Jobs:         NewJobRepository(db),
 		Metrics:      NewMetricsRepository(db),
 	}
 }
@@ -193,6 +212,33 @@ func (db *Database) Migrate() error {
 					`DROP INDEX IF EXISTS idx_tasks_proplet_id`,
 					`DROP INDEX IF EXISTS idx_tasks_state`,
 					`DROP TABLE IF EXISTS tasks`,
+				},
+			},
+			{
+				Id: "2_add_workflow_job_columns",
+				Up: []string{
+					`ALTER TABLE tasks ADD COLUMN workflow_id TEXT`,
+					`ALTER TABLE tasks ADD COLUMN job_id TEXT`,
+					`ALTER TABLE tasks ADD COLUMN depends_on TEXT`,
+					`ALTER TABLE tasks ADD COLUMN run_if TEXT`,
+					`ALTER TABLE tasks ADD COLUMN kind TEXT`,
+					`ALTER TABLE tasks ADD COLUMN mode TEXT`,
+					`CREATE INDEX IF NOT EXISTS idx_tasks_workflow_id ON tasks(workflow_id)`,
+					`CREATE INDEX IF NOT EXISTS idx_tasks_job_id ON tasks(job_id)`,
+					`CREATE TABLE IF NOT EXISTS jobs (
+						id TEXT PRIMARY KEY,
+						name TEXT NOT NULL DEFAULT '',
+						execution_mode TEXT NOT NULL DEFAULT '',
+						created_at TIMESTAMP NOT NULL,
+						updated_at TIMESTAMP NOT NULL
+					)`,
+					`CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC)`,
+				},
+				Down: []string{
+					`DROP INDEX IF EXISTS idx_jobs_created_at`,
+					`DROP TABLE IF EXISTS jobs`,
+					`DROP INDEX IF EXISTS idx_tasks_job_id`,
+					`DROP INDEX IF EXISTS idx_tasks_workflow_id`,
 				},
 			},
 		},

@@ -29,6 +29,7 @@ var (
 	errMissingDep       = errors.New("dependency validation failed: dependency task not found: task task1 depends on nonexistent which does not exist")
 	errInvalidRunIf     = errors.New("invalid run_if value for task task1: must be 'success' or 'failure'")
 	errWorkflowRequired = errors.New("workflow_id is required when depends_on is specified")
+	errSelfDep          = errors.New("DAG validation failed: circular dependency detected: task task1 depends on itself")
 )
 
 func newService(t *testing.T) manager.Service {
@@ -88,6 +89,13 @@ func TestCreateWorkflow(t *testing.T) {
 				{ID: "task1", Name: "Task 1", DependsOn: []string{}, RunIf: "invalid"},
 			},
 			err: errInvalidRunIf,
+		},
+		{
+			desc: "create workflow with self dependency",
+			tasks: []task.Task{
+				{ID: "task1", Name: "Task 1", DependsOn: []string{"task1"}},
+			},
+			err: errSelfDep,
 		},
 		{
 			desc:  "create workflow with empty tasks",

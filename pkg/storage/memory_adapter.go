@@ -59,6 +59,46 @@ func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task
 	return tasks, total, nil
 }
 
+func (r *memoryTaskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	data, _, err := r.storage.List(ctx, 0, maxMemoryFetch)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for _, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			continue
+		}
+		if t.WorkflowID == workflowID {
+			tasks = append(tasks, t)
+		}
+	}
+
+	return tasks, nil
+}
+
+func (r *memoryTaskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	data, _, err := r.storage.List(ctx, 0, maxMemoryFetch)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]task.Task, 0)
+	for _, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			continue
+		}
+		if t.JobID == jobID {
+			tasks = append(tasks, t)
+		}
+	}
+
+	return tasks, nil
+}
+
 func (r *memoryTaskRepo) Delete(ctx context.Context, id string) error {
 	return r.storage.Delete(ctx, id)
 }
@@ -140,6 +180,56 @@ func (r *memoryTaskPropletRepo) Get(ctx context.Context, taskID string) (string,
 
 func (r *memoryTaskPropletRepo) Delete(ctx context.Context, taskID string) error {
 	return r.storage.Delete(ctx, taskID)
+}
+
+type memoryJobRepo struct {
+	storage Storage
+}
+
+func newMemoryJobRepository(s Storage) JobRepository {
+	return &memoryJobRepo{storage: s}
+}
+
+func (r *memoryJobRepo) Create(ctx context.Context, j Job) (Job, error) {
+	if err := r.storage.Create(ctx, j.ID, j); err != nil {
+		return Job{}, err
+	}
+
+	return j, nil
+}
+
+func (r *memoryJobRepo) Get(ctx context.Context, id string) (Job, error) {
+	data, err := r.storage.Get(ctx, id)
+	if err != nil {
+		return Job{}, err
+	}
+	j, ok := data.(Job)
+	if !ok {
+		return Job{}, pkgerrors.ErrInvalidData
+	}
+
+	return j, nil
+}
+
+func (r *memoryJobRepo) List(ctx context.Context, offset, limit uint64) ([]Job, uint64, error) {
+	data, total, err := r.storage.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	jobs := make([]Job, 0, len(data))
+	for _, d := range data {
+		j, ok := d.(Job)
+		if !ok {
+			continue
+		}
+		jobs = append(jobs, j)
+	}
+
+	return jobs, total, nil
+}
+
+func (r *memoryJobRepo) Delete(ctx context.Context, id string) error {
+	return r.storage.Delete(ctx, id)
 }
 
 const maxMemoryFetch = 100000

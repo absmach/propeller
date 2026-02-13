@@ -136,17 +136,5 @@ func (wc *WorkflowCoordinator) OnTaskCompletion(ctx context.Context, taskID stri
 }
 
 func (wc *WorkflowCoordinator) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	allTasks, _, err := wc.taskRepo.List(ctx, 0, 10000)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks := make([]task.Task, 0)
-	for i := range allTasks {
-		if allTasks[i].WorkflowID == workflowID {
-			tasks = append(tasks, allTasks[i])
-		}
-	}
-
-	return tasks, nil
+	return wc.taskRepo.ListByWorkflowID(ctx, workflowID)
 }
