@@ -46,6 +46,7 @@ pub struct PropletConfig {
     pub aa_config_path: Option<String>,
     pub layer_store_path: String,
     pub pull_concurrent_limit: usize,
+    pub hal_enabled: bool,
 }
 
 impl Default for PropletConfig {
@@ -74,6 +75,7 @@ impl Default for PropletConfig {
             aa_config_path: None,
             layer_store_path: "/tmp/proplet/layers".to_string(),
             pull_concurrent_limit: 4,
+            hal_enabled: true,
         }
     }
 }
@@ -258,6 +260,10 @@ impl PropletConfig {
                 if let Ok(limit) = val.parse() {
                     config.pull_concurrent_limit = limit;
                 }
+            }
+
+            if let Ok(val) = env::var("PROPLET_HAL_ENABLED") {
+                config.hal_enabled = val.to_lowercase() == "true" || val == "1";
             }
         }
 

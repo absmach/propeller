@@ -693,7 +693,7 @@ impl PropletService {
                     (result_str, None)
                 }
                 Err(e) => {
-                    error!("Task {} failed: {}", task_id, e);
+                    error!("Task {} failed: {:#}", task_id, e);
                     (String::new(), Some(e.to_string()))
                 }
             };

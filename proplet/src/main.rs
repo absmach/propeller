@@ -1,4 +1,6 @@
 mod config;
+mod hal;
+mod hal_linker;
 mod metrics;
 mod monitoring;
 mod mqtt;
@@ -80,7 +82,7 @@ async fn main() -> Result<()> {
         Arc::new(HostRuntime::new(external_runtime.clone()))
     } else {
         info!("Using Wasmtime runtime");
-        Arc::new(WasmtimeRuntime::new()?)
+        Arc::new(WasmtimeRuntime::new(config.hal_enabled)?)
     };
 
     let service = if config.tee_enabled {

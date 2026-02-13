@@ -1,6 +1,8 @@
 use super::{Runtime, RuntimeContext, StartConfig};
+use crate::hal_linker;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use elastic_tee_hal::interfaces::HalProvider;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -13,21 +15,22 @@ use wasmtime_wasi::WasiCtxBuilder;
 pub struct WasmtimeRuntime {
     engine: Engine,
     tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    hal_enabled: bool,
 }
 
 impl WasmtimeRuntime {
-    pub fn new() -> Result<Self> {
+    pub fn new(hal_enabled: bool) -> Result<Self> {
         let mut config = Config::new();
         config.wasm_reference_types(true);
         config.wasm_bulk_memory(true);
         config.wasm_simd(true);
-        config.epoch_interruption(true);
 
         let engine = Engine::new(&config)?;
 
         Ok(Self {
             engine,
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            hal_enabled,
         })
     }
 }
@@ -49,11 +52,9 @@ impl Runtime for WasmtimeRuntime {
 
         info!("Module compiled successfully for task: {}", config.id);
 
-        // Build WASI context with environment variables
         let mut wasi_builder = WasiCtxBuilder::new();
         wasi_builder.inherit_stdio();
 
-        // Inject environment variables into WASI context
         for (key, value) in &config.env {
             wasi_builder.env(key, value);
         }
@@ -63,14 +64,18 @@ impl Runtime for WasmtimeRuntime {
         let mut store = Store::new(&self.engine, wasi);
 
         let mut linker = Linker::new(&self.engine);
-        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |ctx| ctx)
+        wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx| ctx)
             .context("Failed to add WASI to linker")?;
+
+        if self.hal_enabled {
+            let provider = Arc::new(HalProvider::with_defaults());
+            hal_linker::add_to_linker(&mut linker, provider)
+                .context("Failed to add ELASTIC TEE HAL interfaces to linker")?;
+        }
 
         let instance = linker
             .instantiate(&mut store, &module)
             .context("Failed to instantiate Wasmtime module")?;
-
-        store.set_epoch_deadline(1);
 
         if config.daemon {
             info!("Running in daemon mode for task: {}", config.id);
@@ -100,7 +105,6 @@ impl Runtime for WasmtimeRuntime {
             let function_name = config.function_name.clone();
             let args = config.args.clone();
             let tasks = self.tasks.clone();
-            let engine = self.engine.clone();
 
             let (result_tx, result_rx) = oneshot::channel();
 
@@ -115,7 +119,6 @@ impl Runtime for WasmtimeRuntime {
                         info!("No _initialize function found, skipping initialization for task: {}", task_id);
                     }
 
-                    // #region agent log
                     let exports: Vec<String> = instance
                         .exports(&mut store)
                         .map(|export| export.name().to_string())
@@ -124,14 +127,11 @@ impl Runtime for WasmtimeRuntime {
                         "WASM module exports for task {}: requested='{}', available={:?}",
                         task_id, function_name, exports
                     );
-                    // #endregion agent log
 
-                    // Try to get the requested function, with fallbacks
                     let func = if let Some(f) = instance.get_func(&mut store, &function_name) {
                         info!("Found requested function '{}' in module exports", function_name);
                         f
                     } else {
-                        // Try common fallback function names
                         let fallbacks = vec!["main", "run", "_start"];
                         let mut found_func = None;
                         let mut tried_fallbacks = Vec::new();
@@ -177,7 +177,7 @@ impl Runtime for WasmtimeRuntime {
                             ValType::I64 => Val::I64(*arg as i64),
                             ValType::F32 => Val::F32((*arg as f32).to_bits()),
                             ValType::F64 => Val::F64((*arg as f64).to_bits()),
-                            _ => Val::I32(*arg as i32), // Default to i32
+                            _ => Val::I32(*arg as i32),
                         })
                         .collect();
 
@@ -198,8 +198,6 @@ impl Runtime for WasmtimeRuntime {
                             _ => Val::I32(0),
                         })
                         .collect();
-
-                    engine.increment_epoch();
 
                     func.call(&mut store, &wasm_args, &mut results)
                         .context(format!("Failed to call function '{function_name}'"))?;
@@ -288,20 +286,20 @@ mod tests {
 
     #[test]
     fn test_wasmtime_runtime_new() {
-        let runtime = WasmtimeRuntime::new();
+        let runtime = WasmtimeRuntime::new(false);
         assert!(runtime.is_ok());
     }
 
     #[test]
     fn test_wasmtime_runtime_engine_configuration() {
-        let runtime = WasmtimeRuntime::new().unwrap();
+        let runtime = WasmtimeRuntime::new(false).unwrap();
 
         assert!(runtime.tasks.try_lock().is_ok());
     }
 
     #[test]
     fn test_wasmtime_runtime_tasks_empty_on_creation() {
-        let runtime = WasmtimeRuntime::new().unwrap();
+        let runtime = WasmtimeRuntime::new(false).unwrap();
 
         let tasks = runtime.tasks.try_lock().unwrap();
         assert_eq!(tasks.len(), 0);
@@ -309,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wasmtime_runtime_compile_invalid_wasm() {
-        let runtime = WasmtimeRuntime::new().unwrap();
+        let runtime = WasmtimeRuntime::new(false).unwrap();
 
         let invalid_wasm = vec![0xFF, 0xFF, 0xFF, 0xFF];
 
@@ -319,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wasmtime_runtime_compile_empty_wasm() {
-        let runtime = WasmtimeRuntime::new().unwrap();
+        let runtime = WasmtimeRuntime::new(false).unwrap();
 
         let empty_wasm = vec![];
 

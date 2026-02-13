@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 use tracing::warn;
 
 use crate::config::PropletConfig;
+use crate::hal::PropletHal;
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 
 use attestation_agent::{AttestationAPIs, AttestationAgent};
@@ -22,6 +23,7 @@ use attestation_agent::{AttestationAPIs, AttestationAgent};
 pub struct TeeWasmRuntime {
     config: PropletConfig,
     attestation_agent: Option<AttestationAgent>,
+    hal: Arc<PropletHal>,
 }
 
 impl TeeWasmRuntime {
@@ -35,9 +37,16 @@ impl TeeWasmRuntime {
                 .context("Failed to setup keyprovider config when TEE is enabled")?;
         }
 
+        let hal = if config.hal_enabled {
+            PropletHal::new()
+        } else {
+            Arc::new(PropletHal::default())
+        };
+
         Ok(Self {
             config: config.clone(),
             attestation_agent: Some(agent),
+            hal,
         })
     }
 
@@ -312,11 +321,14 @@ impl TeeWasmRuntime {
 #[async_trait]
 impl Runtime for TeeWasmRuntime {
     async fn start_app(&self, _ctx: RuntimeContext, config: StartConfig) -> Result<Vec<u8>> {
-        if let Some(ref agent) = self.attestation_agent {
-            let _evidence = agent
-                .get_evidence(b"wasm-runner")
-                .await
-                .context("Failed to get TEE evidence")?;
+        let nonce = format!("proplet-task-{}", config.id);
+        if self.hal.try_attest(nonce.as_bytes()).is_none() {
+            if let Some(ref agent) = self.attestation_agent {
+                agent
+                    .get_evidence(b"wasm-runner")
+                    .await
+                    .context("Failed to get TEE evidence")?;
+            }
         }
 
         if !config.wasm_binary.is_empty() {
