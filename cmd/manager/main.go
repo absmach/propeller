@@ -127,7 +127,7 @@ func main() {
 		return
 	}
 
-	repos, err := storage.NewRepositories(storageCfg)
+	repos, dbCloser, err := storage.NewRepositories(storageCfg)
 	if err != nil {
 		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
 
@@ -195,7 +195,7 @@ func main() {
 		logger.Error("mqtt disconnect error", slog.Any("error", err))
 	}
 
-	if err := repos.Closer.Close(); err != nil {
+	if err := dbCloser.Close(); err != nil {
 		logger.Error("database close error", slog.Any("error", err))
 	}
 

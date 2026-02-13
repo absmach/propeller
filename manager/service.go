@@ -332,7 +332,7 @@ func (svc *service) GetJob(ctx context.Context, jobID string) ([]task.Task, erro
 }
 
 func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error) {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return JobPage{}, err
 	}
@@ -829,11 +829,35 @@ func (svc *service) Shutdown(ctx context.Context) error {
 }
 
 func (svc *service) RecoverInterruptedTasks(ctx context.Context) error {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
 
+	// First, send stop commands to proplets for all interrupted tasks.
+	for i := range allTasks {
+		t := &allTasks[i]
+		if t.State != task.Interrupted {
+			continue
+		}
+		propletID, err := svc.taskPropletRepo.Get(ctx, t.ID)
+		if err != nil {
+			svc.logger.Warn("no proplet mapping for interrupted task, skipping stop", slog.String("task_id", t.ID), slog.Any("error", err))
+
+			continue
+		}
+
+		stopPayload := map[string]any{
+			"id":         t.ID,
+			"proplet_id": propletID,
+		}
+		topic := svc.baseTopic + "/control/manager/stop"
+		if err := svc.pubsub.Publish(ctx, topic, stopPayload); err != nil {
+			svc.logger.Warn("failed to send stop command for interrupted task", slog.String("task_id", t.ID), slog.Any("error", err))
+		}
+	}
+
+	// Then mark all interrupted tasks as failed.
 	now := time.Now()
 	recovered := 0
 	for i := range allTasks {
@@ -865,7 +889,7 @@ func (svc *service) checkTaskDependencies(ctx context.Context, taskID string, t 
 		if err != nil {
 			return fmt.Errorf("failed to get dependency task %s: %w", depID, err)
 		}
-		if dep.State != task.Completed && dep.State != task.Failed && dep.State != task.Skipped && dep.State != task.Interrupted {
+		if !dep.State.IsTerminal() {
 			allDepsCompleted = false
 
 			break
@@ -1210,7 +1234,7 @@ func (svc *service) allDependenciesComplete(ctx context.Context, t *task.Task) b
 		if err != nil {
 			return false
 		}
-		if dep.State != task.Completed && dep.State != task.Skipped && dep.State != task.Failed && dep.State != task.Interrupted {
+		if !dep.State.IsTerminal() {
 			return false
 		}
 	}
@@ -1591,6 +1615,26 @@ func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetric
 	return metrics
 }
 
+func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
+	const pageSize uint64 = 500
+	var allTasks []task.Task
+	var offset uint64
+
+	for {
+		tasks, total, err := svc.taskRepo.List(ctx, offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		allTasks = append(allTasks, tasks...)
+		offset += uint64(len(tasks))
+		if offset >= total || len(tasks) == 0 {
+			break
+		}
+	}
+
+	return allTasks, nil
+}
+
 func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID string) error {
 	return svc.taskPropletRepo.Create(ctx, taskID, propletID)
 }
@@ -1637,7 +1681,7 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 }
 
 func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1653,7 +1697,7 @@ func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]
 }
 
 func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task, error) {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1669,7 +1713,7 @@ func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task,
 }
 
 func (svc *service) interruptRunningTasks(ctx context.Context) error {
-	allTasks, _, err := svc.taskRepo.List(ctx, 0, 10000)
+	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
