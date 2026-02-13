@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	migrate "github.com/rubenv/sql-migrate"

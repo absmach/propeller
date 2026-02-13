@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/absmach/propeller/pkg/cron"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 	apiutil "github.com/absmach/supermq/api/http/util"
 )
 

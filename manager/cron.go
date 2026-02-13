@@ -9,7 +9,7 @@ import (
 	"github.com/absmach/propeller/pkg/cron"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 const defaultCronCheckInterval = time.Minute

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/absmach/propeller/pkg/dag"
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 func TestValidateDAG_NoCycles(t *testing.T) {

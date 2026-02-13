@@ -3,7 +3,7 @@ package scheduler
 import (
 	"sort"
 
-	"github.com/absmach/propeller/task"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 const defaultPriority = 50
