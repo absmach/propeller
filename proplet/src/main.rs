@@ -1,28 +1,27 @@
 mod config;
+mod hal;
+mod hal_linker;
 mod metrics;
 mod monitoring;
 mod mqtt;
 mod runtime;
 mod service;
 mod task_handler;
-#[cfg(feature = "tee")]
 mod tee_detection;
 mod types;
 
 use crate::config::PropletConfig;
 use crate::mqtt::{process_mqtt_events, MqttConfig, PubSub};
 use crate::runtime::host::HostRuntime;
+use crate::runtime::tee_runtime::TeeWasmRuntime;
 use crate::runtime::wasmtime_runtime::WasmtimeRuntime;
 use crate::runtime::Runtime;
 use crate::service::PropletService;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{info, Level};
+use tracing::{debug, info, Level};
 use tracing_subscriber::FmtSubscriber;
-
-#[cfg(feature = "tee")]
-use crate::runtime::tee_runtime::TeeWasmRuntime;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,6 +46,8 @@ async fn main() -> Result<()> {
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
+
+    debug!("Proplet configuration: {:?}", config);
 
     info!(
         "Starting Proplet (Rust) - Instance ID: {}",
@@ -81,10 +82,14 @@ async fn main() -> Result<()> {
         Arc::new(HostRuntime::new(external_runtime.clone()))
     } else {
         info!("Using Wasmtime runtime");
-        Arc::new(WasmtimeRuntime::new()?)
+        Arc::new(WasmtimeRuntime::new_with_options(
+            config.hal_enabled,
+            config.http_enabled,
+            config.preopened_dirs.clone(),
+            config.http_proxy_port,
+        )?)
     };
 
-    #[cfg(feature = "tee")]
     let service = if config.tee_enabled {
         match TeeWasmRuntime::new(&config).await {
             Ok(tee_runtime) => Arc::new(PropletService::with_tee_runtime(
@@ -98,9 +103,6 @@ async fn main() -> Result<()> {
     } else {
         Arc::new(PropletService::new(config.clone(), pubsub, runtime))
     };
-
-    #[cfg(not(feature = "tee"))]
-    let service = Arc::new(PropletService::new(config.clone(), pubsub, runtime));
 
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()

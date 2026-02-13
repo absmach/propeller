@@ -1,0 +1,17 @@
+[package]
+name = "http-client"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "http-client"
+path = "src/main.rs"
+
+[dependencies]
+wstd = "0.5.4"
+# Pin wasip2 to wasi-0.2.4 so the component runs on wasmtime 41's WASI host (0.2.6).
+wasip2 = "=1.0.1"
+
+[profile.release]
+opt-level = "s"
+strip = true

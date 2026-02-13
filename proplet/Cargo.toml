@@ -9,8 +9,11 @@ rumqttc = "0.24"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
-wasmtime = "27.0"
-wasmtime-wasi = "27.0"
+wasmtime = { version = "41.0", features = ["component-model"] }
+wasmtime-wasi = "41.0"
+wasmtime-wasi-http = "41.0"
+hyper = { version = "1.7", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 thiserror = "2.0"
 anyhow = "1.0"
@@ -23,27 +26,21 @@ url = "2.5"
 sysinfo = "0.32"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+socket2 = { version = "0.5", features = ["all"] }
 reqwest = { version = "0.12", features = ["json"] }
 
-# TEE & Encryption Support (optional feature)
-attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", optional = true, default-features = false, features = ["rust-crypto", "kbs"] }
-image-rs = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", optional = true, default-features = false, features = ["encryption-ring", "keywrap-grpc", "oci-client-rustls", "signature-cosign-rustls", "futures"] }
-kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", optional = true, features = ["background_check", "rust-crypto"], default-features = false }
-oci-client = { version = "0.15", optional = true, default-features = false, features = ["rustls-tls"] }
-oci-spec = { version = "0.8", optional = true }
-resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", optional = true }
-hex = { version = "0.4", optional = true }
-futures-util = { version = "0.3", optional = true }
+# TEE & Encryption Support (default feature)
+attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = ["rust-crypto", "kbs"] }
+image-rs = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = ["encryption-ring", "keywrap-grpc", "oci-client-rustls", "signature-cosign-rustls", "futures"] }
+kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", features = ["background_check", "rust-crypto"], default-features = false }
+oci-client = { version = "0.15", default-features = false, features = ["rustls-tls"] }
+oci-spec = { version = "0.8" }
+resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
+hex = { version = "0.4" }
+futures-util = { version = "0.3" }
+
+# ELASTIC TEE HAL — hardware abstraction layer for TEE workloads
+elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", default-features = false, features = ["amd-sev"] }
 
 [features]
 default = []
-tee = ["attestation-agent", "image-rs", "kbs_protocol", "oci-client", "oci-spec", "resource_uri", "hex", "futures-util"]
-tdx-attester = ["tee", "attestation-agent/tdx-attester"]
-snp-attester = ["tee", "attestation-agent/snp-attester"]
-sgx-attester = ["tee", "attestation-agent/sgx-attester"]
-az-snp-vtpm-attester = ["tee", "attestation-agent/az-snp-vtpm-attester"]
-az-tdx-vtpm-attester = ["tee", "attestation-agent/az-tdx-vtpm-attester"]
-se-attester = ["tee", "attestation-agent/se-attester"]
-cca-attester = ["tee", "attestation-agent/cca-attester"]
-tpm-attester = ["tee", "attestation-agent/tpm-attester"]
-all-attesters = ["tee", "attestation-agent/all-attesters"]

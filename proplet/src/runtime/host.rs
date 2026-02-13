@@ -73,9 +73,11 @@ impl Runtime for HostRuntime {
 
         cmd.arg("run");
 
+        let cli_args_has_invoke = config.cli_args.iter().any(|a| a == "--invoke");
         if !config.function_name.is_empty()
             && config.function_name != "_start"
             && !config.function_name.starts_with("fl-round-")
+            && !cli_args_has_invoke
         {
             cmd.arg("--invoke").arg(&config.function_name);
         }

@@ -1,4 +1,4 @@
-FROM golang:1.25.5-alpine3.22 AS builder
+FROM golang:1.25.7-alpine3.22 AS builder
 ARG SVC
 ARG GOARCH
 ARG GOARM
