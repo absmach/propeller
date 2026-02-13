@@ -140,6 +140,21 @@ addition-wat:
 	@wat2wasm examples/addition-wat/addition.wat -o build/addition-wat.wasm
 	@base64 build/addition-wat.wasm > build/addition-wat.b64
 
+http-client:
+	cd examples/http-client && cargo build --release
+	cp examples/http-client/target/wasm32-wasip2/release/http-client.wasm build/http-client.wasm
+
+http-server:
+	cd examples/http-server && cargo build --release
+	wasm-tools component new \
+		examples/http-server/target/wasm32-wasip1/release/http_server.wasm \
+		--adapt wasi_snapshot_preview1=$(shell find $(HOME)/.cargo/registry/src -name "wasi_snapshot_preview1.proxy.wasm" | head -1) \
+		-o build/http-server.wasm
+
+filesystem:
+	cd examples/filesystem && cargo build --release
+	cp examples/filesystem/target/wasm32-wasip1/release/filesystem.wasm build/filesystem.wasm
+
 help:
 	@echo "Usage: make <target>"
 	@echo ""
@@ -147,6 +162,9 @@ help:
 	@echo "  <service>:        build the binary for the service i.e manager, proplet, cli"
 	@echo "  all:              build all binaries (Go: manager, cli; Rust: proplet)"
 	@echo "  proplet:          build the Rust proplet binary"
+	@echo "  http-client:      build the WASI P2 HTTP client example (requires PROPLET_HTTP_ENABLED=true)"
+	@echo "  http-server:      build the WASI P2 HTTP server example (requires PROPLET_HTTP_ENABLED=true, daemon=true)"
+	@echo "  filesystem:       build the WASI P1 filesystem example (requires PROPLET_DIRS=/tmp)"
 	@echo "  install:          install the binary i.e copies to GOBIN"
 	@echo "  clean:            clean the build directory and Rust target"
 	@echo "  lint:             run golangci-lint"

@@ -47,6 +47,9 @@ pub struct PropletConfig {
     pub layer_store_path: String,
     pub pull_concurrent_limit: usize,
     pub hal_enabled: bool,
+    pub http_enabled: bool,
+    pub preopened_dirs: Vec<String>,
+    pub http_proxy_port: u16,
 }
 
 impl Default for PropletConfig {
@@ -76,6 +79,9 @@ impl Default for PropletConfig {
             layer_store_path: "/tmp/proplet/layers".to_string(),
             pull_concurrent_limit: 4,
             hal_enabled: true,
+            http_enabled: false,
+            preopened_dirs: Vec::new(),
+            http_proxy_port: 8222,
         }
     }
 }
@@ -264,6 +270,24 @@ impl PropletConfig {
 
             if let Ok(val) = env::var("PROPLET_HAL_ENABLED") {
                 config.hal_enabled = val.to_lowercase() == "true" || val == "1";
+            }
+
+            if let Ok(val) = env::var("PROPLET_HTTP_ENABLED") {
+                config.http_enabled = val.to_lowercase() == "true" || val == "1";
+            }
+
+            if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT") {
+                if let Ok(port) = val.parse() {
+                    config.http_proxy_port = port;
+                }
+            }
+
+            if let Ok(val) = env::var("PROPLET_DIRS") {
+                config.preopened_dirs = val
+                    .split(':')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
             }
         }
 

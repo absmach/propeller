@@ -273,28 +273,22 @@ mod tests {
 
     #[test]
     fn test_detect_tdx_no_tee() {
-        let result = detect_tdx();
-        match result {
-            Some(detection) => assert_eq!(detection.tee_type, TeeType::Tdx),
-            None => assert!(true),
+        if let Some(detection) = detect_tdx() {
+            assert_eq!(detection.tee_type, TeeType::Tdx);
         }
     }
 
     #[test]
     fn test_detect_sev_no_tee() {
-        let result = detect_sev();
-        match result {
-            Some(detection) => assert_eq!(detection.tee_type, TeeType::Sev),
-            None => assert!(true),
+        if let Some(detection) = detect_sev() {
+            assert_eq!(detection.tee_type, TeeType::Sev);
         }
     }
 
     #[test]
     fn test_detect_sgx_no_tee() {
-        let result = detect_sgx();
-        match result {
-            Some(detection) => assert_eq!(detection.tee_type, TeeType::Sgx),
-            None => assert!(true),
+        if let Some(detection) = detect_sgx() {
+            assert_eq!(detection.tee_type, TeeType::Sgx);
         }
     }
 }

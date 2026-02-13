@@ -82,7 +82,12 @@ async fn main() -> Result<()> {
         Arc::new(HostRuntime::new(external_runtime.clone()))
     } else {
         info!("Using Wasmtime runtime");
-        Arc::new(WasmtimeRuntime::new(config.hal_enabled)?)
+        Arc::new(WasmtimeRuntime::new_with_options(
+            config.hal_enabled,
+            config.http_enabled,
+            config.preopened_dirs.clone(),
+            config.http_proxy_port,
+        )?)
     };
 
     let service = if config.tee_enabled {

@@ -1,0 +1,7 @@
+package component:http-client;
+
+world http-client {
+  include wasi:http/proxy@0.2.2;
+  import wasi:cli/stdout@0.2.2;
+  import wasi:cli/stderr@0.2.2;
+}
