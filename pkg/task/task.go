@@ -15,7 +15,12 @@ const (
 	Completed
 	Failed
 	Skipped
+	Interrupted
 )
+
+func (s State) IsTerminal() bool {
+	return s == Completed || s == Failed || s == Skipped || s == Interrupted
+}
 
 func (s State) String() string {
 	switch s {
@@ -31,6 +36,8 @@ func (s State) String() string {
 		return "Failed"
 	case Skipped:
 		return "Skipped"
+	case Interrupted:
+		return "Interrupted"
 	default:
 		return "Unknown"
 	}

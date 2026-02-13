@@ -144,14 +144,14 @@ func GetReadyTasks(tasks []task.Task, completed map[string]task.State) []task.Ta
 
 	for i := range tasks {
 		t := &tasks[i]
-		if t.State == task.Completed || t.State == task.Failed || t.State == task.Skipped {
+		if t.State.IsTerminal() {
 			continue
 		}
 
 		allDepsSatisfied := true
 		for _, depID := range t.DependsOn {
 			depState, exists := completed[depID]
-			if !exists || (depState != task.Completed && depState != task.Failed && depState != task.Skipped) {
+			if !exists || !depState.IsTerminal() {
 				allDepsSatisfied = false
 
 				break

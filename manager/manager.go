@@ -50,4 +50,7 @@ type Service interface {
 	// See ROUND_COMPLETION_NOTIFICATION_FLOW.md for details.
 
 	Subscribe(ctx context.Context) error
+
+	Shutdown(ctx context.Context) error
+	RecoverInterruptedTasks(ctx context.Context) error
 }

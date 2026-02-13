@@ -278,3 +278,17 @@ func (tm *tracing) GetRoundStatus(ctx context.Context, roundID string) (resp man
 
 	return tm.svc.GetRoundStatus(ctx, roundID)
 }
+
+func (tm *tracing) Shutdown(ctx context.Context) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "shutdown")
+	defer span.End()
+
+	return tm.svc.Shutdown(ctx)
+}
+
+func (tm *tracing) RecoverInterruptedTasks(ctx context.Context) (err error) {
+	ctx, span := tm.tracer.Start(ctx, "recover-interrupted-tasks")
+	defer span.End()
+
+	return tm.svc.RecoverInterruptedTasks(ctx)
+}

@@ -101,8 +101,28 @@ func (cs *cronScheduler) UnscheduleTask(ctx context.Context, taskID string) erro
 	return nil
 }
 
+func (cs *cronScheduler) listAllTasks(ctx context.Context) ([]task.Task, error) {
+	const pageSize uint64 = 500
+	var allTasks []task.Task
+	var offset uint64
+
+	for {
+		tasks, total, err := cs.tasksDB.List(ctx, offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		allTasks = append(allTasks, tasks...)
+		offset += uint64(len(tasks))
+		if offset >= total || len(tasks) == 0 {
+			break
+		}
+	}
+
+	return allTasks, nil
+}
+
 func (cs *cronScheduler) processScheduledTasks(ctx context.Context) error {
-	tasks, _, err := cs.tasksDB.List(ctx, 0, 10000)
+	tasks, err := cs.listAllTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
@@ -190,7 +210,7 @@ func (cs *cronScheduler) updateNextRun(ctx context.Context, t task.Task) error {
 }
 
 func (cs *cronScheduler) loadScheduledTasks(ctx context.Context) error {
-	tasks, _, err := cs.tasksDB.List(ctx, 0, 10000)
+	tasks, err := cs.listAllTasks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list tasks: %w", err)
 	}
