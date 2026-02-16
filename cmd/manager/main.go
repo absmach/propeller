@@ -133,6 +133,13 @@ func main() {
 
 		return
 	}
+	if dbCloser != nil {
+		defer func() {
+			if err := dbCloser.Close(); err != nil {
+				logger.Error("database close error", slog.Any("error", err))
+			}
+		}()
+	}
 
 	svc, cronScheduler := manager.NewService(
 		repos,
@@ -193,12 +200,6 @@ func main() {
 
 	if err := mqttPubSub.Disconnect(shutdownCtx); err != nil {
 		logger.Error("mqtt disconnect error", slog.Any("error", err))
-	}
-
-	if dbCloser != nil {
-		if err := dbCloser.Close(); err != nil {
-			logger.Error("database close error", slog.Any("error", err))
-		}
 	}
 
 	logger.Info("graceful shutdown complete")

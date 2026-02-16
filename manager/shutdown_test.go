@@ -2,13 +2,18 @@ package manager_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/dag"
+	mqttmocks "github.com/absmach/propeller/pkg/mqtt/mocks"
+	"github.com/absmach/propeller/pkg/scheduler"
+	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,6 +84,50 @@ func TestShutdownInterruptsRunningTasks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShutdownSignalsStopBeforeInterrupt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repos, _, err := storage.NewRepositories(storage.Config{Type: "memory"})
+	require.NoError(t, err)
+
+	pubsub := mqttmocks.NewPubSub(t)
+	pubsub.On("Subscribe", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	pubsub.On("Unsubscribe", mock.Anything, mock.Anything).Return(nil).Maybe()
+	pubsub.On("Disconnect", mock.Anything).Return(nil).Maybe()
+
+	svc, _ := manager.NewService(repos, scheduler.NewRoundRobin(), pubsub, "test-domain", "test-channel", slog.Default())
+
+	created, err := svc.CreateTask(ctx, task.Task{
+		Name:      "running-task",
+		State:     task.Running,
+		PropletID: "proplet-1",
+	})
+	require.NoError(t, err)
+
+	stopTopic := "m/test-domain/c/test-channel/control/manager/stop"
+	pubsub.On("Publish", mock.Anything, stopTopic, mock.MatchedBy(func(msg interface{}) bool {
+		payload, ok := msg.(map[string]any)
+		if !ok {
+			return false
+		}
+
+		return payload["id"] == created.ID && payload["proplet_id"] == "proplet-1"
+	})).Run(func(args mock.Arguments) {
+		got, getErr := svc.GetTask(ctx, created.ID)
+		require.NoError(t, getErr)
+		assert.Equal(t, task.Running, got.State)
+	}).Return(nil).Once()
+
+	err = svc.Shutdown(ctx)
+	require.NoError(t, err)
+
+	got, err := svc.GetTask(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, task.Interrupted, got.State)
+	assert.Equal(t, "interrupted by shutdown", got.Error)
 }
 
 func TestShutdownPreventsNewTasks(t *testing.T) {

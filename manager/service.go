@@ -36,6 +36,7 @@ const (
 	ExecutionModeSequential   = "sequential"
 	ExecutionModeConfigurable = "configurable"
 	EnvJobExecutionMode       = "JOB_EXECUTION_MODE"
+	shutdownTaskStopWait      = 200 * time.Millisecond
 )
 
 var (
@@ -805,10 +806,10 @@ func (svc *service) StartCronScheduler(ctx context.Context) error {
 
 func (svc *service) Shutdown(ctx context.Context) error {
 	svc.shuttingDown.Store(true)
-	svc.logger.Info("shutdown initiated, interrupting running tasks")
+	svc.logger.Info("shutdown initiated, stopping running tasks")
 
-	if err := svc.interruptRunningTasks(ctx); err != nil {
-		svc.logger.Error("failed to interrupt running tasks", slog.Any("error", err))
+	if err := svc.signalStopToActiveTasks(ctx); err != nil {
+		svc.logger.Error("failed to signal stop to active tasks", slog.Any("error", err))
 	}
 
 	// Wait for in-flight FL round goroutines with timeout.
@@ -823,6 +824,21 @@ func (svc *service) Shutdown(ctx context.Context) error {
 		svc.logger.Info("all in-flight goroutines completed")
 	case <-ctx.Done():
 		svc.logger.Warn("shutdown timeout waiting for in-flight goroutines")
+	}
+
+	waitCtx := ctx
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		waitCtx, cancel = context.WithTimeout(ctx, shutdownTaskStopWait)
+		defer cancel()
+	}
+
+	if err := svc.waitForActiveTasks(waitCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		svc.logger.Warn("failed while waiting for active tasks to settle", slog.Any("error", err))
+	}
+
+	if err := svc.interruptRunningTasks(ctx); err != nil {
+		svc.logger.Error("failed to interrupt running tasks", slog.Any("error", err))
 	}
 
 	return nil
@@ -1722,6 +1738,7 @@ func (svc *service) interruptRunningTasks(ctx context.Context) error {
 	for i := range allTasks {
 		t := &allTasks[i]
 		if t.State == task.Running || t.State == task.Scheduled {
+			prevState := t.State
 			t.State = task.Interrupted
 			t.Error = "interrupted by shutdown"
 			t.FinishTime = now
@@ -1731,9 +1748,79 @@ func (svc *service) interruptRunningTasks(ctx context.Context) error {
 
 				continue
 			}
-			svc.logger.Info("task interrupted", slog.String("task_id", t.ID), slog.String("previous_state", t.State.String()))
+			svc.logger.Info("task interrupted", slog.String("task_id", t.ID), slog.String("previous_state", prevState.String()))
 		}
 	}
 
 	return nil
+}
+
+func (svc *service) signalStopToActiveTasks(ctx context.Context) error {
+	allTasks, err := svc.listAllTasks(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	stopTopic := svc.baseTopic + "/control/manager/stop"
+	stopped := 0
+	for i := range allTasks {
+		t := &allTasks[i]
+		if t.State != task.Running && t.State != task.Scheduled {
+			continue
+		}
+
+		propletID := t.PropletID
+		if mappedPropletID, err := svc.taskPropletRepo.Get(ctx, t.ID); err == nil {
+			propletID = mappedPropletID
+		} else if propletID == "" {
+			svc.logger.Warn("no proplet mapping for active task, skipping stop", slog.String("task_id", t.ID), slog.Any("error", err))
+
+			continue
+		}
+
+		stopPayload := map[string]any{
+			"id":         t.ID,
+			"proplet_id": propletID,
+		}
+		if err := svc.pubsub.Publish(ctx, stopTopic, stopPayload); err != nil {
+			svc.logger.Warn("failed to send stop command for active task", slog.String("task_id", t.ID), slog.Any("error", err))
+
+			continue
+		}
+		stopped++
+	}
+
+	if stopped > 0 {
+		svc.logger.Info("sent stop commands to active tasks", slog.Int("count", stopped))
+	}
+
+	return nil
+}
+
+func (svc *service) waitForActiveTasks(ctx context.Context) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		allTasks, err := svc.listAllTasks(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to list tasks: %w", err)
+		}
+
+		activeCount := 0
+		for i := range allTasks {
+			if allTasks[i].State == task.Running || allTasks[i].State == task.Scheduled {
+				activeCount++
+			}
+		}
+		if activeCount == 0 {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
