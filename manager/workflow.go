@@ -136,7 +136,7 @@ func (wc *WorkflowCoordinator) OnTaskCompletion(ctx context.Context, taskID stri
 }
 
 func (wc *WorkflowCoordinator) listAllTasks(ctx context.Context) ([]task.Task, error) {
-	const pageSize uint64 = 500
+	const pageSize uint64 = 100
 	var allTasks []task.Task
 	var offset uint64
 

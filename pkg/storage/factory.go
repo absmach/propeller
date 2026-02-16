@@ -115,7 +115,7 @@ func newMemoryRepositories() (*Repositories, io.Closer, error) {
 		Proplets:     newMemoryPropletRepository(propletStorage),
 		TaskProplets: newMemoryTaskPropletRepository(taskPropletStorage),
 		Metrics:      newMemoryMetricsRepository(metricsStorage),
-	}, io.NopCloser(nil), nil
+	}, nil, nil
 }
 
 type postgresTaskAdapter struct {

@@ -195,8 +195,10 @@ func main() {
 		logger.Error("mqtt disconnect error", slog.Any("error", err))
 	}
 
-	if err := dbCloser.Close(); err != nil {
-		logger.Error("database close error", slog.Any("error", err))
+	if dbCloser != nil {
+		if err := dbCloser.Close(); err != nil {
+			logger.Error("database close error", slog.Any("error", err))
+		}
 	}
 
 	logger.Info("graceful shutdown complete")
