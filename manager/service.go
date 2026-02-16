@@ -1697,19 +1697,29 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 }
 
 func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	allTasks, err := svc.listAllTasks(ctx)
-	if err != nil {
-		return nil, err
-	}
+	const pageSize uint64 = 500
+	var offset uint64
+	workflowTasks := make([]task.Task, 0)
 
-	tasks := make([]task.Task, 0)
-	for i := range allTasks {
-		if allTasks[i].WorkflowID == workflowID {
-			tasks = append(tasks, allTasks[i])
+	for {
+		tasks, total, err := svc.taskRepo.List(ctx, offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+
+		for i := range tasks {
+			if tasks[i].WorkflowID == workflowID {
+				workflowTasks = append(workflowTasks, tasks[i])
+			}
+		}
+
+		offset += uint64(len(tasks))
+		if offset >= total || len(tasks) == 0 {
+			break
 		}
 	}
 
-	return tasks, nil
+	return workflowTasks, nil
 }
 
 func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task, error) {

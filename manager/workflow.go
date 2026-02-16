@@ -135,38 +135,28 @@ func (wc *WorkflowCoordinator) OnTaskCompletion(ctx context.Context, taskID stri
 	return wc.CheckAndStartReadyTasks(ctx, t.WorkflowID)
 }
 
-func (wc *WorkflowCoordinator) listAllTasks(ctx context.Context) ([]task.Task, error) {
+func (wc *WorkflowCoordinator) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
 	const pageSize uint64 = 100
-	var allTasks []task.Task
 	var offset uint64
+	workflowTasks := make([]task.Task, 0)
 
 	for {
 		tasks, total, err := wc.taskRepo.List(ctx, offset, pageSize)
 		if err != nil {
 			return nil, err
 		}
-		allTasks = append(allTasks, tasks...)
+
+		for i := range tasks {
+			if tasks[i].WorkflowID == workflowID {
+				workflowTasks = append(workflowTasks, tasks[i])
+			}
+		}
+
 		offset += uint64(len(tasks))
 		if offset >= total || len(tasks) == 0 {
 			break
 		}
 	}
 
-	return allTasks, nil
-}
-
-func (wc *WorkflowCoordinator) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	allTasks, err := wc.listAllTasks(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks := make([]task.Task, 0)
-	for i := range allTasks {
-		if allTasks[i].WorkflowID == workflowID {
-			tasks = append(tasks, allTasks[i])
-		}
-	}
-
-	return tasks, nil
+	return workflowTasks, nil
 }
