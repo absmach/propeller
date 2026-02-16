@@ -1,8 +1,7 @@
-pkgname: mocks
+outpkg: mocks
 structname: "{{.InterfaceName}}"
 filename: "{{snakecase .InterfaceName}}.go"
 dir: "{{.InterfaceDirRelative}}/mocks"
-force-file-write: true
 
 packages:
   github.com/absmach/propeller/manager:
