@@ -108,7 +108,7 @@ func TestShutdownSignalsStopBeforeInterrupt(t *testing.T) {
 	require.NoError(t, err)
 
 	stopTopic := "m/test-domain/c/test-channel/control/manager/stop"
-	pubsub.On("Publish", mock.Anything, stopTopic, mock.MatchedBy(func(msg interface{}) bool {
+	pubsub.On("Publish", mock.Anything, stopTopic, mock.MatchedBy(func(msg any) bool {
 		payload, ok := msg.(map[string]any)
 		if !ok {
 			return false
