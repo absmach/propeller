@@ -35,7 +35,8 @@ define make_docker
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TIME=$(TIME) \
-		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):$(COMMIT) \
 		-f docker/Dockerfile .
 endef
 
@@ -45,7 +46,8 @@ define make_docker_dev
 	docker build \
 		--no-cache \
 		--build-arg SVC=$(svc) \
-		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc) \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):$(COMMIT) \
 		-f docker/Dockerfile.dev ./build
 endef
 
@@ -59,6 +61,7 @@ define make_docker_rust
 		--build-arg TIME=$(TIME) \
 		--build-arg WASMTIME_VERSION=$(WASMTIME_VERSION) \
 		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):$(COMMIT) \
 		-f docker/Dockerfile.$(svc) .
 endef
 
@@ -69,6 +72,7 @@ define make_docker_rust_dev
 		--no-cache \
 		--build-arg SVC=$(svc) \
 		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
+		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):$(COMMIT) \
 		-f docker/Dockerfile.$(svc).dev ./proplet/target/release
 endef
 
