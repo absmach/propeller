@@ -12,7 +12,7 @@ import (
 )
 
 type Config struct {
-	Type string `env:"MANAGER_STORAGE_TYPE" envDefault:"postgres"`
+	Type string `env:"MANAGER_STORAGE_TYPE" envDefault:"memory"`
 
 	PostgresHost    string `env:"MANAGER_POSTGRES_HOST"    envDefault:"localhost"`
 	PostgresPort    string `env:"MANAGER_POSTGRES_PORT"    envDefault:"5432"`

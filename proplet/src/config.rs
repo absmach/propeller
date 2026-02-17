@@ -7,7 +7,6 @@ use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[cfg(feature = "tee")]
 use crate::tee_detection;
 
 const DEFAULT_CONFIG_PATH: &str = "config.toml";
@@ -42,16 +41,15 @@ pub struct PropletConfig {
     pub k8s_namespace: Option<String>,
     pub external_wasm_runtime: Option<String>,
     pub enable_monitoring: bool,
-    #[cfg(feature = "tee")]
     pub tee_enabled: bool,
-    #[cfg(feature = "tee")]
     pub kbs_uri: Option<String>,
-    #[cfg(feature = "tee")]
     pub aa_config_path: Option<String>,
-    #[cfg(feature = "tee")]
     pub layer_store_path: String,
-    #[cfg(feature = "tee")]
     pub pull_concurrent_limit: usize,
+    pub hal_enabled: bool,
+    pub http_enabled: bool,
+    pub preopened_dirs: Vec<String>,
+    pub http_proxy_port: u16,
 }
 
 impl Default for PropletConfig {
@@ -75,16 +73,15 @@ impl Default for PropletConfig {
             k8s_namespace: None,
             external_wasm_runtime: None,
             enable_monitoring: true,
-            #[cfg(feature = "tee")]
             tee_enabled: false,
-            #[cfg(feature = "tee")]
             kbs_uri: None,
-            #[cfg(feature = "tee")]
             aa_config_path: None,
-            #[cfg(feature = "tee")]
             layer_store_path: "/tmp/proplet/layers".to_string(),
-            #[cfg(feature = "tee")]
             pull_concurrent_limit: 4,
+            hal_enabled: true,
+            http_enabled: false,
+            preopened_dirs: Vec::new(),
+            http_proxy_port: 8222,
         }
     }
 }
@@ -124,7 +121,6 @@ impl PropletConfig {
             }
         }
 
-        #[cfg(feature = "tee")]
         {
             let tee_detection = tee_detection::detect_tee();
 
@@ -166,7 +162,11 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_INSTANCE_ID") {
-            config.instance_id = val;
+            config.instance_id = if val.is_empty() {
+                Uuid::new_v4().to_string()
+            } else {
+                val
+            };
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_ADDRESS") {
@@ -249,7 +249,6 @@ impl PropletConfig {
             config.enable_monitoring = val.to_lowercase() == "true" || val == "1";
         }
 
-        #[cfg(feature = "tee")]
         {
             if let Ok(val) = env::var("PROPLET_KBS_URI") {
                 config.kbs_uri = if val.is_empty() { None } else { Some(val) };
@@ -267,6 +266,28 @@ impl PropletConfig {
                 if let Ok(limit) = val.parse() {
                     config.pull_concurrent_limit = limit;
                 }
+            }
+
+            if let Ok(val) = env::var("PROPLET_HAL_ENABLED") {
+                config.hal_enabled = val.to_lowercase() == "true" || val == "1";
+            }
+
+            if let Ok(val) = env::var("PROPLET_HTTP_ENABLED") {
+                config.http_enabled = val.to_lowercase() == "true" || val == "1";
+            }
+
+            if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT") {
+                if let Ok(port) = val.parse() {
+                    config.http_proxy_port = port;
+                }
+            }
+
+            if let Ok(val) = env::var("PROPLET_DIRS") {
+                config.preopened_dirs = val
+                    .split(':')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
             }
         }
 
@@ -319,7 +340,6 @@ mod tests {
         assert!(config.k8s_namespace.is_none());
         assert!(config.external_wasm_runtime.is_none());
 
-        #[cfg(feature = "tee")]
         {
             assert!(!config.tee_enabled);
             assert!(config.kbs_uri.is_none());

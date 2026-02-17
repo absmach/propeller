@@ -1,0 +1,16 @@
+[package]
+name = "http-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+# cdylib = reactor/library component — exports incoming-handler, no _start
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = { version = "0.41.0", default-features = false, features = ["realloc", "macros"] }
+
+[profile.release]
+opt-level = "s"
+strip = true
