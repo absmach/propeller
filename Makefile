@@ -13,6 +13,7 @@ DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 DOCKERS_RUST = $(addprefix docker_,$(RUST_SERVICES))
 DOCKERS_RUST_DEV = $(addprefix docker_dev_,$(RUST_SERVICES))
 DOCKER_IMAGE_NAME_PREFIX ?= ghcr.io/absmach/propeller
+WASMTIME_VERSION ?= 41.0.3
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
@@ -56,6 +57,7 @@ define make_docker_rust
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TIME=$(TIME) \
+		--build-arg WASMTIME_VERSION=$(WASMTIME_VERSION) \
 		--tag=$(DOCKER_IMAGE_NAME_PREFIX)/$(svc):latest \
 		-f docker/Dockerfile.$(svc) .
 endef

@@ -10,9 +10,6 @@ build
 # Docker files (not needed in build context)
 docker
 
-# Documentation
-docs
-
 # Embedded proplet
 embed-proplet
 
@@ -32,3 +29,6 @@ proplet/target/CACHEDIR.TAG
 *.swo
 *~
 .DS_Store
+
+# Hal
+hal
