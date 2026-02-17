@@ -1,4 +1,4 @@
-FROM rust:1.83-alpine AS builder
+FROM rust:1.93.1-slim AS builder
 
 ARG VERSION
 ARG COMMIT
@@ -6,18 +6,12 @@ ARG TIME
 
 WORKDIR /build
 
-RUN apk add --no-cache \
-    musl-dev \
-    openssl-dev \
-    openssl-libs-static \
-    pkgconfig \
-    upx
+RUN apt update && apt install -y clang libclang-dev upx
 
 COPY proplet/ ./
 
 RUN cargo build --release && \
-    strip target/release/proplet && \
-    upx --best --lzma target/release/proplet
+    upx --best target/release/proplet
 
 FROM ubuntu:25.10
 
@@ -26,7 +20,7 @@ LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.title="Propeller Proplet (Rust)"
 LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
 
-ARG WASMTIME_VERSION=39.0.1
+ARG WASMTIME_VERSION=41.0.3
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
