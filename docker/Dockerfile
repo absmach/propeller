@@ -11,7 +11,7 @@ COPY . .
 RUN apk update \
     && apk add make upx\
     && make $SVC \
-    && upx build/$SVC \
+    && upx --best build/$SVC \
     && mv build/$SVC /exe
 
 FROM scratch
