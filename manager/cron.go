@@ -102,7 +102,7 @@ func (cs *cronScheduler) UnscheduleTask(ctx context.Context, taskID string) erro
 }
 
 func (cs *cronScheduler) listAllTasks(ctx context.Context) ([]task.Task, error) {
-	const pageSize uint64 = 500
+	const pageSize uint64 = 100
 	var allTasks []task.Task
 	var offset uint64
 

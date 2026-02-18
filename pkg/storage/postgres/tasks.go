@@ -30,6 +30,7 @@ type dbTask struct {
 	Encrypted         bool          `db:"encrypted"`
 	KBSResourcePath   *string       `db:"kbs_resource_path"`
 	PropletID         *string       `db:"proplet_id"`
+	WorkflowID        *string       `db:"workflow_id"`
 	Results           []byte        `db:"results"`
 	Error             *string       `db:"error"`
 	MonitoringProfile []byte        `db:"monitoring_profile"`
@@ -40,8 +41,8 @@ type dbTask struct {
 }
 
 func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
-	query := `INSERT INTO tasks (id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
+	query := `INSERT INTO tasks (id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, workflow_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
 	if err != nil {
@@ -78,6 +79,7 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 		t.Daemon, t.Encrypted,
 		nullString(t.KBSResourcePath),
 		nullString(t.PropletID),
+		nullString(t.WorkflowID),
 		results,
 		nullString(t.Error),
 		monitoringProfile,
@@ -93,7 +95,7 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 }
 
 func (r *taskRepo) Get(ctx context.Context, id string) (task.Task, error) {
-	query := `SELECT id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at
+	query := `SELECT id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, workflow_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at
 		FROM tasks WHERE id = $1`
 
 	var dbt dbTask
@@ -122,12 +124,13 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		encrypted = $10,
 		kbs_resource_path = $11,
 		proplet_id = $12,
-		results = $13,
-		error = $14,
-		monitoring_profile = $15,
-		start_time = $16,
-		finish_time = $17,
-		updated_at = $18
+		workflow_id = $13,
+		results = $14,
+		error = $15,
+		monitoring_profile = $16,
+		start_time = $17,
+		finish_time = $18,
+		updated_at = $19
 		WHERE id = $1`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
@@ -165,6 +168,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		t.Daemon, t.Encrypted,
 		nullString(t.KBSResourcePath),
 		nullString(t.PropletID),
+		nullString(t.WorkflowID),
 		results,
 		nullString(t.Error),
 		monitoringProfile,
@@ -186,7 +190,7 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
-	query := `SELECT id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at
+	query := `SELECT id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, workflow_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at
 		FROM tasks ORDER BY created_at DESC LIMIT $1 OFFSET $2`
 
 	rows, err := r.db.QueryContext(ctx, query, limit, offset)
@@ -202,7 +206,50 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 			&dbt.ID, &dbt.Name, &dbt.State, &dbt.ImageURL,
 			&dbt.File, &dbt.CLIArgs, &dbt.Inputs, &dbt.Env,
 			&dbt.Daemon, &dbt.Encrypted, &dbt.KBSResourcePath, &dbt.PropletID,
-			&dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
+			&dbt.WorkflowID, &dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
+			&dbt.StartTime, &dbt.FinishTime, &dbt.CreatedAt, &dbt.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+
+		t, err := r.toTask(dbt)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+
+		tasks = append(tasks, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	return tasks, total, nil
+}
+
+func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	var total uint64
+	if err := r.db.GetContext(ctx, &total, "SELECT COUNT(*) FROM tasks WHERE workflow_id = $1", workflowID); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	query := `SELECT id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted, kbs_resource_path, proplet_id, workflow_id, results, error, monitoring_profile, start_time, finish_time, created_at, updated_at
+		FROM tasks WHERE workflow_id = $1 ORDER BY created_at ASC LIMIT $2 OFFSET $3`
+
+	rows, err := r.db.QueryContext(ctx, query, workflowID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+	defer rows.Close()
+
+	tasks := make([]task.Task, 0)
+	for rows.Next() {
+		var dbt dbTask
+		if err := rows.Scan(
+			&dbt.ID, &dbt.Name, &dbt.State, &dbt.ImageURL,
+			&dbt.File, &dbt.CLIArgs, &dbt.Inputs, &dbt.Env,
+			&dbt.Daemon, &dbt.Encrypted, &dbt.KBSResourcePath, &dbt.PropletID,
+			&dbt.WorkflowID, &dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
 			&dbt.StartTime, &dbt.FinishTime, &dbt.CreatedAt, &dbt.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
@@ -268,6 +315,9 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	}
 	if dbt.PropletID != nil {
 		t.PropletID = *dbt.PropletID
+	}
+	if dbt.WorkflowID != nil {
+		t.WorkflowID = *dbt.WorkflowID
 	}
 	if dbt.Results != nil {
 		if err := jsonUnmarshal(dbt.Results, &t.Results); err != nil {

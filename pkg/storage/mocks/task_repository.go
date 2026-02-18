@@ -251,6 +251,74 @@ func (_c *MockTaskRepository_List_Call) RunAndReturn(run func(context.Context, u
 	return _c
 }
 
+// ListByWorkflowID provides a mock function with given fields: ctx, workflowID, offset, limit
+func (_m *MockTaskRepository) ListByWorkflowID(ctx context.Context, workflowID string, offset uint64, limit uint64) ([]task.Task, uint64, error) {
+	ret := _m.Called(ctx, workflowID, offset, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListByWorkflowID")
+	}
+
+	var r0 []task.Task
+	var r1 uint64
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, uint64, uint64) ([]task.Task, uint64, error)); ok {
+		return rf(ctx, workflowID, offset, limit)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, uint64, uint64) []task.Task); ok {
+		r0 = rf(ctx, workflowID, offset, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]task.Task)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, uint64, uint64) uint64); ok {
+		r1 = rf(ctx, workflowID, offset, limit)
+	} else {
+		r1 = ret.Get(1).(uint64)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, string, uint64, uint64) error); ok {
+		r2 = rf(ctx, workflowID, offset, limit)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
+// MockTaskRepository_ListByWorkflowID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListByWorkflowID'
+type MockTaskRepository_ListByWorkflowID_Call struct {
+	*mock.Call
+}
+
+// ListByWorkflowID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - workflowID string
+//   - offset uint64
+//   - limit uint64
+func (_e *MockTaskRepository_Expecter) ListByWorkflowID(ctx interface{}, workflowID interface{}, offset interface{}, limit interface{}) *MockTaskRepository_ListByWorkflowID_Call {
+	return &MockTaskRepository_ListByWorkflowID_Call{Call: _e.mock.On("ListByWorkflowID", ctx, workflowID, offset, limit)}
+}
+
+func (_c *MockTaskRepository_ListByWorkflowID_Call) Run(run func(ctx context.Context, workflowID string, offset uint64, limit uint64)) *MockTaskRepository_ListByWorkflowID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string), args[2].(uint64), args[3].(uint64))
+	})
+	return _c
+}
+
+func (_c *MockTaskRepository_ListByWorkflowID_Call) Return(_a0 []task.Task, _a1 uint64, _a2 error) *MockTaskRepository_ListByWorkflowID_Call {
+	_c.Call.Return(_a0, _a1, _a2)
+	return _c
+}
+
+func (_c *MockTaskRepository_ListByWorkflowID_Call) RunAndReturn(run func(context.Context, string, uint64, uint64) ([]task.Task, uint64, error)) *MockTaskRepository_ListByWorkflowID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Update provides a mock function with given fields: ctx, t
 func (_m *MockTaskRepository) Update(ctx context.Context, t task.Task) error {
 	ret := _m.Called(ctx, t)

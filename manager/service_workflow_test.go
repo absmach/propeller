@@ -33,7 +33,7 @@ var (
 
 func newService(t *testing.T) manager.Service {
 	t.Helper()
-	repos, _, err := storage.NewRepositories(storage.Config{Type: "memory"})
+	repos, err := storage.NewRepositories(storage.Config{Type: "memory"})
 	require.NoError(t, err)
 	sched := scheduler.NewRoundRobin()
 	pubsub := mqttmocks.NewPubSub(t)

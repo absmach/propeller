@@ -1632,7 +1632,7 @@ func (svc *service) parseMemoryMetrics(data map[string]any) proplet.MemoryMetric
 }
 
 func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
-	const pageSize uint64 = 500
+	const pageSize uint64 = 100
 	var allTasks []task.Task
 	var offset uint64
 
@@ -1697,22 +1697,16 @@ func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
 }
 
 func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]task.Task, error) {
-	const pageSize uint64 = 500
+	const pageSize uint64 = 100
 	var offset uint64
-	workflowTasks := make([]task.Task, 0)
+	var workflowTasks []task.Task
 
 	for {
-		tasks, total, err := svc.taskRepo.List(ctx, offset, pageSize)
+		tasks, total, err := svc.taskRepo.ListByWorkflowID(ctx, workflowID, offset, pageSize)
 		if err != nil {
 			return nil, err
 		}
-
-		for i := range tasks {
-			if tasks[i].WorkflowID == workflowID {
-				workflowTasks = append(workflowTasks, tasks[i])
-			}
-		}
-
+		workflowTasks = append(workflowTasks, tasks...)
 		offset += uint64(len(tasks))
 		if offset >= total || len(tasks) == 0 {
 			break

@@ -46,6 +46,7 @@ type TaskRepository interface {
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
 	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -194,6 +195,17 @@ func (db *Database) Migrate() error {
 					`DROP INDEX IF EXISTS idx_tasks_proplet_id`,
 					`DROP INDEX IF EXISTS idx_tasks_state`,
 					`DROP TABLE IF EXISTS tasks`,
+				},
+			},
+			{
+				Id: "2_add_workflow_id",
+				Up: []string{
+					`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_id VARCHAR(36)`,
+					`CREATE INDEX IF NOT EXISTS idx_tasks_workflow_id ON tasks(workflow_id)`,
+				},
+				Down: []string{
+					`DROP INDEX IF EXISTS idx_tasks_workflow_id`,
+					`ALTER TABLE tasks DROP COLUMN IF EXISTS workflow_id`,
 				},
 			},
 		},

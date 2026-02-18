@@ -12,6 +12,9 @@ type TaskRepository interface {
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
 	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	// ListByWorkflowID returns tasks belonging to the given workflow, paginated.
+	// Implementations must filter at the storage layer to avoid O(N) full scans.
+	ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error)
 	Delete(ctx context.Context, id string) error
 }
 

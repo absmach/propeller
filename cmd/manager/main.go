@@ -34,7 +34,7 @@ const (
 	defHTTPPort    = "7070"
 	envPrefixHTTP  = "MANAGER_HTTP_"
 	configPath     = "config.toml"
-	shutdownTimout = 30 * time.Second
+	shutdownTimeout = 30 * time.Second
 )
 
 type config struct {
@@ -127,15 +127,15 @@ func main() {
 		return
 	}
 
-	repos, dbCloser, err := storage.NewRepositories(storageCfg)
+	repos, err := storage.NewRepositories(storageCfg)
 	if err != nil {
 		logger.Error("failed to initialize storage", slog.String("error", err.Error()))
 
 		return
 	}
-	if dbCloser != nil {
+	if repos.Closer != nil {
 		defer func() {
-			if err := dbCloser.Close(); err != nil {
+			if err := repos.Closer.Close(); err != nil {
 				logger.Error("database close error", slog.Any("error", err))
 			}
 		}()
@@ -189,9 +189,11 @@ func main() {
 		logger.Error(fmt.Sprintf("%s service exited with error: %s", svcName, err))
 	}
 
-	// Coordinated shutdown.
+	// Coordinated shutdown: use a fresh background context because the parent ctx
+	// is already cancelled (that's what triggered the shutdown). The timeout
+	// ensures we don't wait indefinitely for in-flight operations.
 	logger.Info("initiating graceful shutdown")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimout)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
 	if err := svc.Shutdown(shutdownCtx); err != nil {

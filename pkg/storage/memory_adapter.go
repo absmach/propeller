@@ -59,6 +59,36 @@ func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task
 	return tasks, total, nil
 }
 
+func (r *memoryTaskRepo) ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	// Fetch all items from the in-memory store, then filter by workflowID.
+	// The underlying storage is fully in-process, so this is fast and avoids
+	// duplicating index infrastructure in the generic key-value store.
+	const maxFetch = 100000
+	data, _, err := r.storage.List(ctx, 0, maxFetch)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var filtered []task.Task
+	for _, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			return nil, 0, pkgerrors.ErrInvalidData
+		}
+		if t.WorkflowID == workflowID {
+			filtered = append(filtered, t)
+		}
+	}
+
+	total := uint64(len(filtered))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+	end := min(offset+limit, total)
+
+	return filtered[offset:end], total, nil
+}
+
 func (r *memoryTaskRepo) Delete(ctx context.Context, id string) error {
 	return r.storage.Delete(ctx, id)
 }

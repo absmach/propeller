@@ -44,6 +44,7 @@ type TaskRepository interface {
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
 	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error)
 	Delete(ctx context.Context, id string) error
 }
 

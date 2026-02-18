@@ -78,6 +78,37 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
+func (r *taskRepo) ListByWorkflowID(_ context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	// Badger is a key-value store with no secondary indexes. We scan all tasks
+	// by the "task:" prefix, deserialize each one, and filter by WorkflowID.
+	// This is O(N) over total tasks but is bounded by the per-page limit when
+	// building the response slice.
+	prefix := []byte("task:")
+	allValues, err := r.db.listWithPrefix(prefix, 0, ^uint64(0))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var filtered []task.Task
+	for _, val := range allValues {
+		var t task.Task
+		if err := json.Unmarshal(val, &t); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal error: %w", err)
+		}
+		if t.WorkflowID == workflowID {
+			filtered = append(filtered, t)
+		}
+	}
+
+	total := uint64(len(filtered))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+	end := min(offset+limit, total)
+
+	return filtered[offset:end], total, nil
+}
+
 func (r *taskRepo) Delete(ctx context.Context, id string) error {
 	key := []byte("task:" + id)
 

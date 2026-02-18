@@ -32,9 +32,12 @@ type Repositories struct {
 	Proplets     PropletRepository
 	TaskProplets TaskPropletRepository
 	Metrics      MetricsRepository
+	// Closer closes the underlying persistent storage connection.
+	// It is nil for the in-memory backend.
+	Closer io.Closer
 }
 
-func NewRepositories(cfg Config) (*Repositories, io.Closer, error) {
+func NewRepositories(cfg Config) (*Repositories, error) {
 	switch cfg.Type {
 	case "postgres":
 		return newPostgresRepositories(cfg)
@@ -45,11 +48,11 @@ func NewRepositories(cfg Config) (*Repositories, io.Closer, error) {
 	case "memory":
 		return newMemoryRepositories()
 	default:
-		return nil, nil, fmt.Errorf("unsupported storage type: %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported storage type: %s", cfg.Type)
 	}
 }
 
-func newPostgresRepositories(cfg Config) (*Repositories, io.Closer, error) {
+func newPostgresRepositories(cfg Config) (*Repositories, error) {
 	db, err := postgres.NewDatabase(
 		cfg.PostgresHost,
 		cfg.PostgresPort,
@@ -59,7 +62,7 @@ func newPostgresRepositories(cfg Config) (*Repositories, io.Closer, error) {
 		cfg.PostgresSSLMode,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	repos := postgres.NewRepositories(db)
@@ -69,13 +72,14 @@ func newPostgresRepositories(cfg Config) (*Repositories, io.Closer, error) {
 		Proplets:     &postgresPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &postgresTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &postgresMetricsAdapter{repo: repos.Metrics},
-	}, db, nil
+		Closer:       db,
+	}, nil
 }
 
-func newSQLiteRepositories(cfg Config) (*Repositories, io.Closer, error) {
+func newSQLiteRepositories(cfg Config) (*Repositories, error) {
 	db, err := sqlite.NewDatabase(cfg.SQLitePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	repos := sqlite.NewRepositories(db)
@@ -85,13 +89,14 @@ func newSQLiteRepositories(cfg Config) (*Repositories, io.Closer, error) {
 		Proplets:     &sqlitePropletAdapter{repo: repos.Proplets},
 		TaskProplets: &sqliteTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &sqliteMetricsAdapter{repo: repos.Metrics},
-	}, db, nil
+		Closer:       db,
+	}, nil
 }
 
-func newBadgerRepositories(cfg Config) (*Repositories, io.Closer, error) {
+func newBadgerRepositories(cfg Config) (*Repositories, error) {
 	db, err := badger.NewDatabase(cfg.BadgerPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	repos := badger.NewRepositories(db)
@@ -101,10 +106,11 @@ func newBadgerRepositories(cfg Config) (*Repositories, io.Closer, error) {
 		Proplets:     &badgerPropletAdapter{repo: repos.Proplets},
 		TaskProplets: &badgerTaskPropletAdapter{repo: repos.TaskProplets},
 		Metrics:      &badgerMetricsAdapter{repo: repos.Metrics},
-	}, db, nil
+		Closer:       db,
+	}, nil
 }
 
-func newMemoryRepositories() (*Repositories, io.Closer, error) {
+func newMemoryRepositories() (*Repositories, error) {
 	taskStorage := NewInMemoryStorage()
 	propletStorage := NewInMemoryStorage()
 	taskPropletStorage := NewInMemoryStorage()
@@ -115,7 +121,7 @@ func newMemoryRepositories() (*Repositories, io.Closer, error) {
 		Proplets:     newMemoryPropletRepository(propletStorage),
 		TaskProplets: newMemoryTaskPropletRepository(taskPropletStorage),
 		Metrics:      newMemoryMetricsRepository(metricsStorage),
-	}, nil, nil
+	}, nil
 }
 
 type postgresTaskAdapter struct {
@@ -136,6 +142,10 @@ func (a *postgresTaskAdapter) Update(ctx context.Context, t task.Task) error {
 
 func (a *postgresTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.List(ctx, offset, limit)
+}
+
+func (a *postgresTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID, offset, limit)
 }
 
 func (a *postgresTaskAdapter) Delete(ctx context.Context, id string) error {
@@ -268,6 +278,10 @@ func (a *sqliteTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]t
 	return a.repo.List(ctx, offset, limit)
 }
 
+func (a *sqliteTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID, offset, limit)
+}
+
 func (a *sqliteTaskAdapter) Delete(ctx context.Context, id string) error {
 	return a.repo.Delete(ctx, id)
 }
@@ -396,6 +410,10 @@ func (a *badgerTaskAdapter) Update(ctx context.Context, t task.Task) error {
 
 func (a *badgerTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.List(ctx, offset, limit)
+}
+
+func (a *badgerTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.ListByWorkflowID(ctx, workflowID, offset, limit)
 }
 
 func (a *badgerTaskAdapter) Delete(ctx context.Context, id string) error {

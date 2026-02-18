@@ -90,7 +90,7 @@ func TestShutdownSignalsStopBeforeInterrupt(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	repos, _, err := storage.NewRepositories(storage.Config{Type: "memory"})
+	repos, err := storage.NewRepositories(storage.Config{Type: "memory"})
 	require.NoError(t, err)
 
 	pubsub := mqttmocks.NewPubSub(t)
