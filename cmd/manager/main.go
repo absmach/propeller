@@ -30,10 +30,10 @@ import (
 )
 
 const (
-	svcName        = "manager"
-	defHTTPPort    = "7070"
-	envPrefixHTTP  = "MANAGER_HTTP_"
-	configPath     = "config.toml"
+	svcName         = "manager"
+	defHTTPPort     = "7070"
+	envPrefixHTTP   = "MANAGER_HTTP_"
+	configPath      = "config.toml"
 	shutdownTimeout = 30 * time.Second
 )
 
