@@ -9,14 +9,6 @@
 
 LOG_MODULE_REGISTER(metrics);
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Heap measurement
- *
- * malloc_runtime_stats_get() is the public API to query the libc malloc
- * arena (struct sys_heap z_malloc_heap inside malloc.c).
- * Requires CONFIG_MINIMAL_LIBC=y, CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE != 0,
- * and CONFIG_SYS_HEAP_RUNTIME_STATS=y.
- * ─────────────────────────────────────────────────────────────────────────*/
 int malloc_runtime_stats_get(struct sys_memory_stats *stats);
 
 static uint32_t heap_free_bytes(void)
@@ -34,7 +26,6 @@ static uint32_t heap_min_free_bytes(void)
     struct sys_memory_stats stats;
 
     if (malloc_runtime_stats_get(&stats) == 0) {
-        /* max_allocated_bytes = peak ever allocated; min_free = total - peak */
         size_t total = stats.free_bytes + stats.allocated_bytes;
 
         if (stats.max_allocated_bytes <= total) {
@@ -44,15 +35,6 @@ static uint32_t heap_min_free_bytes(void)
     return 0;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * CPU utilisation via Zephyr thread runtime stats
- *
- * Requires CONFIG_THREAD_RUNTIME_STATS=y (selects CONFIG_SCHED_THREAD_USAGE).
- * k_thread_runtime_stats_all_get() returns aggregate stats for all threads:
- *   execution_cycles = non-idle + idle (total wall-clock × N CPUs)
- *   total_cycles     = non-idle only
- * cpu_percent = total_cycles_delta / execution_cycles_delta × 100
- * ─────────────────────────────────────────────────────────────────────────*/
 static uint64_t s_prev_exec_cycles;
 static uint64_t s_prev_busy_cycles;
 

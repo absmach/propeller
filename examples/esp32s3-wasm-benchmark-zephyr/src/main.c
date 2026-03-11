@@ -1,21 +1,3 @@
-/*
- * ESP32-S3 WASM Stress Benchmark — Zephyr port
- * =============================================
- * Measures maximum concurrent WASM instances using WAMR under Zephyr RTOS.
- *
- * Memory layout (approximate, 423 KB usable DRAM):
- *   Zephyr kernel + BSS      ~100 KB
- *   Thread stacks (16 × 4KB)   64 KB  (static, not in malloc arena)
- *   Malloc arena (WAMR)        192 KB  (CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE)
- *
- * The heap pool is where all WAMR allocations land; heap_free reported
- * during the run reflects remaining capacity for new instances.
- *
- * Edit EXPERIMENT to select which test to run.
- * Build: west build -b esp32s3_devkitc/esp32s3/procpu -p auto .
- * Flash: west flash -p /dev/ttyUSB0
- */
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -29,27 +11,8 @@
 
 LOG_MODULE_REGISTER(main);
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Experiment selector  –  edit EXPERIMENT to choose what to run
- *
- *  0  Full comparison of all three workload types
- *  1  Single CPU-stress scaling run (fastest to start)
- *  2  Single MEM-stress scaling run
- *  3  Single MSG-stress scaling run
- *  4  Core-pinned experiment: all on core 0 vs all on core 1 vs distributed
- *  5  Mode comparison (shared module)
- *  6  Diverse workload: 5 distinct tasks (add/mul/fib/checksum/popcount)
- * ─────────────────────────────────────────────────────────────────────────*/
 #define EXPERIMENT 0
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Memory budget per instance
- *
- *   wasm_stack_kb  4   WAMR interpreter operand stack
- *   wasm_heap_kb   8   WASM linear memory (workloads without memory section
- *                      don't actually allocate this; set to 0 for those)
- * Thread stacks are pre-allocated statically (BENCH_THREAD_STACK_SIZE = 4 KB).
- * ─────────────────────────────────────────────────────────────────────────*/
 #define WASM_STACK_KB  4
 #define WASM_HEAP_KB   8
 
@@ -59,7 +22,6 @@ static void wamr_global_init(void)
 
     memset(&init_args, 0, sizeof(init_args));
 
-    /* Use system allocator so all WAMR allocations are visible in heap stats */
     init_args.mem_alloc_type = Alloc_With_Allocator;
     init_args.mem_alloc_option.allocator.malloc_func  = (void *)malloc;
     init_args.mem_alloc_option.allocator.realloc_func = (void *)realloc;
@@ -94,7 +56,6 @@ static void print_system_info(void)
 
 int main(void)
 {
-    /* Give the system time to finish boot */
     k_sleep(K_MSEC(1000));
 
     wamr_global_init();

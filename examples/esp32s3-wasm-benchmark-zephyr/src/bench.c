@@ -13,26 +13,17 @@
 
 LOG_MODULE_REGISTER(bench);
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Constants
- * ─────────────────────────────────────────────────────────────────────────*/
 #define MAX_INSTANCES    24
 #define ERROR_BUF_SIZE   128
 
-/* Pre-allocated thread stacks.
- * 24 × 4 KB = 96 KB of static SRAM reservation. */
 #define BENCH_THREAD_STACK_SIZE (4 * 1024)
 
 K_THREAD_STACK_ARRAY_DEFINE(s_stacks, MAX_INSTANCES, BENCH_THREAD_STACK_SIZE);
 
-/* WAMR module loaded once, shared across all instances */
 static wasm_module_t    s_shared_module  = NULL;
 static bench_instance_t s_instances[MAX_INSTANCES];
 static int              s_instance_count = 0;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Workload data access
- * ─────────────────────────────────────────────────────────────────────────*/
 static const uint8_t *workload_bytes(workload_type_t w, uint32_t *len)
 {
     switch (w) {
@@ -53,12 +44,6 @@ static const char *workload_name(workload_type_t w)
     }
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Per-instance Zephyr thread entry
- *
- * WAMR on its Zephyr platform port uses k_thread for thread-local state,
- * so Zephyr native threads (k_thread_create) work correctly here.
- * ─────────────────────────────────────────────────────────────────────────*/
 static void wasm_worker_entry(void *p1, void *p2, void *p3)
 {
     bench_instance_t *inst = (bench_instance_t *)p1;
@@ -70,7 +55,7 @@ static void wasm_worker_entry(void *p1, void *p2, void *p3)
     inst->module_inst = wasm_runtime_instantiate(
         (wasm_module_t)inst->parent_module,
         inst->wasm_stack_bytes,
-        0,    /* heap_size=0: workloads don't use WASM malloc */
+        0,
         err, sizeof(err));
 
     if (!inst->module_inst) {
@@ -106,7 +91,6 @@ static void wasm_worker_entry(void *p1, void *p2, void *p3)
         goto done;
     }
 
-    /* ── Run loop ── */
     while (inst->running) {
         uint64_t t0 = k_cyc_to_us_floor64(k_cycle_get_64());
 
@@ -128,7 +112,6 @@ static void wasm_worker_entry(void *p1, void *p2, void *p3)
             inst->iterations++;
         }
 
-        /* Yield so the Zephyr idle thread can run (resets the watchdog). */
         k_sleep(K_MSEC(5));
     }
 
@@ -140,9 +123,6 @@ done:
     inst->alive       = false;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Spawn a single instance
- * ─────────────────────────────────────────────────────────────────────────*/
 static bool spawn_instance(int idx, const bench_config_t *cfg,
                            void *module, const char *name)
 {
@@ -162,8 +142,6 @@ static bool spawn_instance(int idx, const bench_config_t *cfg,
     inst->parent_module    = module ? module : (void *)s_shared_module;
     inst->task_name        = name;
 
-    /* Worker threads run at the lowest application priority so the
-     * benchmark harness (running at K_PRIO_PREEMPT(0)) is never starved. */
     inst->tid = k_thread_create(
         &inst->thread_data,
         s_stacks[idx],
@@ -189,9 +167,6 @@ static bool spawn_instance(int idx, const bench_config_t *cfg,
     return true;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Stop and join all running instances
- * ─────────────────────────────────────────────────────────────────────────*/
 static void stop_all_instances(void)
 {
     for (int i = 0; i < s_instance_count; i++) {
@@ -206,9 +181,6 @@ static void stop_all_instances(void)
     s_instance_count = 0;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Print per-instance detail table
- * ─────────────────────────────────────────────────────────────────────────*/
 static void print_instance_stats(void)
 {
     printf("\n--- Instance detail ---\n");
@@ -227,9 +199,6 @@ static void print_instance_stats(void)
     printf("---\n\n");
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * bench_config_default
- * ─────────────────────────────────────────────────────────────────────────*/
 void bench_config_default(bench_config_t *cfg)
 {
     cfg->mode             = MODE_SHARED_MODULE;
@@ -243,9 +212,6 @@ void bench_config_default(bench_config_t *cfg)
     cfg->max_instances    = MAX_INSTANCES;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * bench_run  –  the main scaling loop
- * ─────────────────────────────────────────────────────────────────────────*/
 int bench_run(const bench_config_t *cfg)
 {
     int peak_instances = 0;
@@ -265,8 +231,6 @@ int bench_run(const bench_config_t *cfg)
         return 0;
     }
 
-    /* Copy bytecode to heap — WAMR fast-interp modifies it in place and the
-     * source arrays are in read-only flash. */
     uint8_t *wasm_bytes = malloc(wasm_len);
 
     if (!wasm_bytes) {
@@ -278,7 +242,6 @@ int bench_run(const bench_config_t *cfg)
     char err[ERROR_BUF_SIZE];
 
     s_shared_module = wasm_runtime_load(wasm_bytes, wasm_len, err, sizeof(err));
-    /* WAMR takes ownership of wasm_bytes after load; do not free it. */
 
     if (!s_shared_module) {
         LOG_ERR("wasm_runtime_load failed: %s", err);
@@ -289,7 +252,6 @@ int bench_run(const bench_config_t *cfg)
     s_instance_count = 0;
     metrics_init();
 
-    /* ── Scaling loop ── */
     for (int n = 1; n <= cfg->max_instances; n++) {
         metrics_t m_before;
 
@@ -345,9 +307,6 @@ int bench_run(const bench_config_t *cfg)
     return peak_instances;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * bench_run_all_workloads
- * ─────────────────────────────────────────────────────────────────────────*/
 void bench_run_all_workloads(const bench_config_t *base_cfg)
 {
     int results[WORKLOAD_COUNT];
@@ -374,9 +333,6 @@ void bench_run_all_workloads(const bench_config_t *base_cfg)
     printf("╚══════════════════════════════════════════╝\n\n");
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * bench_compare_modes
- * ─────────────────────────────────────────────────────────────────────────*/
 void bench_compare_modes(const bench_config_t *base_cfg)
 {
     bench_config_t cfg;
@@ -392,9 +348,6 @@ void bench_compare_modes(const bench_config_t *base_cfg)
     printf("Shared module: %d instances\n", shared);
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * bench_run_diverse  –  five distinct WASM tasks running concurrently
- * ─────────────────────────────────────────────────────────────────────────*/
 #define DIVERSE_TASK_COUNT 5
 
 static const struct {
@@ -445,7 +398,7 @@ void bench_run_diverse(const bench_config_t *cfg)
             bufs[t] = NULL;
             goto cleanup;
         }
-        bufs[t] = NULL;  /* WAMR owns the buffer now */
+        bufs[t] = NULL;
         loaded = t + 1;
         LOG_INF("Loaded module: %s (%u bytes)",
                 s_task_defs[t].name, (unsigned)s_task_defs[t].len);
