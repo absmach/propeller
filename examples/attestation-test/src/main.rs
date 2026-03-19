@@ -1,6 +1,6 @@
-#[link(wasm_import_module = "elastic:attestation/hal")]
+#[link(wasm_import_module = "elastic:tee-hal/platform")]
 unsafe extern "C" {
-    #[link_name = "get-attestation"]
+    #[link_name = "attestation"]
     fn get_attestation(
         nonce_ptr: i32,
         nonce_len: i32,

@@ -1,6 +1,6 @@
-#[link(wasm_import_module = "elastic:platform/platform")]
+#[link(wasm_import_module = "elastic:tee-hal/platform")]
 unsafe extern "C" {
-    #[link_name = "get-platform-info"]
+    #[link_name = "platform-info"]
     fn get_platform_info(out_ptr: i32, out_len_ptr: i32) -> i32;
 
     fn attestation(
