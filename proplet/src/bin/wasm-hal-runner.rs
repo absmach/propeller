@@ -1,5 +1,3 @@
-/// Standalone CLI runner: executes a wasip1 WASM file with the ELASTIC TEE HAL host imports.
-/// Usage: wasm-hal-runner <file.wasm>
 use anyhow::{Context, Result};
 use elastic_tee_hal::interfaces::HalProvider;
 use std::sync::Arc;
