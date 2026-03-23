@@ -1241,7 +1241,11 @@ async fn fetch_wasm_from_http(client: &HttpClient, url: &str) -> Result<Vec<u8>>
 
     let status = response.status();
     if status.is_client_error() || status.is_server_error() {
-        return Err(anyhow::anyhow!("HTTP {} fetching wasm from {}", status, url));
+        return Err(anyhow::anyhow!(
+            "HTTP {} fetching wasm from {}",
+            status,
+            url
+        ));
     }
 
     if let Some(content_length) = response.content_length() {

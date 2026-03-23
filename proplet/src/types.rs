@@ -99,7 +99,8 @@ impl StartRequest {
                     "encrypted workloads should only use image_url, not file"
                 ));
             }
-        } else if self.file.is_empty() && self.image_url.is_empty() && self.wasm_http_url.is_none() {
+        } else if self.file.is_empty() && self.image_url.is_empty() && self.wasm_http_url.is_none()
+        {
             return Err(anyhow::anyhow!(
                 "either file, image_url, or wasm_http_url must be provided"
             ));
