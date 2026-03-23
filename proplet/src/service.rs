@@ -1,4 +1,6 @@
 use crate::config::PropletConfig;
+
+const WASM_FETCH_MAX_BYTES: usize = 100 * 1024 * 1024;
 use crate::metrics::MetricsCollector;
 use crate::monitoring::{system::SystemMonitor, ProcessMonitor};
 use crate::mqtt::{build_topic, MqttMessage, PubSub};
@@ -497,6 +499,17 @@ impl PropletService {
                     }
                 }
             }
+        } else if let Some(ref url) = req.wasm_http_url {
+            match self.fetch_wasm_from_http(url).await {
+                Ok(binary) => binary,
+                Err(e) => {
+                    error!("Failed to fetch wasm for task {}: {}", req.id, e);
+                    self.running_tasks.lock().await.remove(&req.id);
+                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                        .await?;
+                    return Err(e);
+                }
+            }
         } else {
             let err = anyhow::anyhow!("No wasm binary or image URL provided");
             error!("Validation error for task {}: {}", req.id, err);
@@ -977,6 +990,10 @@ impl PropletService {
         }
     }
 
+    async fn fetch_wasm_from_http(&self, url: &str) -> Result<Vec<u8>> {
+        fetch_wasm_from_http(&self.http_client, url).await
+    }
+
     async fn try_assemble_chunks(&self, app_name: &str) -> Result<Option<Vec<u8>>> {
         let mut assembly = self.chunk_assembly.lock().await;
 
@@ -1211,4 +1228,116 @@ fn build_fl_update_envelope(
         "format": update_format,
         "metrics": {}
     })
+}
+
+async fn fetch_wasm_from_http(client: &HttpClient, url: &str) -> Result<Vec<u8>> {
+    use futures_util::StreamExt;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("Failed to connect to {}", url))?;
+
+    let status = response.status();
+    if status.is_client_error() || status.is_server_error() {
+        return Err(anyhow::anyhow!("HTTP {} fetching wasm from {}", status, url));
+    }
+
+    if let Some(content_length) = response.content_length() {
+        if content_length as usize > WASM_FETCH_MAX_BYTES {
+            return Err(anyhow::anyhow!(
+                "wasm response from {} exceeds size limit ({} > {} bytes)",
+                url,
+                content_length,
+                WASM_FETCH_MAX_BYTES
+            ));
+        }
+    }
+
+    let mut binary = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("Failed to read response body from {}", url))?;
+        binary.extend_from_slice(&chunk);
+        if binary.len() > WASM_FETCH_MAX_BYTES {
+            return Err(anyhow::anyhow!(
+                "wasm response from {} exceeds size limit ({} bytes)",
+                url,
+                WASM_FETCH_MAX_BYTES
+            ));
+        }
+    }
+
+    info!("Fetched wasm from {}, size: {} bytes", url, binary.len());
+    Ok(binary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn make_client() -> HttpClient {
+        HttpClient::new()
+    }
+
+    #[tokio::test]
+    async fn test_fetch_wasm_200_ok() {
+        let server = MockServer::start().await;
+        let wasm_bytes = b"\x00asm\x01\x00\x00\x00";
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(wasm_bytes.to_vec()))
+            .mount(&server)
+            .await;
+
+        let result = fetch_wasm_from_http(&make_client(), &server.uri()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), wasm_bytes);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_wasm_404() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let result = fetch_wasm_from_http(&make_client(), &server.uri()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("404"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_wasm_500() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let result = fetch_wasm_from_http(&make_client(), &server.uri()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("500"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_wasm_streaming_exceeds_limit() {
+        let server = MockServer::start().await;
+        let over_limit_body = vec![0u8; WASM_FETCH_MAX_BYTES + 1];
+
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(over_limit_body))
+            .mount(&server)
+            .await;
+
+        let result = fetch_wasm_from_http(&make_client(), &server.uri()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("size limit"));
+    }
 }

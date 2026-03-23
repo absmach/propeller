@@ -66,6 +66,8 @@ pub struct StartRequest {
     pub mode: Option<String>,
     #[serde(default)]
     pub proplet_id: Option<String>,
+    #[serde(default)]
+    pub wasm_http_url: Option<String>,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -97,8 +99,18 @@ impl StartRequest {
                     "encrypted workloads should only use image_url, not file"
                 ));
             }
-        } else if self.file.is_empty() && self.image_url.is_empty() {
-            return Err(anyhow::anyhow!("either file or image_url must be provided"));
+        } else if self.file.is_empty() && self.image_url.is_empty() && self.wasm_http_url.is_none() {
+            return Err(anyhow::anyhow!(
+                "either file, image_url, or wasm_http_url must be provided"
+            ));
+        }
+
+        if let Some(ref url) = self.wasm_http_url {
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                return Err(anyhow::anyhow!(
+                    "wasm_http_url must start with http:// or https://"
+                ));
+            }
         }
         Ok(())
     }
@@ -312,6 +324,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         assert!(req.validate().is_ok());
@@ -334,6 +347,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         assert!(req.validate().is_ok());
@@ -356,6 +370,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let result = req.validate();
@@ -380,6 +395,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let result = req.validate();
@@ -404,13 +420,14 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let result = req.validate();
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "either file or image_url must be provided"
+            "either file, image_url, or wasm_http_url must be provided"
         );
     }
 
@@ -431,6 +448,7 @@ mod tests {
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         assert!(req.validate().is_ok());
@@ -453,6 +471,7 @@ mod tests {
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let result = req.validate();
@@ -480,6 +499,7 @@ mod tests {
             kbs_resource_path: Some("default/key1/value".to_string()),
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let result = req.validate();
@@ -737,6 +757,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
@@ -802,6 +823,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            wasm_http_url: None,
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -811,6 +833,126 @@ mod tests {
         assert_eq!(
             deserialized.env.as_ref().unwrap().get("OPENVINO_DIR"),
             Some(&"/opt/intel/openvino".to_string())
+        );
+    }
+
+    #[test]
+    fn test_start_request_validate_success_with_wasm_http_url() {
+        let req = StartRequest {
+            id: "task-http".to_string(),
+            cli_args: vec![],
+            name: "http_func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: String::new(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+            wasm_http_url: Some("http://fileserver/app.wasm".to_string()),
+        };
+
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_start_request_validate_success_with_wasm_https_url() {
+        let req = StartRequest {
+            id: "task-https".to_string(),
+            cli_args: vec![],
+            name: "https_func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: String::new(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+            wasm_http_url: Some("https://releases.example.com/app.wasm".to_string()),
+        };
+
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_start_request_validate_invalid_wasm_http_url_scheme() {
+        let req = StartRequest {
+            id: "task-ftp".to_string(),
+            cli_args: vec![],
+            name: "ftp_func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: String::new(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+            wasm_http_url: Some("ftp://fileserver/app.wasm".to_string()),
+        };
+
+        let result = req.validate();
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "wasm_http_url must start with http:// or https://"
+        );
+    }
+
+    #[test]
+    fn test_start_request_validate_no_source() {
+        let req = StartRequest {
+            id: "task-nosource".to_string(),
+            cli_args: vec![],
+            name: "func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: String::new(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+            wasm_http_url: None,
+        };
+
+        let result = req.validate();
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "either file, image_url, or wasm_http_url must be provided"
+        );
+    }
+
+    #[test]
+    fn test_start_request_deserialize_wasm_http_url() {
+        let json_data = serde_json::json!({
+            "id": "task-deser",
+            "name": "deser_func",
+            "file": "",
+            "image_url": "",
+            "wasm_http_url": "http://example.com/app.wasm",
+            "state": 0
+        });
+
+        let req: StartRequest = serde_json::from_value(json_data).unwrap();
+        assert_eq!(
+            req.wasm_http_url,
+            Some("http://example.com/app.wasm".to_string())
         );
     }
 }
