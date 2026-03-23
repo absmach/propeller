@@ -243,6 +243,15 @@ func (db *Database) Migrate() error {
 					`ALTER TABLE proplets DROP COLUMN metadata`,
 				},
 			},
+			{
+				Id: "4_add_wasm_http_url",
+				Up: []string{
+					`ALTER TABLE tasks ADD COLUMN wasm_http_url TEXT`,
+				},
+				Down: []string{
+					`ALTER TABLE tasks DROP COLUMN wasm_http_url`,
+				},
+			},
 		},
 	}
 

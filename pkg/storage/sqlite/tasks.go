@@ -24,6 +24,7 @@ type dbTask struct {
 	Name              string       `db:"name"`
 	State             uint8        `db:"state"`
 	ImageURL          *string      `db:"image_url"`
+	WasmHTTPURL       *string      `db:"wasm_http_url"`
 	File              []byte       `db:"file"`
 	CLIArgs           []byte       `db:"cli_args"`
 	Inputs            []byte       `db:"inputs"`
@@ -47,13 +48,13 @@ type dbTask struct {
 	Mode              *string      `db:"mode"`
 }
 
-const taskColumns = `id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted,
+const taskColumns = `id, name, state, image_url, wasm_http_url, file, cli_args, inputs, env, daemon, encrypted,
 	kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time,
 	created_at, updated_at, workflow_id, job_id, depends_on, run_if, kind, mode`
 
 func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	query := `INSERT INTO tasks (` + taskColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
 	if err != nil {
@@ -86,7 +87,7 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	}
 
 	_, err = r.db.ExecContext(ctx, query,
-		t.ID, t.Name, uint8(t.State), nullString(t.ImageURL),
+		t.ID, t.Name, uint8(t.State), nullString(t.ImageURL), nullString(t.WasmHTTPURL),
 		t.File, cliArgs, inputs, env,
 		t.Daemon, t.Encrypted, nullString(t.KBSResourcePath),
 		nullString(t.PropletID),
@@ -122,7 +123,7 @@ func (r *taskRepo) Get(ctx context.Context, id string) (task.Task, error) {
 
 func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	query := `UPDATE tasks SET
-		name = ?, state = ?, image_url = ?, file = ?, cli_args = ?, inputs = ?,
+		name = ?, state = ?, image_url = ?, wasm_http_url = ?, file = ?, cli_args = ?, inputs = ?,
 		env = ?, daemon = ?, encrypted = ?, kbs_resource_path = ?, proplet_id = ?,
 		results = ?, error = ?, monitoring_profile = ?, start_time = ?,
 		finish_time = ?, updated_at = ?, workflow_id = ?, job_id = ?,
@@ -160,7 +161,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	}
 
 	_, err = r.db.ExecContext(ctx, query,
-		t.Name, uint8(t.State), nullString(t.ImageURL),
+		t.Name, uint8(t.State), nullString(t.ImageURL), nullString(t.WasmHTTPURL),
 		t.File, cliArgs, inputs, env,
 		t.Daemon, t.Encrypted, nullString(t.KBSResourcePath),
 		nullString(t.PropletID),
@@ -228,7 +229,7 @@ func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]
 	for rows.Next() {
 		var dbt dbTask
 		if err := rows.Scan(
-			&dbt.ID, &dbt.Name, &dbt.State, &dbt.ImageURL,
+			&dbt.ID, &dbt.Name, &dbt.State, &dbt.ImageURL, &dbt.WasmHTTPURL,
 			&dbt.File, &dbt.CLIArgs, &dbt.Inputs, &dbt.Env,
 			&dbt.Daemon, &dbt.Encrypted, &dbt.KBSResourcePath, &dbt.PropletID,
 			&dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
@@ -268,6 +269,9 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 
 	if dbt.ImageURL != nil {
 		t.ImageURL = *dbt.ImageURL
+	}
+	if dbt.WasmHTTPURL != nil {
+		t.WasmHTTPURL = *dbt.WasmHTTPURL
 	}
 	if dbt.CLIArgs != nil {
 		if err := jsonUnmarshal(dbt.CLIArgs, &t.CLIArgs); err != nil {
