@@ -487,7 +487,8 @@ impl PropletService {
             if req.encrypted {
                 info!("Encrypted workload with image_url: {}", req.image_url);
                 Vec::new()
-            } else if req.image_url.starts_with("http://") || req.image_url.starts_with("https://") {
+            } else if req.image_url.starts_with("http://") || req.image_url.starts_with("https://")
+            {
                 match self.fetch_wasm_from_http(&req.image_url).await {
                     Ok(binary) => binary,
                     Err(e) => {
@@ -1058,7 +1059,11 @@ impl PropletService {
 
         let status = response.status();
         if status.is_client_error() || status.is_server_error() {
-            return Err(anyhow::anyhow!("HTTP {} fetching wasm from {}", status, url));
+            return Err(anyhow::anyhow!(
+                "HTTP {} fetching wasm from {}",
+                status,
+                url
+            ));
         }
 
         if let Some(content_length) = response.content_length() {
