@@ -17,7 +17,6 @@ type Task struct {
 	State       uint8             `json:"state,omitempty"`
 	Mode        string            `json:"mode,omitempty"`
 	ImageURL    string            `json:"image_url,omitempty"`
-	WasmHTTPURL string            `json:"wasm_http_url,omitempty"`
 	JobID       string            `json:"job_id,omitempty"`
 	CLIArgs     []string          `json:"cli_args,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`

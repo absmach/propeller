@@ -250,16 +250,7 @@ func (db *Database) Migrate() error {
 					`ALTER TABLE proplets DROP COLUMN IF EXISTS metadata`,
 				},
 			},
-			{
-				Id: "4_add_wasm_http_url",
-				Up: []string{
-					`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS wasm_http_url TEXT`,
-				},
-				Down: []string{
-					`ALTER TABLE tasks DROP COLUMN IF EXISTS wasm_http_url`,
-				},
 			},
-		},
 	}
 
 	_, err := migrate.Exec(db.DB.DB, "postgres", migrations, migrate.Up)

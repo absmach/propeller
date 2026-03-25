@@ -484,6 +484,17 @@ impl PropletService {
             if req.encrypted {
                 info!("Encrypted workload with image_url: {}", req.image_url);
                 Vec::new()
+            } else if req.image_url.starts_with("http://") || req.image_url.starts_with("https://") {
+                match self.fetch_wasm_from_http(&req.image_url).await {
+                    Ok(binary) => binary,
+                    Err(e) => {
+                        error!("Failed to fetch wasm for task {}: {}", req.id, e);
+                        self.running_tasks.lock().await.remove(&req.id);
+                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
+                            .await?;
+                        return Err(e);
+                    }
+                }
             } else {
                 info!("Requesting binary from registry: {}", req.image_url);
                 self.request_binary_from_registry(&req.image_url).await?;
@@ -497,17 +508,6 @@ impl PropletService {
                             .await?;
                         return Err(e);
                     }
-                }
-            }
-        } else if let Some(ref url) = req.wasm_http_url {
-            match self.fetch_wasm_from_http(url).await {
-                Ok(binary) => binary,
-                Err(e) => {
-                    error!("Failed to fetch wasm for task {}: {}", req.id, e);
-                    self.running_tasks.lock().await.remove(&req.id);
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
-                    return Err(e);
                 }
             }
         } else {
