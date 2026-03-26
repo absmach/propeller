@@ -215,13 +215,16 @@ func (sdk *propSDK) GetJob(jobID string) (JobResponse, error) {
 	return jr, nil
 }
 
-func (sdk *propSDK) ListJobs(offset, limit uint64) (JobPage, error) {
+func (sdk *propSDK) ListJobs(offset, limit uint64, status string) (JobPage, error) {
 	queries := make([]string, 0)
 	if offset > 0 {
 		queries = append(queries, fmt.Sprintf("offset=%d", offset))
 	}
 	if limit > 0 {
 		queries = append(queries, fmt.Sprintf("limit=%d", limit))
+	}
+	if status != "" {
+		queries = append(queries, fmt.Sprintf("status=%s", status))
 	}
 	query := ""
 	if len(queries) > 0 {

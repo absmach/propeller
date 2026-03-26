@@ -66,7 +66,7 @@ func TestListJobs(t *testing.T) {
 	}, "sequential")
 	require.NoError(t, err)
 
-	page, err := svc.ListJobs(context.Background(), 0, 100)
+	page, err := svc.ListJobs(context.Background(), 0, 100, "")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), page.Total)
 	assert.Len(t, page.Jobs, 2)
@@ -88,7 +88,7 @@ func TestListJobsIncludesLegacyTaskOnlyJob(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	page, err := svc.ListJobs(context.Background(), 0, 100)
+	page, err := svc.ListJobs(context.Background(), 0, 100, "")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(2), page.Total)
 
@@ -198,12 +198,12 @@ func TestListJobsPagination(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	page, err := svc.ListJobs(context.Background(), 0, 3)
+	page, err := svc.ListJobs(context.Background(), 0, 3, "")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(5), page.Total)
 	assert.Len(t, page.Jobs, 3)
 
-	page2, err := svc.ListJobs(context.Background(), 3, 3)
+	page2, err := svc.ListJobs(context.Background(), 3, 3, "")
 	require.NoError(t, err)
 	assert.Len(t, page2.Jobs, 2)
 }
@@ -264,4 +264,72 @@ func TestComputeJobState(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestListJobsFilterByStatus(t *testing.T) {
+	t.Parallel()
+	svc := newService(t)
+
+	// Create jobs whose tasks have different states.
+	// Job1 — tasks stay Pending → job state = Pending
+	_, _, err := svc.CreateJob(context.Background(), "pending-job", []task.Task{
+		{Name: "p1", State: task.Pending},
+	}, "parallel")
+	require.NoError(t, err)
+
+	// Job2 — tasks are Running → job state = Running
+	_, _, err = svc.CreateJob(context.Background(), "running-job", []task.Task{
+		{Name: "r1", State: task.Running},
+	}, "parallel")
+	require.NoError(t, err)
+
+	// Job3 — tasks are Completed → job state = Completed
+	_, _, err = svc.CreateJob(context.Background(), "completed-job", []task.Task{
+		{Name: "c1", State: task.Completed},
+	}, "parallel")
+	require.NoError(t, err)
+
+	// Job4 — tasks are Failed → job state = Failed
+	_, _, err = svc.CreateJob(context.Background(), "failed-job", []task.Task{
+		{Name: "f1", State: task.Failed},
+	}, "parallel")
+	require.NoError(t, err)
+
+	// No filter — all 4 jobs
+	all, err := svc.ListJobs(context.Background(), 0, 100, "")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(4), all.Total)
+
+	// Filter by pending
+	page, err := svc.ListJobs(context.Background(), 0, 100, "pending")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), page.Total)
+	assert.Equal(t, task.Pending, page.Jobs[0].State)
+
+	// Filter by running
+	page, err = svc.ListJobs(context.Background(), 0, 100, "running")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), page.Total)
+	assert.Equal(t, task.Running, page.Jobs[0].State)
+
+	// Filter by completed
+	page, err = svc.ListJobs(context.Background(), 0, 100, "completed")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), page.Total)
+	assert.Equal(t, task.Completed, page.Jobs[0].State)
+
+	// Filter by failed
+	page, err = svc.ListJobs(context.Background(), 0, 100, "failed")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), page.Total)
+	assert.Equal(t, task.Failed, page.Jobs[0].State)
+}
+
+func TestListJobsInvalidStatusFilter(t *testing.T) {
+	t.Parallel()
+	svc := newService(t)
+
+	_, err := svc.ListJobs(context.Background(), 0, 100, "invalid")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid job status filter")
 }

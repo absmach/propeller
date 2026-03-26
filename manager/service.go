@@ -39,6 +39,14 @@ const (
 	ExecutionModeConfigurable = "configurable"
 	EnvJobExecutionMode       = "JOB_EXECUTION_MODE"
 	shutdownTaskStopWait      = 200 * time.Millisecond
+
+	PropletStatusActive   = "active"
+	PropletStatusInactive = "inactive"
+
+	JobStatusPending   = "pending"
+	JobStatusRunning   = "running"
+	JobStatusCompleted = "completed"
+	JobStatusFailed    = "failed"
 )
 
 var (
@@ -112,25 +120,65 @@ func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.P
 	return w, nil
 }
 
-func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
-	proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
+func (svc *service) ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error) {
+	if status != "" && status != PropletStatusActive && status != PropletStatusInactive {
+		return proplet.PropletPage{}, fmt.Errorf("invalid proplet status filter %q: must be %q, %q, or empty", status, PropletStatusActive, PropletStatusInactive)
+	}
+
+	if status == "" {
+		proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
+		if err != nil {
+			return proplet.PropletPage{}, err
+		}
+		for i := range proplets {
+			proplets[i].SetAlive()
+		}
+
+		return proplet.PropletPage{
+			Offset:   offset,
+			Limit:    limit,
+			Total:    total,
+			Proplets: proplets,
+		}, nil
+	}
+
+	all, err := svc.listAllProplets(ctx)
 	if err != nil {
 		return proplet.PropletPage{}, err
 	}
-	for i := range proplets {
-		proplets[i].SetAlive()
+
+	filtered := make([]proplet.Proplet, 0, len(all))
+	for i := range all {
+		all[i].SetAlive()
+		match := (status == PropletStatusActive && all[i].Alive) ||
+			(status == PropletStatusInactive && !all[i].Alive)
+		if match {
+			filtered = append(filtered, all[i])
+		}
 	}
+
+	total := uint64(len(filtered))
+	if offset >= total {
+		return proplet.PropletPage{
+			Offset:   offset,
+			Limit:    limit,
+			Total:    total,
+			Proplets: []proplet.Proplet{},
+		}, nil
+	}
+
+	end := min(offset+limit, total)
 
 	return proplet.PropletPage{
 		Offset:   offset,
 		Limit:    limit,
 		Total:    total,
-		Proplets: proplets,
+		Proplets: filtered[offset:end],
 	}, nil
 }
 
 func (svc *service) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
-	proplets, err := svc.ListProplets(ctx, defOffset, defLimit)
+	proplets, err := svc.ListProplets(ctx, defOffset, defLimit, "")
 	if err != nil {
 		return proplet.Proplet{}, err
 	}
@@ -338,7 +386,11 @@ func (svc *service) GetJob(ctx context.Context, jobID string) ([]task.Task, erro
 	return svc.getJobTasks(ctx, jobID)
 }
 
-func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error) {
+func (svc *service) ListJobs(ctx context.Context, offset, limit uint64, status string) (JobPage, error) {
+	if status != "" && status != JobStatusPending && status != JobStatusRunning && status != JobStatusCompleted && status != JobStatusFailed {
+		return JobPage{}, fmt.Errorf("invalid job status filter %q: must be %q, %q, %q, %q, or empty", status, JobStatusPending, JobStatusRunning, JobStatusCompleted, JobStatusFailed)
+	}
+
 	jobs := make([]JobSummary, 0)
 	seen := make(map[string]struct{})
 
@@ -392,6 +444,23 @@ func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage
 			return strings.Compare(a.JobID, b.JobID)
 		}
 	})
+
+	if status != "" {
+		statusStateMap := map[string]task.State{
+			JobStatusPending:   task.Pending,
+			JobStatusRunning:   task.Running,
+			JobStatusCompleted: task.Completed,
+			JobStatusFailed:    task.Failed,
+		}
+		targetState := statusStateMap[status]
+		filtered := make([]JobSummary, 0, len(jobs))
+		for i := range jobs {
+			if jobs[i].State == targetState {
+				filtered = append(filtered, jobs[i])
+			}
+		}
+		jobs = filtered
+	}
 
 	total := uint64(len(jobs))
 	if offset >= total {
@@ -1661,6 +1730,26 @@ func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
 	}
 
 	return allTasks, nil
+}
+
+func (svc *service) listAllProplets(ctx context.Context) ([]proplet.Proplet, error) {
+	const pageSize uint64 = 100
+	var allProplets []proplet.Proplet
+	var offset uint64
+
+	for {
+		proplets, total, err := svc.propletRepo.List(ctx, offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		allProplets = append(allProplets, proplets...)
+		offset += uint64(len(proplets))
+		if offset >= total || len(proplets) == 0 {
+			break
+		}
+	}
+
+	return allProplets, nil
 }
 
 func (svc *service) pinTaskToProplet(ctx context.Context, taskID, propletID string) error {

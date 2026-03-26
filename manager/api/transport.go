@@ -309,6 +309,7 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 	return listEntityReq{
 		offset: o,
 		limit:  l,
+		status: r.URL.Query().Get("status"),
 	}, nil
 }
 

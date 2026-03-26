@@ -94,6 +94,7 @@ func (e *entityReq) validate() error {
 
 type listEntityReq struct {
 	offset, limit uint64
+	status        string
 }
 
 func (e *listEntityReq) validate() error {
