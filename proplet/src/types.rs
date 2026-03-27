@@ -98,9 +98,7 @@ impl StartRequest {
                 ));
             }
         } else if self.file.is_empty() && self.image_url.is_empty() {
-            return Err(anyhow::anyhow!(
-                "either file or image_url must be provided"
-            ));
+            return Err(anyhow::anyhow!("either file or image_url must be provided"));
         }
         Ok(())
     }
