@@ -813,4 +813,75 @@ mod tests {
             Some(&"/opt/intel/openvino".to_string())
         );
     }
+
+    #[test]
+    fn test_start_request_validate_success_with_http_image_url() {
+        let req = StartRequest {
+            id: "task-http".to_string(),
+            cli_args: vec![],
+            name: "http_func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: "http://fileserver/app.wasm".to_string(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+        };
+
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_start_request_validate_success_with_https_image_url() {
+        let req = StartRequest {
+            id: "task-https".to_string(),
+            cli_args: vec![],
+            name: "https_func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: "https://releases.example.com/app.wasm".to_string(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+        };
+
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_start_request_validate_no_source() {
+        let req = StartRequest {
+            id: "task-nosource".to_string(),
+            cli_args: vec![],
+            name: "func".to_string(),
+            state: 0,
+            file: String::new(),
+            image_url: String::new(),
+            inputs: vec![],
+            daemon: false,
+            env: None,
+            monitoring_profile: None,
+            encrypted: false,
+            kbs_resource_path: None,
+            mode: None,
+            proplet_id: None,
+        };
+
+        let result = req.validate();
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "either file or image_url must be provided"
+        );
+    }
 }
