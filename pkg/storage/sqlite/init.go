@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/absmach/propeller/pkg/job"
-	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/pkg/task"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	migrate "github.com/rubenv/sql-migrate"
+
+	"github.com/absmach/propeller/pkg/job"
+	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 var (
@@ -243,7 +244,7 @@ func (db *Database) Migrate() error {
 					`ALTER TABLE proplets DROP COLUMN metadata`,
 				},
 			},
-			},
+		},
 	}
 
 	_, err := migrate.Exec(db.DB.DB, "sqlite3", migrations, migrate.Up)

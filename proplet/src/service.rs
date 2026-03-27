@@ -7,10 +7,8 @@ use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use reqwest::Client as HttpClient;
 
-const WASM_FETCH_MAX_BYTES: usize = 100 * 1024 * 1024;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -1047,53 +1045,6 @@ impl PropletService {
             .publish(&topic, &result_msg, self.config.qos())
             .await?;
         Ok(())
-    }
-
-    async fn fetch_wasm_from_http(&self, url: &str) -> Result<Vec<u8>> {
-        let response = self
-            .http_client
-            .get(url)
-            .send()
-            .await
-            .with_context(|| format!("Failed to connect to {}", url))?;
-
-        let status = response.status();
-        if status.is_client_error() || status.is_server_error() {
-            return Err(anyhow::anyhow!(
-                "HTTP {} fetching wasm from {}",
-                status,
-                url
-            ));
-        }
-
-        if let Some(content_length) = response.content_length() {
-            if content_length as usize > WASM_FETCH_MAX_BYTES {
-                return Err(anyhow::anyhow!(
-                    "wasm response from {} exceeds size limit ({} > {} bytes)",
-                    url,
-                    content_length,
-                    WASM_FETCH_MAX_BYTES
-                ));
-            }
-        }
-
-        let mut binary = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk =
-                chunk.with_context(|| format!("Failed to read response body from {}", url))?;
-            binary.extend_from_slice(&chunk);
-            if binary.len() > WASM_FETCH_MAX_BYTES {
-                return Err(anyhow::anyhow!(
-                    "wasm response from {} exceeds size limit ({} bytes)",
-                    url,
-                    WASM_FETCH_MAX_BYTES
-                ));
-            }
-        }
-
-        info!("Fetched wasm from {}, size: {} bytes", url, binary.len());
-        Ok(binary)
     }
 
     #[allow(dead_code)]
