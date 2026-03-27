@@ -224,7 +224,7 @@ func (sdk *propSDK) ListJobs(offset, limit uint64, status string) (JobPage, erro
 		queries = append(queries, fmt.Sprintf("limit=%d", limit))
 	}
 	if status != "" {
-		queries = append(queries, fmt.Sprintf("status=%s", status))
+		queries = append(queries, "status="+status)
 	}
 	query := ""
 	if len(queries) > 0 {
