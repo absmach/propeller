@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
-	migrate "github.com/rubenv/sql-migrate"
-
 	"github.com/absmach/propeller/pkg/job"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/task"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+	migrate "github.com/rubenv/sql-migrate"
 )
 
 var (
