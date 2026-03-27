@@ -9,7 +9,7 @@ import (
 
 type Service interface {
 	GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error)
-	ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error)
+	ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error)
 	SelectProplet(ctx context.Context, task task.Task) (proplet.Proplet, error)
 	DeleteProplet(ctx context.Context, propletID string) error
 
@@ -18,7 +18,7 @@ type Service interface {
 	CreateJob(ctx context.Context, name string, tasks []task.Task, executionMode string) (string, []task.Task, error)
 	GetTask(ctx context.Context, taskID string) (task.Task, error)
 	GetJob(ctx context.Context, jobID string) ([]task.Task, error)
-	ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error)
+	ListJobs(ctx context.Context, offset, limit uint64, status string) (JobPage, error)
 	StartJob(ctx context.Context, jobID string) error
 	StopJob(ctx context.Context, jobID string) error
 	ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error)
