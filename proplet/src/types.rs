@@ -51,7 +51,7 @@ pub struct StartRequest {
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub image_url: String,
     #[serde(default, deserialize_with = "deserialize_null_default")]
-    pub inputs: Vec<u64>,
+    pub inputs: Vec<String>,
     #[serde(default)]
     pub daemon: bool,
     #[serde(default)]
@@ -83,7 +83,7 @@ impl StartRequest {
             return Err(anyhow::anyhow!("id is required"));
         }
         if self.name.is_empty() {
-            return Err(anyhow::anyhow!("function name is required"));
+            return Err(anyhow::anyhow!("name is required"));
         }
 
         if self.encrypted {
@@ -304,7 +304,7 @@ mod tests {
             state: 0,
             file: "base64encodeddata".to_string(),
             image_url: String::new(),
-            inputs: vec![1, 2, 3],
+            inputs: vec!["1".to_string(), "2".to_string(), "3".to_string()],
             daemon: false,
             env: Some(HashMap::new()),
             monitoring_profile: None,
@@ -384,7 +384,7 @@ mod tests {
 
         let result = req.validate();
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "function name is required");
+        assert_eq!(result.unwrap_err().to_string(), "name is required");
     }
 
     #[test]
@@ -525,7 +525,7 @@ mod tests {
             "cli_args": ["--arg1", "value1"],
             "file": "ZGF0YQ==",
             "image_url": "",
-            "inputs": [10, 20, 30],
+            "inputs": ["10", "20", "30"],
             "daemon": true,
             "env": {
                 "KEY1": "value1",
@@ -538,7 +538,7 @@ mod tests {
 
         assert_eq!(req.id, "task-complete");
         assert_eq!(req.cli_args.len(), 2);
-        assert_eq!(req.inputs, vec![10, 20, 30]);
+        assert_eq!(req.inputs, vec!["10", "20", "30"]);
         assert!(req.daemon);
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
     }

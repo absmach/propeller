@@ -14,6 +14,7 @@ use tokio::sync::watch;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
+use wasm_wave;
 use wasmtime::component::ResourceTable;
 use wasmtime::*;
 use wasmtime_wasi::p2::bindings::sync::Command;
@@ -118,8 +119,14 @@ impl Runtime for WasmtimeRuntime {
             is_proxy,
         );
 
+        let has_custom_export = !config.function_name.is_empty()
+            && config.function_name != "_start"
+            && !config.function_name.starts_with("fl-round-");
+
         if is_proxy {
             self.start_app_proxy(config).await
+        } else if is_component && has_custom_export {
+            self.start_app_component_export(config).await
         } else if is_component {
             self.start_app_component(config).await
         } else {
@@ -292,6 +299,144 @@ impl WasmtimeRuntime {
                         task_id
                     )),
                 }
+            })
+            .await;
+
+            tasks.lock().await.remove(&task_id_for_cleanup);
+
+            let final_result = match result {
+                Ok(Ok(data)) => Ok(data),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(anyhow::anyhow!("Task join error: {e}")),
+            };
+
+            let _ = result_tx.send(final_result);
+        });
+
+        {
+            let mut tasks_map = self.tasks.lock().await;
+            tasks_map.insert(config.id.clone(), handle);
+        }
+
+        match result_rx.await {
+            Ok(result) => result,
+            Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
+        }
+    }
+
+    async fn start_app_component_export(&self, config: StartConfig) -> Result<Vec<u8>> {
+        info!(
+            "Compiling WASM component for custom export '{}' for task: {}",
+            config.function_name, config.id
+        );
+
+        let component = match component::Component::from_binary(&self.engine, &config.wasm_binary) {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to compile WASM component from binary: {e}"
+                ))
+            }
+        };
+
+        let mut wasi_builder = WasiCtxBuilder::new();
+        wasi_builder.inherit_stdio();
+        for (key, value) in &config.env {
+            wasi_builder.env(key, value);
+        }
+        for dir in &self.preopened_dirs {
+            let _ = wasi_builder
+                .preopened_dir(dir, dir, DirPerms::all(), FilePerms::all())
+                .map_err(|e| format!("Failed to preopen directory '{dir}': {e}"));
+        }
+        let wasi = wasi_builder.build();
+
+        let store_data = StoreData {
+            wasi,
+            http: WasiHttpCtx::new(),
+            table: ResourceTable::new(),
+        };
+
+        let mut store = Store::new(&self.engine, store_data);
+
+        let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
+        let _ = wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+            .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
+
+        let task_id = config.id.clone();
+        let task_id_for_cleanup = task_id.clone();
+        let function_name = config.function_name.clone();
+        let args = config.args.clone();
+        let tasks = self.tasks.clone();
+
+        let (result_tx, result_rx) = oneshot::channel();
+
+        let handle = tokio::task::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                let instance = match linker.instantiate(&mut store, &component) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("Failed to instantiate WASM component: {e}"))
+                    }
+                };
+
+                let func = instance
+                    .get_func(&mut store, &function_name)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Export '{}' not found in component for task {}",
+                            function_name,
+                            task_id
+                        )
+                    })?;
+
+                let func_ty = func.ty(&store);
+                let param_types: Vec<_> = func_ty.params().collect();
+                let result_count = func_ty.results().count();
+
+                if args.len() != param_types.len() {
+                    return Err(anyhow::anyhow!(
+                        "Argument count mismatch for '{}': expected {} but got {}",
+                        function_name,
+                        param_types.len(),
+                        args.len()
+                    ));
+                }
+
+                let wasm_args: Vec<component::Val> = args
+                    .iter()
+                    .zip(param_types.iter())
+                    .map(|(wave_str, (_, ty))| {
+                        wasm_wave::from_str::<component::Val>(ty, wave_str).map_err(|e| {
+                            anyhow::anyhow!(
+                                "Failed to parse WAVE argument '{}' for export '{}': {e}",
+                                wave_str,
+                                function_name
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                let mut results: Vec<component::Val> = (0..result_count)
+                    .map(|_| component::Val::Bool(false))
+                    .collect();
+
+                func.call(&mut store, &wasm_args, &mut results)
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to call export '{}': {e}", function_name)
+                    })?;
+
+                let result_string = results
+                    .first()
+                    .and_then(|v| wasm_wave::to_string(v).ok())
+                    .unwrap_or_default();
+
+                info!(
+                    "Export '{}' for task {} completed, result: {}",
+                    function_name, task_id, result_string
+                );
+
+                Ok(result_string.into_bytes())
             })
             .await;
 
@@ -593,13 +738,25 @@ impl WasmtimeRuntime {
                         .iter()
                         .zip(param_types.iter())
                         .map(|(arg, param_type)| match param_type {
-                            ValType::I32 => Val::I32(*arg as i32),
-                            ValType::I64 => Val::I64(*arg as i64),
-                            ValType::F32 => Val::F32((*arg as f32).to_bits()),
-                            ValType::F64 => Val::F64((*arg as f64).to_bits()),
-                            _ => Val::I32(*arg as i32),
+                            ValType::I32 => arg
+                                .parse::<i32>()
+                                .map(Val::I32)
+                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i32: {e}", arg)),
+                            ValType::I64 => arg
+                                .parse::<i64>()
+                                .map(Val::I64)
+                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i64: {e}", arg)),
+                            ValType::F32 => arg
+                                .parse::<f32>()
+                                .map(|f| Val::F32(f.to_bits()))
+                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f32: {e}", arg)),
+                            ValType::F64 => arg
+                                .parse::<f64>()
+                                .map(|f| Val::F64(f.to_bits()))
+                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f64: {e}", arg)),
+                            _ => Err(anyhow::anyhow!("Unsupported Wasm value type for arg '{}'", arg)),
                         })
-                        .collect();
+                        .collect::<Result<Vec<_>>>()?;
 
                     info!(
                         "Calling function '{}' with {} params, expects {} results",

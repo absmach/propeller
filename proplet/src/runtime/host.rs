@@ -52,6 +52,13 @@ impl HostRuntime {
         }
         Ok(())
     }
+
+    fn is_wasm_component(binary: &[u8]) -> bool {
+        // Component model binary layer marker: 0x0a (older wasm-tools) or 0x0d (wasm-tools >= 0.200)
+        binary.len() >= 8
+            && (binary[4..8] == [0x0a, 0x00, 0x01, 0x00]
+                || binary[4..8] == [0x0d, 0x00, 0x01, 0x00])
+    }
 }
 
 #[async_trait]
@@ -73,13 +80,20 @@ impl Runtime for HostRuntime {
 
         cmd.arg("run");
 
+        let is_component = Self::is_wasm_component(&config.wasm_binary);
         let cli_args_has_invoke = config.cli_args.iter().any(|a| a == "--invoke");
-        if !config.function_name.is_empty()
+        let has_custom_export = !config.function_name.is_empty()
             && config.function_name != "_start"
             && !config.function_name.starts_with("fl-round-")
-            && !cli_args_has_invoke
-        {
-            cmd.arg("--invoke").arg(&config.function_name);
+            && !cli_args_has_invoke;
+
+        if has_custom_export {
+            if is_component {
+                let wave_call = format!("{}({})", config.function_name, config.args.join(", "));
+                cmd.arg("--invoke").arg(&wave_call);
+            } else {
+                cmd.arg("--invoke").arg(&config.function_name);
+            }
         }
 
         for arg in &config.cli_args {
@@ -103,8 +117,10 @@ impl Runtime for HostRuntime {
 
         cmd.arg(&temp_file);
 
-        for arg in &config.args {
-            cmd.arg(arg.to_string());
+        if !is_component || !has_custom_export {
+            for arg in &config.args {
+                cmd.arg(arg);
+            }
         }
 
         cmd.envs(&config.env);
@@ -390,5 +406,29 @@ mod tests {
         assert_eq!(content.len(), 1024 * 1024);
 
         runtime.cleanup_temp_file(file_path).await.unwrap();
+    }
+
+    #[test]
+    fn test_is_wasm_component_old_format() {
+        let binary = [0x00, 0x61, 0x73, 0x6d, 0x0a, 0x00, 0x01, 0x00, 0x00];
+        assert!(HostRuntime::is_wasm_component(&binary));
+    }
+
+    #[test]
+    fn test_is_wasm_component_new_format() {
+        let binary = [0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00, 0x00];
+        assert!(HostRuntime::is_wasm_component(&binary));
+    }
+
+    #[test]
+    fn test_is_wasm_component_rejects_core_module() {
+        let binary = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x00];
+        assert!(!HostRuntime::is_wasm_component(&binary));
+    }
+
+    #[test]
+    fn test_is_wasm_component_rejects_too_short() {
+        let binary = [0x00, 0x61, 0x73, 0x6d];
+        assert!(!HostRuntime::is_wasm_component(&binary));
     }
 }

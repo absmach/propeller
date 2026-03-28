@@ -1,10 +1,37 @@
 package task
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/absmach/propeller/pkg/proplet"
 )
+
+type FlexStrings []string
+
+func (f *FlexStrings) UnmarshalJSON(data []byte) error {
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*f = make(FlexStrings, len(raw))
+	for i, r := range raw {
+		var s string
+		if err := json.Unmarshal(r, &s); err == nil {
+			(*f)[i] = s
+
+			continue
+		}
+		var n json.Number
+		if err := json.Unmarshal(r, &n); err != nil {
+			return fmt.Errorf("inputs[%d]: expected string or number", i)
+		}
+		(*f)[i] = n.String()
+	}
+
+	return nil
+}
 
 type State uint8
 
@@ -70,7 +97,7 @@ type Task struct {
 	ImageURL          string                     `json:"image_url,omitempty"`
 	File              []byte                     `json:"file,omitempty"`
 	CLIArgs           []string                   `json:"cli_args"`
-	Inputs            []uint64                   `json:"inputs,omitempty"`
+	Inputs            FlexStrings                `json:"inputs,omitempty"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Daemon            bool                       `json:"daemon"`
 	Encrypted         bool                       `json:"encrypted"`

@@ -14,7 +14,7 @@ pub struct StartConfig {
     pub wasm_binary: Vec<u8>,
     pub cli_args: Vec<String>,
     pub env: HashMap<String, String>,
-    pub args: Vec<u64>,
+    pub args: Vec<String>,
     #[allow(dead_code)]
     pub mode: Option<String>,
 }

@@ -382,6 +382,13 @@ impl PropletConfig {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_MUTEX.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn test_proplet_config_default() {
@@ -469,6 +476,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_log_level() {
+        let _lock = env_lock();
         env::set_var("PROPLET_LOG_LEVEL", "debug");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_LOG_LEVEL");
@@ -478,6 +486,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_mqtt_address() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MQTT_ADDRESS", "tcp://mqtt.example.com:1883");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MQTT_ADDRESS");
@@ -487,6 +496,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_mqtt_timeout() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MQTT_TIMEOUT", "120");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MQTT_TIMEOUT");
@@ -496,6 +506,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_mqtt_qos() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MQTT_QOS", "1");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MQTT_QOS");
@@ -505,6 +516,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_liveliness_interval() {
+        let _lock = env_lock();
         env::set_var("PROPLET_LIVELINESS_INTERVAL", "20");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_LIVELINESS_INTERVAL");
@@ -514,6 +526,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_domain_id() {
+        let _lock = env_lock();
         env::set_var("PROPLET_DOMAIN_ID", "domain-123");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_DOMAIN_ID");
@@ -523,6 +536,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_channel_id() {
+        let _lock = env_lock();
         env::set_var("PROPLET_CHANNEL_ID", "channel-456");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_CHANNEL_ID");
@@ -532,6 +546,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_client_id() {
+        let _lock = env_lock();
         env::set_var("PROPLET_CLIENT_ID", "client-789");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_CLIENT_ID");
@@ -541,6 +556,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_client_key() {
+        let _lock = env_lock();
         env::set_var("PROPLET_CLIENT_KEY", "secret-key");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_CLIENT_KEY");
@@ -550,6 +566,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_k8s_namespace() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MANAGER_K8S_NAMESPACE", "production");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MANAGER_K8S_NAMESPACE");
@@ -559,6 +576,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_external_runtime() {
+        let _lock = env_lock();
         env::set_var("PROPLET_EXTERNAL_WASM_RUNTIME", "/usr/local/bin/wasmtime");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_EXTERNAL_WASM_RUNTIME");
@@ -571,6 +589,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_mqtt_timeout_invalid() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MQTT_TIMEOUT", "not-a-number");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MQTT_TIMEOUT");
@@ -580,6 +599,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_mqtt_qos_invalid() {
+        let _lock = env_lock();
         env::set_var("PROPLET_MQTT_QOS", "invalid");
         let config = PropletConfig::from_env();
         env::remove_var("PROPLET_MQTT_QOS");
@@ -589,6 +609,7 @@ mod tests {
 
     #[test]
     fn test_proplet_config_from_env_no_env_vars() {
+        let _lock = env_lock();
         let vars_to_clear = vec![
             "PROPLET_LOG_LEVEL",
             "PROPLET_MQTT_ADDRESS",

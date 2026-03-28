@@ -242,7 +242,7 @@ impl TeeWasmRuntime {
         cmd.arg(wasm_path);
 
         for arg in &config.args {
-            cmd.arg(arg.to_string());
+            cmd.arg(arg);
         }
 
         cmd.stdout(std::process::Stdio::piped());
