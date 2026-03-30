@@ -7,6 +7,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 )
 
@@ -185,6 +186,25 @@ func (lm *loggingMiddleware) ListTasks(ctx context.Context, offset, limit uint64
 	}(time.Now())
 
 	return lm.svc.ListTasks(ctx, offset, limit)
+}
+
+func (lm *loggingMiddleware) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (resp task.TaskPage, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Uint64("offset", pm.Offset),
+			slog.Uint64("limit", pm.Limit),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("List tasks by filter failed", args...)
+
+			return
+		}
+		lm.logger.Info("List tasks by filter completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.ListTasksByFilter(ctx, pm)
 }
 
 func (lm *loggingMiddleware) UpdateTask(ctx context.Context, t task.Task) (resp task.Task, err error) {

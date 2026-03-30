@@ -6,6 +6,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/go-kit/kit/metrics"
 )
@@ -96,6 +97,15 @@ func (mm *metricsMiddleware) ListTasks(ctx context.Context, offset, limit uint64
 	}(time.Now())
 
 	return mm.svc.ListTasks(ctx, offset, limit)
+}
+
+func (mm *metricsMiddleware) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "list-tasks-by-filter").Add(1)
+		mm.latency.With("method", "list-tasks-by-filter").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.ListTasksByFilter(ctx, pm)
 }
 
 func (mm *metricsMiddleware) UpdateTask(ctx context.Context, t task.Task) (task.Task, error) {

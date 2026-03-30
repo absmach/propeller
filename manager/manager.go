@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 )
 
@@ -22,6 +23,7 @@ type Service interface {
 	StartJob(ctx context.Context, jobID string) error
 	StopJob(ctx context.Context, jobID string) error
 	ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error)
+	ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)
 	UpdateTask(ctx context.Context, task task.Task) (task.Task, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	StartTask(ctx context.Context, taskID string) error
