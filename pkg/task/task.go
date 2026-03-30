@@ -121,6 +121,7 @@ type Task struct {
 	Timezone          string                     `json:"timezone,omitempty"`
 	Broadcast         bool                       `json:"broadcast,omitempty"`
 	Priority          int                        `json:"priority,omitempty"`
+	Metadata          map[string]any             `json:"metadata,omitempty"`
 }
 
 type TaskPage struct {
