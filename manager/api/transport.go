@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/absmach/magistrala"
@@ -75,7 +76,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		), "create-task").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listTasksEndpoint(svc),
-			decodeListEntityReq,
+			decodeListTasksReq,
 			api.EncodeResponse,
 			opts...,
 		), "list-tasks").ServeHTTP)
@@ -315,6 +316,42 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 	return listEntityReq{
 		offset: o,
 		limit:  l,
+	}, nil
+}
+
+var metadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9._/\-]+$`)
+
+func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
+	o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
+	}
+
+	l, err := apiutil.ReadNumQuery[uint64](r, api.LimitKey, api.DefLimit)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
+	}
+
+	filter := map[string]string{}
+	for key, vals := range r.URL.Query() {
+		if !strings.HasPrefix(key, "metadata[") || !strings.HasSuffix(key, "]") {
+			continue
+		}
+		metaKey := key[len("metadata[") : len(key)-1]
+		if !metadataKeyRe.MatchString(metaKey) {
+			return nil, errors.Join(apiutil.ErrValidation, errors.New("metadata key contains invalid characters"))
+		}
+		filter[metaKey] = vals[0]
+	}
+
+	if len(filter) == 0 {
+		return listEntityReq{offset: o, limit: l}, nil
+	}
+
+	return listTasksReq{
+		offset:         o,
+		limit:          l,
+		metadataFilter: filter,
 	}, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	apiutil "github.com/absmach/magistrala/api/http/util"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/go-kit/kit/endpoint"
 )
 
@@ -243,22 +244,35 @@ func stopJobEndpoint(svc manager.Service) endpoint.Endpoint {
 
 func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
-		req, ok := request.(listEntityReq)
-		if !ok {
+		switch req := request.(type) {
+		case listEntityReq:
+			if err := req.validate(); err != nil {
+				return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
+			}
+			tasks, err := svc.ListTasks(ctx, req.offset, req.limit)
+			if err != nil {
+				return listTaskResponse{}, err
+			}
+
+			return listTaskResponse{TaskPage: tasks}, nil
+		case listTasksReq:
+			if err := req.validate(); err != nil {
+				return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
+			}
+			pm := sdk.PageMetadata{
+				Offset:         req.offset,
+				Limit:          req.limit,
+				MetadataFilter: req.metadataFilter,
+			}
+			tasks, err := svc.ListTasksByFilter(ctx, pm)
+			if err != nil {
+				return listTaskResponse{}, err
+			}
+
+			return listTaskResponse{TaskPage: tasks}, nil
+		default:
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
-		if err := req.validate(); err != nil {
-			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
-		}
-
-		tasks, err := svc.ListTasks(ctx, req.offset, req.limit)
-		if err != nil {
-			return listTaskResponse{}, err
-		}
-
-		return listTaskResponse{
-			TaskPage: tasks,
-		}, nil
 	}
 }
 
