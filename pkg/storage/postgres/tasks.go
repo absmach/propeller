@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/absmach/propeller/pkg/task"
 )
@@ -44,15 +46,16 @@ type dbTask struct {
 	Kind              *string       `db:"kind"`
 	Mode              *string       `db:"mode"`
 	Broadcast         bool          `db:"broadcast"`
+	Metadata          []byte        `db:"metadata"`
 }
 
 const taskColumns = `id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted,
 	kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time,
-	created_at, updated_at, workflow_id, job_id, depends_on, run_if, kind, mode, broadcast`
+	created_at, updated_at, workflow_id, job_id, depends_on, run_if, kind, mode, broadcast, metadata`
 
 func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	query := `INSERT INTO tasks (` + taskColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
 	if err != nil {
@@ -84,6 +87,11 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 		return task.Task{}, fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
+	metadata, err := jsonBytes(t.Metadata)
+	if err != nil {
+		return task.Task{}, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		t.ID, t.Name, uint8(t.State),
 		nullString(t.ImageURL),
@@ -107,6 +115,7 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 		nullString(string(t.Kind)),
 		nullString(string(t.Mode)),
 		t.Broadcast,
+		metadata,
 	)
 	if err != nil {
 		return task.Task{}, fmt.Errorf("%w: %w", ErrCreate, err)
@@ -137,7 +146,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		env = $8, daemon = $9, encrypted = $10, kbs_resource_path = $11, proplet_id = $12,
 		results = $13, error = $14, monitoring_profile = $15, start_time = $16,
 		finish_time = $17, updated_at = $18, workflow_id = $19, job_id = $20,
-		depends_on = $21, run_if = $22, kind = $23, mode = $24, broadcast = $25
+		depends_on = $21, run_if = $22, kind = $23, mode = $24, broadcast = $25, metadata = $26
 		WHERE id = $1`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
@@ -170,6 +179,11 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		return fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
+	metadata, err := jsonBytes(t.Metadata)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		t.ID, t.Name, uint8(t.State),
 		nullString(t.ImageURL),
@@ -191,6 +205,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		nullString(string(t.Kind)),
 		nullString(string(t.Mode)),
 		t.Broadcast,
+		metadata,
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUpdate, err)
@@ -214,6 +229,49 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	}
 
 	return tasks, total, nil
+}
+
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+	whereClause, args := buildPostgresMetadataWhere(filter)
+	countArgs := args
+	args = append(args, limit, offset)
+
+	var total uint64
+	countQuery := "SELECT COUNT(*) FROM tasks" + whereClause
+	if err := r.db.GetContext(ctx, &total, countQuery, countArgs...); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	n := len(filter) + 1
+	query := `SELECT ` + taskColumns + ` FROM tasks` + whereClause +
+		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, n, n+1)
+	tasks, err := r.scanTasks(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return tasks, total, nil
+}
+
+func buildPostgresMetadataWhere(filter map[string]string) (clause string, args []any) {
+	if len(filter) == 0 {
+		return "", nil
+	}
+	var sb strings.Builder
+	sb.WriteString(" WHERE metadata IS NOT NULL")
+	args = make([]any, 0, len(filter))
+	i := 1
+	for k, v := range filter {
+		fmt.Fprintf(&sb, ` AND metadata @> $%d::jsonb`, i)
+		b, err := json.Marshal(map[string]string{k: v})
+		if err != nil {
+			return "", nil
+		}
+		args = append(args, string(b))
+		i++
+	}
+
+	return sb.String(), args
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -255,7 +313,7 @@ func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]
 			&dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
 			&dbt.StartTime, &dbt.FinishTime, &dbt.CreatedAt, &dbt.UpdatedAt,
 			&dbt.WorkflowID, &dbt.JobID, &dbt.DependsOn, &dbt.RunIf,
-			&dbt.Kind, &dbt.Mode, &dbt.Broadcast,
+			&dbt.Kind, &dbt.Mode, &dbt.Broadcast, &dbt.Metadata,
 		); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrDBScan, err)
 		}
@@ -339,6 +397,11 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 		t.Mode = task.Mode(*dbt.Mode)
 	}
 	t.Broadcast = dbt.Broadcast
+	if dbt.Metadata != nil {
+		if err := jsonUnmarshal(dbt.Metadata, &t.Metadata); err != nil {
+			return task.Task{}, err
+		}
+	}
 
 	return t, nil
 }

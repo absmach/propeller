@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/absmach/propeller/pkg/task"
@@ -46,15 +47,16 @@ type dbTask struct {
 	Kind              *string      `db:"kind"`
 	Mode              *string      `db:"mode"`
 	Broadcast         bool         `db:"broadcast"`
+	Metadata          []byte       `db:"metadata"`
 }
 
 const taskColumns = `id, name, state, image_url, file, cli_args, inputs, env, daemon, encrypted,
 	kbs_resource_path, proplet_id, results, error, monitoring_profile, start_time, finish_time,
-	created_at, updated_at, workflow_id, job_id, depends_on, run_if, kind, mode, broadcast`
+	created_at, updated_at, workflow_id, job_id, depends_on, run_if, kind, mode, broadcast, metadata`
 
 func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	query := `INSERT INTO tasks (` + taskColumns + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
 	if err != nil {
@@ -86,6 +88,11 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 		return task.Task{}, fmt.Errorf("marshal error: %w", err)
 	}
 
+	metadata, err := jsonBytes(t.Metadata)
+	if err != nil {
+		return task.Task{}, fmt.Errorf("marshal error: %w", err)
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		t.ID, t.Name, uint8(t.State), nullString(t.ImageURL),
 		t.File, cliArgs, inputs, env,
@@ -98,6 +105,7 @@ func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 		dependsOn, nullString(t.RunIf),
 		nullString(string(t.Kind)), nullString(string(t.Mode)),
 		t.Broadcast,
+		metadata,
 	)
 	if err != nil {
 		return task.Task{}, fmt.Errorf("%w: %w", ErrCreate, err)
@@ -128,7 +136,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		env = ?, daemon = ?, encrypted = ?, kbs_resource_path = ?, proplet_id = ?,
 		results = ?, error = ?, monitoring_profile = ?, start_time = ?,
 		finish_time = ?, updated_at = ?, workflow_id = ?, job_id = ?,
-		depends_on = ?, run_if = ?, kind = ?, mode = ?, broadcast = ?
+		depends_on = ?, run_if = ?, kind = ?, mode = ?, broadcast = ?, metadata = ?
 	WHERE id = ?`
 
 	cliArgs, err := jsonBytes(t.CLIArgs)
@@ -161,6 +169,11 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		return fmt.Errorf("marshal error: %w", err)
 	}
 
+	metadata, err := jsonBytes(t.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal error: %w", err)
+	}
+
 	_, err = r.db.ExecContext(ctx, query,
 		t.Name, uint8(t.State), nullString(t.ImageURL),
 		t.File, cliArgs, inputs, env,
@@ -172,6 +185,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		dependsOn, nullString(t.RunIf),
 		nullString(string(t.Kind)), nullString(string(t.Mode)),
 		t.Broadcast,
+		metadata,
 		t.ID,
 	)
 	if err != nil {
@@ -196,6 +210,42 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	}
 
 	return tasks, total, nil
+}
+
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+	whereClause, args := buildSQLiteMetadataWhere(filter)
+	countArgs := args
+	args = append(args, limit, offset)
+
+	var total uint64
+	if err := r.db.GetContext(ctx, &total, "SELECT COUNT(*) FROM tasks"+whereClause, countArgs...); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	query := `SELECT ` + taskColumns + ` FROM tasks` + whereClause + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	tasks, err := r.scanTasks(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return tasks, total, nil
+}
+
+func buildSQLiteMetadataWhere(filter map[string]string) (clause string, args []any) {
+	if len(filter) == 0 {
+		return "", nil
+	}
+	var sb strings.Builder
+	sb.WriteString(" WHERE metadata IS NOT NULL")
+	args = make([]any, 0, len(filter))
+	for k, v := range filter {
+		sb.WriteString(` AND json_extract(metadata, '$."`)
+		sb.WriteString(k)
+		sb.WriteString(`"') = ?`)
+		args = append(args, v)
+	}
+
+	return sb.String(), args
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -237,7 +287,7 @@ func (r *taskRepo) scanTasks(ctx context.Context, query string, args ...any) ([]
 			&dbt.Results, &dbt.Error, &dbt.MonitoringProfile,
 			&dbt.StartTime, &dbt.FinishTime, &dbt.CreatedAt, &dbt.UpdatedAt,
 			&dbt.WorkflowID, &dbt.JobID, &dbt.DependsOn, &dbt.RunIf,
-			&dbt.Kind, &dbt.Mode, &dbt.Broadcast,
+			&dbt.Kind, &dbt.Mode, &dbt.Broadcast, &dbt.Metadata,
 		); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrDBScan, err)
 		}
@@ -272,20 +322,14 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.ImageURL != nil {
 		t.ImageURL = *dbt.ImageURL
 	}
-	if dbt.CLIArgs != nil {
-		if err := jsonUnmarshal(dbt.CLIArgs, &t.CLIArgs); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.CLIArgs, &t.CLIArgs); err != nil {
+		return task.Task{}, err
 	}
-	if dbt.Inputs != nil {
-		if err := jsonUnmarshal(dbt.Inputs, &t.Inputs); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Inputs, &t.Inputs); err != nil {
+		return task.Task{}, err
 	}
-	if dbt.Env != nil {
-		if err := jsonUnmarshal(dbt.Env, &t.Env); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Env, &t.Env); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.KBSResourcePath != nil {
 		t.KBSResourcePath = *dbt.KBSResourcePath
@@ -293,18 +337,14 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.PropletID != nil {
 		t.PropletID = *dbt.PropletID
 	}
-	if dbt.Results != nil {
-		if err := jsonUnmarshal(dbt.Results, &t.Results); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.Results, &t.Results); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.Error != nil {
 		t.Error = *dbt.Error
 	}
-	if dbt.MonitoringProfile != nil {
-		if err := jsonUnmarshal(dbt.MonitoringProfile, &t.MonitoringProfile); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.MonitoringProfile, &t.MonitoringProfile); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.StartTime.Valid {
 		t.StartTime = dbt.StartTime.Time
@@ -318,10 +358,8 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 	if dbt.JobID != nil {
 		t.JobID = *dbt.JobID
 	}
-	if dbt.DependsOn != nil {
-		if err := jsonUnmarshal(dbt.DependsOn, &t.DependsOn); err != nil {
-			return task.Task{}, err
-		}
+	if err := jsonUnmarshal(dbt.DependsOn, &t.DependsOn); err != nil {
+		return task.Task{}, err
 	}
 	if dbt.RunIf != nil {
 		t.RunIf = *dbt.RunIf
@@ -333,6 +371,11 @@ func (r *taskRepo) toTask(dbt dbTask) (task.Task, error) {
 		t.Mode = task.Mode(*dbt.Mode)
 	}
 	t.Broadcast = dbt.Broadcast
+	if dbt.Metadata != nil {
+		if err := jsonUnmarshal(dbt.Metadata, &t.Metadata); err != nil {
+			return task.Task{}, err
+		}
+	}
 
 	return t, nil
 }

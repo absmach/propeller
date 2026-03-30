@@ -79,6 +79,36 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+	all, err := r.listBy(ctx, func(t task.Task) bool {
+		if t.Metadata == nil {
+			return false
+		}
+		for k, v := range filter {
+			val, exists := t.Metadata[k]
+			if !exists {
+				return false
+			}
+			s, ok := val.(string)
+			if !ok || s != v {
+				return false
+			}
+		}
+
+		return true
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	total := uint64(len(all))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+	end := min(offset+limit, total)
+
+	return all[offset:end], total, nil
+}
+
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
 	return r.listBy(ctx, func(t task.Task) bool {
 		return t.WorkflowID == workflowID

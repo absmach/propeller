@@ -63,6 +63,50 @@ func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task
 	return tasks, total, nil
 }
 
+func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+	data, _, err := r.storage.List(ctx, 0, maxMemoryFetch)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	matched := make([]task.Task, 0)
+	for _, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			continue
+		}
+		if t.Metadata == nil {
+			continue
+		}
+		match := true
+		for k, v := range filter {
+			val, exists := t.Metadata[k]
+			if !exists {
+				match = false
+
+				break
+			}
+			s, ok := val.(string)
+			if !ok || s != v {
+				match = false
+
+				break
+			}
+		}
+		if match {
+			matched = append(matched, t)
+		}
+	}
+
+	total := uint64(len(matched))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+	end := min(offset+limit, total)
+
+	return matched[offset:end], total, nil
+}
+
 func (r *memoryTaskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
 	data, _, err := r.storage.List(ctx, 0, maxMemoryFetch)
 	if err != nil {
