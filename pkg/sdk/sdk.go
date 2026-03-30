@@ -13,8 +13,9 @@ import (
 const CTJSON string = "application/json"
 
 type PageMetadata struct {
-	Offset uint64 `json:"offset"`
-	Limit  uint64 `json:"limit"`
+	Offset         uint64            `json:"offset"`
+	Limit          uint64            `json:"limit"`
+	MetadataFilter map[string]string `json:"metadata_filter,omitempty"`
 }
 
 type SDK interface {
