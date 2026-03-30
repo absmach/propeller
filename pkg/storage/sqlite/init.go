@@ -47,6 +47,7 @@ type TaskRepository interface {
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
 	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error)
 	ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error)
 	ListByJobID(ctx context.Context, jobID string) ([]task.Task, error)
 	Delete(ctx context.Context, id string) error
@@ -251,6 +252,17 @@ func (db *Database) Migrate() error {
 				},
 				Down: []string{
 					`ALTER TABLE tasks DROP COLUMN broadcast`,
+				},
+			},
+			{
+				Id: "5_add_task_metadata",
+				Up: []string{
+					`ALTER TABLE tasks ADD COLUMN metadata TEXT`,
+					`CREATE INDEX IF NOT EXISTS idx_tasks_metadata ON tasks (json_extract(metadata, '$'))`,
+				},
+				Down: []string{
+					`DROP INDEX IF EXISTS idx_tasks_metadata`,
+					`ALTER TABLE tasks DROP COLUMN metadata`,
 				},
 			},
 		},
