@@ -9,6 +9,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -1339,6 +1340,72 @@ func (_c *MockService_ListTasks_Call) Return(taskPage task.TaskPage, err error) 
 }
 
 func (_c *MockService_ListTasks_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64) (task.TaskPage, error)) *MockService_ListTasks_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListTasksByFilter provides a mock function for the type MockService
+func (_mock *MockService) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+	ret := _mock.Called(ctx, pm)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListTasksByFilter")
+	}
+
+	var r0 task.TaskPage
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, sdk.PageMetadata) (task.TaskPage, error)); ok {
+		return returnFunc(ctx, pm)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, sdk.PageMetadata) task.TaskPage); ok {
+		r0 = returnFunc(ctx, pm)
+	} else {
+		r0 = ret.Get(0).(task.TaskPage)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, sdk.PageMetadata) error); ok {
+		r1 = returnFunc(ctx, pm)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockService_ListTasksByFilter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasksByFilter'
+type MockService_ListTasksByFilter_Call struct {
+	*mock.Call
+}
+
+// ListTasksByFilter is a helper method to define mock.On call
+//   - ctx context.Context
+//   - pm sdk.PageMetadata
+func (_e *MockService_Expecter) ListTasksByFilter(ctx interface{}, pm interface{}) *MockService_ListTasksByFilter_Call {
+	return &MockService_ListTasksByFilter_Call{Call: _e.mock.On("ListTasksByFilter", ctx, pm)}
+}
+
+func (_c *MockService_ListTasksByFilter_Call) Run(run func(ctx context.Context, pm sdk.PageMetadata)) *MockService_ListTasksByFilter_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 sdk.PageMetadata
+		if args[1] != nil {
+			arg1 = args[1].(sdk.PageMetadata)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockService_ListTasksByFilter_Call) Return(taskPage task.TaskPage, err error) *MockService_ListTasksByFilter_Call {
+	_c.Call.Return(taskPage, err)
+	return _c
+}
+
+func (_c *MockService_ListTasksByFilter_Call) RunAndReturn(run func(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)) *MockService_ListTasksByFilter_Call {
 	_c.Call.Return(run)
 	return _c
 }
