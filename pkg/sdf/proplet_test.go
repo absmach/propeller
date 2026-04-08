@@ -1,7 +1,6 @@
 package sdf_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/absmach/propeller/pkg/proplet"
@@ -10,6 +9,8 @@ import (
 )
 
 func TestPropletDocument(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		desc            string
 		proplet         proplet.Proplet
@@ -20,34 +21,36 @@ func TestPropletDocument(t *testing.T) {
 		wantSdfDataKeys []string
 	}{
 		{
-			desc:           "full proplet with name and id",
-			proplet:        proplet.Proplet{ID: "abc-123", Name: "my-proplet"},
-			wantTitleHasID: true,
-			wantProperties: []string{"id", "name", "alive", "task_count", "metadata"},
-			wantActions:    []string{"start_task", "stop_task"},
-			wantEvents:     []string{"heartbeat", "task_result"},
+			desc:            "full proplet with name and id",
+			proplet:         proplet.Proplet{ID: "abc-123", Name: "my-proplet"},
+			wantTitleHasID:  true,
+			wantProperties:  []string{"id", "name", "alive", "task_count", "metadata"},
+			wantActions:     []string{"start_task", "stop_task"},
+			wantEvents:      []string{"heartbeat", "task_result"},
 			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "HeartbeatPayload", "TaskResult"},
 		},
 		{
-			desc:           "proplet with empty name",
-			proplet:        proplet.Proplet{ID: "xyz-456", Name: ""},
-			wantTitleHasID: true,
-			wantProperties: []string{"id", "name", "alive", "task_count", "metadata"},
-			wantActions:    []string{"start_task", "stop_task"},
-			wantEvents:     []string{"heartbeat", "task_result"},
+			desc:            "proplet with empty name",
+			proplet:         proplet.Proplet{ID: "xyz-456", Name: ""},
+			wantTitleHasID:  true,
+			wantProperties:  []string{"id", "name", "alive", "task_count", "metadata"},
+			wantActions:     []string{"start_task", "stop_task"},
+			wantEvents:      []string{"heartbeat", "task_result"},
 			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "HeartbeatPayload", "TaskResult"},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
 			doc := sdf.PropletDocument(tc.proplet)
 
 			assert.NotEmpty(t, doc.Info.Title)
 			assert.NotEmpty(t, doc.Info.Version)
 
 			if tc.wantTitleHasID {
-				assert.True(t, strings.Contains(doc.Info.Title, tc.proplet.ID), "expected title to contain proplet ID %q, got %q", tc.proplet.ID, doc.Info.Title)
+				assert.Contains(t, doc.Info.Title, tc.proplet.ID, "expected title to contain proplet ID %q, got %q", tc.proplet.ID, doc.Info.Title)
 			}
 
 			thing, ok := doc.SdfThing["Proplet"]
@@ -77,10 +80,12 @@ func TestPropletDocument(t *testing.T) {
 }
 
 func TestPropletDocumentTaskResultStateEnum(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
-		desc        string
-		proplet     proplet.Proplet
-		wantStates  []string
+		desc       string
+		proplet    proplet.Proplet
+		wantStates []string
 	}{
 		{
 			desc:       "task result state enum contains all expected values",
@@ -91,6 +96,8 @@ func TestPropletDocumentTaskResultStateEnum(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
 			doc := sdf.PropletDocument(tc.proplet)
 			thing := doc.SdfThing["Proplet"]
 
@@ -115,6 +122,8 @@ func TestPropletDocumentTaskResultStateEnum(t *testing.T) {
 }
 
 func TestPropletDocumentMinimumPointerNotAliased(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		desc    string
 		proplet proplet.Proplet
@@ -127,6 +136,8 @@ func TestPropletDocumentMinimumPointerNotAliased(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
 			doc := sdf.PropletDocument(tc.proplet)
 			thing := doc.SdfThing["Proplet"]
 

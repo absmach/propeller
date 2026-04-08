@@ -35,6 +35,7 @@ type DataAfford struct {
 
 type PropertyAfford struct {
 	DataAfford
+
 	Observable bool `json:"observable,omitempty"`
 }
 
@@ -68,5 +69,6 @@ type ThingAfford struct {
 
 func minPtr() *float64 {
 	v := float64(0)
+
 	return &v
 }
