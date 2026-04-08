@@ -4,11 +4,13 @@ import (
 	"context"
 
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 )
 
 type Service interface {
 	GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error)
+	GetPropletSDF(ctx context.Context, propletID string) (sdf.Document, error)
 	ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error)
 	SelectProplet(ctx context.Context, task task.Task) (proplet.Proplet, error)
 	DeleteProplet(ctx context.Context, propletID string) error

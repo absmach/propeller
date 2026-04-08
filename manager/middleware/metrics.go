@@ -6,6 +6,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/go-kit/kit/metrics"
 )
@@ -33,6 +34,15 @@ func (mm *metricsMiddleware) GetProplet(ctx context.Context, id string) (proplet
 	}(time.Now())
 
 	return mm.svc.GetProplet(ctx, id)
+}
+
+func (mm *metricsMiddleware) GetPropletSDF(ctx context.Context, id string) (sdf.Document, error) {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "get-proplet-sdf").Add(1)
+		mm.latency.With("method", "get-proplet-sdf").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.GetPropletSDF(ctx, id)
 }
 
 func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {

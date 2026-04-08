@@ -9,6 +9,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -701,6 +702,64 @@ func (_c *MockService_GetProplet_Call) Return(proplet1 proplet.Proplet, err erro
 }
 
 func (_c *MockService_GetProplet_Call) RunAndReturn(run func(ctx context.Context, propletID string) (proplet.Proplet, error)) *MockService_GetProplet_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+func (_mock *MockService) GetPropletSDF(ctx context.Context, propletID string) (sdf.Document, error) {
+	ret := _mock.Called(ctx, propletID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPropletSDF")
+	}
+
+	var r0 sdf.Document
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (sdf.Document, error)); ok {
+		return returnFunc(ctx, propletID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) sdf.Document); ok {
+		r0 = returnFunc(ctx, propletID)
+	} else {
+		r0 = ret.Get(0).(sdf.Document)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, propletID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+type MockService_GetPropletSDF_Call struct {
+	*mock.Call
+}
+
+func (_e *MockService_Expecter) GetPropletSDF(ctx interface{}, propletID interface{}) *MockService_GetPropletSDF_Call {
+	return &MockService_GetPropletSDF_Call{Call: _e.mock.On("GetPropletSDF", ctx, propletID)}
+}
+
+func (_c *MockService_GetPropletSDF_Call) Run(run func(ctx context.Context, propletID string)) *MockService_GetPropletSDF_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(arg0, arg1)
+	})
+	return _c
+}
+
+func (_c *MockService_GetPropletSDF_Call) Return(doc sdf.Document, err error) *MockService_GetPropletSDF_Call {
+	_c.Call.Return(doc, err)
+	return _c
+}
+
+func (_c *MockService_GetPropletSDF_Call) RunAndReturn(run func(ctx context.Context, propletID string) (sdf.Document, error)) *MockService_GetPropletSDF_Call {
 	_c.Call.Return(run)
 	return _c
 }

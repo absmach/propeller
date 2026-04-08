@@ -5,6 +5,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -28,6 +29,15 @@ func (tm *tracing) GetProplet(ctx context.Context, id string) (resp proplet.Prop
 	defer span.End()
 
 	return tm.svc.GetProplet(ctx, id)
+}
+
+func (tm *tracing) GetPropletSDF(ctx context.Context, id string) (resp sdf.Document, err error) {
+	ctx, span := tm.tracer.Start(ctx, "get-proplet-sdf", trace.WithAttributes(
+		attribute.String("id", id),
+	))
+	defer span.End()
+
+	return tm.svc.GetPropletSDF(ctx, id)
 }
 
 func (tm *tracing) ListProplets(ctx context.Context, offset, limit uint64) (resp proplet.PropletPage, err error) {
