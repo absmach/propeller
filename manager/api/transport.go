@@ -319,7 +319,13 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 	}, nil
 }
 
-var metadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9._/\-]+$`)
+const (
+	metadataQueryPrefix = "metadata["
+	metadataQuerySuffix = "]"
+	maxMetadataFilterKeys = 20
+)
+
+var metadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9._\-]+$`)
 
 func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
 	o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
@@ -334,12 +340,18 @@ func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
 
 	filter := map[string]string{}
 	for key, vals := range r.URL.Query() {
-		if !strings.HasPrefix(key, "metadata[") || !strings.HasSuffix(key, "]") {
+		if !strings.HasPrefix(key, metadataQueryPrefix) || !strings.HasSuffix(key, metadataQuerySuffix) {
 			continue
 		}
-		metaKey := key[len("metadata[") : len(key)-1]
+		if len(filter) >= maxMetadataFilterKeys {
+			return nil, errors.Join(apiutil.ErrValidation, errors.New("too many metadata filter keys"))
+		}
+		metaKey := key[len(metadataQueryPrefix) : len(key)-len(metadataQuerySuffix)]
 		if !metadataKeyRe.MatchString(metaKey) {
 			return nil, errors.Join(apiutil.ErrValidation, errors.New("metadata key contains invalid characters"))
+		}
+		if len(vals) > 1 {
+			return nil, errors.Join(apiutil.ErrValidation, errors.New("duplicate metadata filter key"))
 		}
 		filter[metaKey] = vals[0]
 	}
