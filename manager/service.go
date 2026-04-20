@@ -1730,8 +1730,39 @@ func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) er
 	return svc.taskRepo.Update(ctx, *t)
 }
 
+type startPayload struct {
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	State             task.State                 `json:"state"`
+	ImageURL          string                     `json:"image_url,omitempty"`
+	File              []byte                     `json:"file,omitempty"`
+	Inputs            task.FlexStrings           `json:"inputs,omitempty"`
+	CLIArgs           []string                   `json:"cli_args"`
+	Daemon            bool                       `json:"daemon"`
+	Env               map[string]string          `json:"env,omitempty"`
+	Encrypted         bool                       `json:"encrypted"`
+	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
+	MonitoringProfile *proplet.MonitoringProfile `json:"monitoringProfile,omitempty"`
+	PropletID         string                     `json:"proplet_id,omitempty"`
+	ParentResults     map[string]any             `json:"parent_results,omitempty"`
+}
+
 func (svc *service) publishStart(ctx context.Context, t task.Task, propletID string) error {
-	t.PropletID = propletID
+	payload := startPayload{
+		ID:                t.ID,
+		Name:              t.Name,
+		State:             t.State,
+		ImageURL:          t.ImageURL,
+		File:              t.File,
+		Inputs:            t.Inputs,
+		CLIArgs:           t.CLIArgs,
+		Daemon:            t.Daemon,
+		Env:               t.Env,
+		Encrypted:         t.Encrypted,
+		KBSResourcePath:   t.KBSResourcePath,
+		MonitoringProfile: t.MonitoringProfile,
+		PropletID:         propletID,
+	}
 
 	if len(t.DependsOn) > 0 {
 		parentResults, err := svc.GetParentResults(ctx, t.ID)
@@ -1739,12 +1770,12 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 			svc.logger.WarnContext(ctx, "failed to get parent results", "task_id", t.ID, "error", err)
 			parentResults = make(map[string]any)
 		}
-		t.Results = parentResults
+		payload.ParentResults = parentResults
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
 
-	return svc.pubsub.Publish(ctx, topic, t)
+	return svc.pubsub.Publish(ctx, topic, payload)
 }
 
 func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {
