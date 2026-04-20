@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/absmach/propeller/pkg/task"
 )
+
+var sqliteMetadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9._\-]+$`)
 
 type taskRepo struct {
 	db *Database
@@ -213,7 +216,10 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 }
 
 func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
-	whereClause, args := buildSQLiteMetadataWhere(filter)
+	whereClause, args, err := buildSQLiteMetadataWhere(filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
 	countArgs := args
 	args = append(args, limit, offset)
 
@@ -231,21 +237,24 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]s
 	return tasks, total, nil
 }
 
-func buildSQLiteMetadataWhere(filter map[string]string) (clause string, args []any) {
+func buildSQLiteMetadataWhere(filter map[string]string) (clause string, args []any, err error) {
 	if len(filter) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
 	var sb strings.Builder
 	sb.WriteString(" WHERE metadata IS NOT NULL")
 	args = make([]any, 0, len(filter))
 	for k, v := range filter {
+		if !sqliteMetadataKeyRe.MatchString(k) {
+			return "", nil, fmt.Errorf("invalid metadata key: %q", k)
+		}
 		sb.WriteString(` AND json_extract(metadata, '$."`)
 		sb.WriteString(k)
 		sb.WriteString(`"') = ?`)
 		args = append(args, v)
 	}
 
-	return sb.String(), args
+	return sb.String(), args, nil
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
