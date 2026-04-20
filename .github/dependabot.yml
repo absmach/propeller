@@ -33,6 +33,7 @@ updates:
       - "examples/attestation-test"
       - "examples/http-client"
       - "examples/http-server"
+      - "examples/plugin-auth"
       - "examples/wasi-nn"
     schedule:
       interval: "monthly"
