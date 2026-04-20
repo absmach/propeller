@@ -232,7 +232,10 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 }
 
 func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
-	whereClause, args := buildPostgresMetadataWhere(filter)
+	whereClause, args, nextIdx, err := buildPostgresMetadataWhere(filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
 	countArgs := args
 	args = append(args, limit, offset)
 
@@ -242,9 +245,8 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]s
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
-	n := len(filter) + 1
 	query := `SELECT ` + taskColumns + ` FROM tasks` + whereClause +
-		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, n, n+1)
+		fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, nextIdx, nextIdx+1)
 	tasks, err := r.scanTasks(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
@@ -253,9 +255,9 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]s
 	return tasks, total, nil
 }
 
-func buildPostgresMetadataWhere(filter map[string]string) (clause string, args []any) {
+func buildPostgresMetadataWhere(filter map[string]string) (clause string, args []any, nextIdx int, err error) {
 	if len(filter) == 0 {
-		return "", nil
+		return "", nil, 1, nil
 	}
 	var sb strings.Builder
 	sb.WriteString(" WHERE metadata IS NOT NULL")
@@ -265,13 +267,13 @@ func buildPostgresMetadataWhere(filter map[string]string) (clause string, args [
 		fmt.Fprintf(&sb, ` AND metadata @> $%d::jsonb`, i)
 		b, err := json.Marshal(map[string]string{k: v})
 		if err != nil {
-			return "", nil
+			return "", nil, 0, fmt.Errorf("failed to marshal metadata filter: %w", err)
 		}
 		args = append(args, string(b))
 		i++
 	}
 
-	return sb.String(), args
+	return sb.String(), args, i, nil
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
