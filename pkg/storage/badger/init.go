@@ -218,3 +218,11 @@ func (d *Database) countWithPrefix(prefix []byte) (uint64, error) {
 
 	return count, nil
 }
+
+func (d *Database) viewTxn(fn func(*badger.Txn) error) error {
+	return d.db.View(fn)
+}
+
+func (d *Database) updateTxn(fn func(*badger.Txn) error) error {
+	return d.db.Update(fn)
+}
