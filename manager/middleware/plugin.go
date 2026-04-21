@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/plugin"
@@ -25,6 +26,7 @@ func authFromContext(ctx context.Context) plugin.AuthContext {
 
 type pluginMiddleware struct {
 	manager.Service
+
 	registry plugin.Registry
 	logger   *slog.Logger
 }
@@ -59,7 +61,7 @@ func (pm *pluginMiddleware) UpdateTask(ctx context.Context, t task.Task) (task.T
 }
 
 func (pm *pluginMiddleware) DeleteTask(ctx context.Context, taskID string) error {
-	t, err := pm.Service.GetTask(ctx, taskID)
+	t, err := pm.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -72,7 +74,7 @@ func (pm *pluginMiddleware) DeleteTask(ctx context.Context, taskID string) error
 }
 
 func (pm *pluginMiddleware) StartTask(ctx context.Context, taskID string) error {
-	t, err := pm.Service.GetTask(ctx, taskID)
+	t, err := pm.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -92,7 +94,7 @@ func (pm *pluginMiddleware) StartTask(ctx context.Context, taskID string) error 
 }
 
 func (pm *pluginMiddleware) StopTask(ctx context.Context, taskID string) error {
-	t, err := pm.Service.GetTask(ctx, taskID)
+	t, err := pm.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -151,9 +153,7 @@ func (pm *pluginMiddleware) enrich(ctx context.Context, info plugin.TaskInfo) pl
 			if merged.Env == nil {
 				merged.Env = make(map[string]string, len(resp.Env))
 			}
-			for k, v := range resp.Env {
-				merged.Env[k] = v
-			}
+			maps.Copy(merged.Env, resp.Env)
 		}
 		if resp.Priority != nil {
 			merged.Priority = resp.Priority
@@ -170,7 +170,7 @@ func (pm *pluginMiddleware) notifyStart(ctx context.Context, info plugin.TaskInf
 	plugins := pm.registry.List()
 	for _, p := range plugins {
 		go func(pl plugin.Plugin) {
-			if err := pl.OnTaskStart(context.Background(), plugin.TaskEvent{Task: info}); err != nil {
+			if err := pl.OnTaskStart(ctx, plugin.TaskEvent{Task: info}); err != nil {
 				pm.logger.WarnContext(ctx, "plugin on_task_start failed", "plugin", pl.Name(), "error", err)
 			}
 		}(p)
@@ -205,9 +205,7 @@ func applyEnrichment(t *task.Task, e plugin.EnrichResponse) {
 		if t.Env == nil {
 			t.Env = make(map[string]string, len(e.Env))
 		}
-		for k, v := range e.Env {
-			t.Env[k] = v
-		}
+		maps.Copy(t.Env, e.Env)
 	}
 	if e.Priority != nil {
 		t.Priority = *e.Priority

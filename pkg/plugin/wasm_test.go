@@ -11,6 +11,8 @@ import (
 const examplePluginPath = "../../examples/plugin-auth/target/wasm32-wasip1/release/plugin_auth.wasm"
 
 func TestExamplePluginRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	if _, err := os.Stat(examplePluginPath); err != nil {
 		t.Skipf("example plugin not built: %v", err)
 	}
@@ -25,6 +27,8 @@ func TestExamplePluginRoundTrip(t *testing.T) {
 	})
 
 	t.Run("authorize denies empty task name", func(t *testing.T) {
+		t.Parallel()
+
 		resp, err := p.Authorize(ctx, plugin.AuthorizeRequest{
 			Context: plugin.AuthContext{UserID: "alice", Action: plugin.ActionCreate},
 			Task:    plugin.TaskInfo{Name: ""},
@@ -38,6 +42,8 @@ func TestExamplePluginRoundTrip(t *testing.T) {
 	})
 
 	t.Run("authorize requires user_id on create", func(t *testing.T) {
+		t.Parallel()
+
 		resp, err := p.Authorize(ctx, plugin.AuthorizeRequest{
 			Context: plugin.AuthContext{UserID: "", Action: plugin.ActionCreate},
 			Task:    plugin.TaskInfo{Name: "example"},
@@ -51,6 +57,8 @@ func TestExamplePluginRoundTrip(t *testing.T) {
 	})
 
 	t.Run("authorize allows valid request", func(t *testing.T) {
+		t.Parallel()
+
 		resp, err := p.Authorize(ctx, plugin.AuthorizeRequest{
 			Context: plugin.AuthContext{UserID: "alice", Action: plugin.ActionCreate},
 			Task:    plugin.TaskInfo{Name: "example"},
@@ -64,6 +72,8 @@ func TestExamplePluginRoundTrip(t *testing.T) {
 	})
 
 	t.Run("enrich adds env var", func(t *testing.T) {
+		t.Parallel()
+
 		resp, err := p.Enrich(ctx, plugin.EnrichRequest{
 			Task: plugin.TaskInfo{Name: "example"},
 		})

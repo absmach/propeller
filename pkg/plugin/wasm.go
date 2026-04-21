@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 
@@ -24,17 +23,16 @@ const (
 )
 
 type wasmPlugin struct {
-	name     string
-	runtime  wazero.Runtime
-	module   api.Module
-	alloc    api.Function
-	free     api.Function
-	auth     api.Function
-	enrich   api.Function
-	onStart  api.Function
-	onDone   api.Function
-	mu       sync.Mutex
-	logWrite io.Writer
+	name    string
+	runtime wazero.Runtime
+	module  api.Module
+	alloc   api.Function
+	free    api.Function
+	auth    api.Function
+	enrich  api.Function
+	onStart api.Function
+	onDone  api.Function
+	mu      sync.Mutex
 }
 
 func LoadWasm(ctx context.Context, name, path string) (Plugin, error) {
@@ -201,6 +199,6 @@ func (p *wasmPlugin) freeBuffer(ctx context.Context, ptr, length uint32) {
 	_, _ = p.free.Call(ctx, uint64(ptr), uint64(length))
 }
 
-func unpack(v uint64) (uint32, uint32) {
+func unpack(v uint64) (ptr, length uint32) {
 	return uint32(v >> 32), uint32(v)
 }
