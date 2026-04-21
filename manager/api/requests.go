@@ -11,7 +11,7 @@ import (
 	"github.com/absmach/propeller/pkg/task"
 )
 
-const maxMetadataBytes = 65536
+const maxMetadataBytes = 1048576
 
 type taskReq struct {
 	task.Task `json:",inline"`
@@ -46,7 +46,7 @@ func (t *taskReq) validate() error {
 			return fmt.Errorf("invalid metadata: %w", err)
 		}
 		if len(b) > maxMetadataBytes {
-			return errors.New("metadata exceeds 64KB limit")
+			return errors.New("metadata exceeds 1MB limit")
 		}
 	}
 
