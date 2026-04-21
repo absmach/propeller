@@ -320,8 +320,8 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 }
 
 const (
-	metadataQueryPrefix = "metadata["
-	metadataQuerySuffix = "]"
+	metadataQueryPrefix   = "metadata["
+	metadataQuerySuffix   = "]"
 	maxMetadataFilterKeys = 20
 )
 

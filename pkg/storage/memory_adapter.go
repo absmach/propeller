@@ -28,42 +28,6 @@ func newMemoryTaskRepository(s Storage) TaskRepository {
 	}
 }
 
-func (r *memoryTaskRepo) indexTask(t task.Task) {
-	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		if r.metaIdx[k] == nil {
-			r.metaIdx[k] = make(map[string]map[string]struct{})
-		}
-		if r.metaIdx[k][s] == nil {
-			r.metaIdx[k][s] = make(map[string]struct{})
-		}
-		r.metaIdx[k][s][t.ID] = struct{}{}
-	}
-}
-
-func (r *memoryTaskRepo) deindexTask(t task.Task) {
-	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		ids, ok := r.metaIdx[k][s]
-		if !ok {
-			continue
-		}
-		delete(ids, t.ID)
-		if len(ids) == 0 {
-			delete(r.metaIdx[k], s)
-		}
-		if len(r.metaIdx[k]) == 0 {
-			delete(r.metaIdx, k)
-		}
-	}
-}
-
 func (r *memoryTaskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -132,11 +96,13 @@ func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[st
 		vals, ok := r.metaIdx[k]
 		if !ok {
 			r.mu.RUnlock()
+
 			return []task.Task{}, 0, nil
 		}
 		taskIDs, ok := vals[v]
 		if !ok {
 			r.mu.RUnlock()
+
 			return []task.Task{}, 0, nil
 		}
 		if matchIDs == nil {
@@ -153,6 +119,7 @@ func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[st
 		}
 		if len(matchIDs) == 0 {
 			r.mu.RUnlock()
+
 			return []task.Task{}, 0, nil
 		}
 	}
@@ -230,6 +197,42 @@ func (r *memoryTaskRepo) Delete(ctx context.Context, id string) error {
 	}
 
 	return r.storage.Delete(ctx, id)
+}
+
+func (r *memoryTaskRepo) indexTask(t task.Task) {
+	for k, v := range t.Metadata {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if r.metaIdx[k] == nil {
+			r.metaIdx[k] = make(map[string]map[string]struct{})
+		}
+		if r.metaIdx[k][s] == nil {
+			r.metaIdx[k][s] = make(map[string]struct{})
+		}
+		r.metaIdx[k][s][t.ID] = struct{}{}
+	}
+}
+
+func (r *memoryTaskRepo) deindexTask(t task.Task) {
+	for k, v := range t.Metadata {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		ids, ok := r.metaIdx[k][s]
+		if !ok {
+			continue
+		}
+		delete(ids, t.ID)
+		if len(ids) == 0 {
+			delete(r.metaIdx[k], s)
+		}
+		if len(r.metaIdx[k]) == 0 {
+			delete(r.metaIdx, k)
+		}
+	}
 }
 
 type memoryPropletRepo struct {
