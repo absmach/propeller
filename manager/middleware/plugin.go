@@ -140,9 +140,10 @@ func (pm *pluginMiddleware) authorize(ctx context.Context, action plugin.Action,
 func (pm *pluginMiddleware) enrich(ctx context.Context, info plugin.TaskInfo) plugin.EnrichResponse {
 	plugins := pm.registry.List()
 	merged := plugin.EnrichResponse{}
+	auth := authFromContext(ctx)
 
 	for _, p := range plugins {
-		resp, err := p.Enrich(ctx, plugin.EnrichRequest{Task: info})
+		resp, err := p.Enrich(ctx, plugin.EnrichRequest{Context: auth, Task: info})
 		if err != nil {
 			pm.logger.WarnContext(ctx, "plugin enrich failed", "plugin", p.Name(), "error", err)
 

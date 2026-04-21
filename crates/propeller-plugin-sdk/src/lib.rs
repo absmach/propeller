@@ -59,6 +59,7 @@ impl Default for AuthorizeResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EnrichRequest {
+    pub context: AuthContext,
     pub task: TaskInfo,
 }
 

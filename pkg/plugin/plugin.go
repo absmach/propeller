@@ -47,7 +47,8 @@ type AuthorizeResponse struct {
 }
 
 type EnrichRequest struct {
-	Task TaskInfo `json:"task"`
+	Context AuthContext `json:"context"`
+	Task    TaskInfo    `json:"task"`
 }
 
 type EnrichResponse struct {

@@ -71,17 +71,57 @@ func TestExamplePluginRoundTrip(t *testing.T) {
 		}
 	})
 
-	t.Run("enrich adds env var", func(t *testing.T) {
+	t.Run("enrich stamps PROPELLER_CREATED_BY", func(t *testing.T) {
 		t.Parallel()
 
 		resp, err := p.Enrich(ctx, plugin.EnrichRequest{
-			Task: plugin.TaskInfo{Name: "example"},
+			Context: plugin.AuthContext{UserID: "alice", Action: plugin.ActionCreate},
+			Task:    plugin.TaskInfo{Name: "example"},
 		})
 		if err != nil {
 			t.Fatalf("Enrich: %v", err)
 		}
 		if resp.Env["PROPELLER_PLUGIN_AUTHZ"] != "plugin-auth" {
 			t.Fatalf("expected PROPELLER_PLUGIN_AUTHZ=plugin-auth, got %v", resp.Env)
+		}
+		if resp.Env["PROPELLER_CREATED_BY"] != "alice" {
+			t.Fatalf("expected PROPELLER_CREATED_BY=alice, got %v", resp.Env)
+		}
+	})
+
+	t.Run("start denied for different user", func(t *testing.T) {
+		t.Parallel()
+
+		resp, err := p.Authorize(ctx, plugin.AuthorizeRequest{
+			Context: plugin.AuthContext{UserID: "bob", Action: plugin.ActionStart},
+			Task: plugin.TaskInfo{
+				Name: "example",
+				Env:  map[string]string{"PROPELLER_CREATED_BY": "alice"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Authorize: %v", err)
+		}
+		if resp.Allow {
+			t.Fatalf("expected deny for wrong user, got allow")
+		}
+	})
+
+	t.Run("start allowed for task owner", func(t *testing.T) {
+		t.Parallel()
+
+		resp, err := p.Authorize(ctx, plugin.AuthorizeRequest{
+			Context: plugin.AuthContext{UserID: "alice", Action: plugin.ActionStart},
+			Task: plugin.TaskInfo{
+				Name: "example",
+				Env:  map[string]string{"PROPELLER_CREATED_BY": "alice"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Authorize: %v", err)
+		}
+		if !resp.Allow {
+			t.Fatalf("expected allow for task owner, got deny: %s", resp.Reason)
 		}
 	})
 }
