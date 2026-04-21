@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 wstd = "0.6.6"
-wasip2 = "1.0.2"
+wasip2 = "1.0.3"
 
 [profile.release]
 opt-level = "s"
