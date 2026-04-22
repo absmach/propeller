@@ -520,21 +520,21 @@ func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, erro
 	return svc.taskRepo.Get(ctx, taskID)
 }
 
-func (svc *service) ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error) {
-	tasks, total, err := svc.taskRepo.List(ctx, offset, limit)
-	if err != nil {
-		return task.TaskPage{}, err
+func (svc *service) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+	if len(pm.MetadataFilter) == 0 {
+		tasks, total, err := svc.taskRepo.List(ctx, pm.Offset, pm.Limit)
+		if err != nil {
+			return task.TaskPage{}, err
+		}
+
+		return task.TaskPage{
+			Offset: pm.Offset,
+			Limit:  pm.Limit,
+			Total:  total,
+			Tasks:  tasks,
+		}, nil
 	}
 
-	return task.TaskPage{
-		Offset: offset,
-		Limit:  limit,
-		Total:  total,
-		Tasks:  tasks,
-	}, nil
-}
-
-func (svc *service) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
 	tasks, total, err := svc.taskRepo.ListByMetadataFilter(ctx, pm.MetadataFilter, pm.Offset, pm.Limit)
 	if err != nil {
 		return task.TaskPage{}, err
@@ -549,70 +549,41 @@ func (svc *service) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) 
 }
 
 func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, error) {
-	dbT, err := svc.GetTask(ctx, t.ID)
-	if err != nil {
-		return task.Task{}, err
-	}
-	dbT.UpdatedAt = time.Now()
+	t.UpdatedAt = time.Now()
 
-	if t.Name != "" {
-		dbT.Name = t.Name
-	}
-	if t.Inputs != nil {
-		dbT.Inputs = t.Inputs
-	}
-	if t.File != nil {
-		dbT.File = t.File
-	}
-	if t.Priority != 0 {
-		dbT.Priority = t.Priority
-	}
-
-	scheduleChanged := false
-	if t.Schedule != "" && t.Schedule != dbT.Schedule {
+	if t.Schedule != "" {
 		schedule, err := cron.ParseCronExpression(t.Schedule)
 		if err != nil {
 			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
 		}
 
-		timezone := t.Timezone
-		if timezone == "" {
-			timezone = defaultTimezone
+		if t.Timezone == "" {
+			t.Timezone = defaultTimezone
 		}
 
-		dbT.Schedule = t.Schedule
-		dbT.IsRecurring = t.IsRecurring
-		dbT.Timezone = timezone
-		dbT.NextRun = cron.CalculateNextRun(schedule, time.Now(), timezone)
-		scheduleChanged = true
-	} else if t.Schedule == "" && dbT.Schedule != "" {
-		dbT.Schedule = ""
-		dbT.NextRun = time.Time{}
-		dbT.IsRecurring = false
-		scheduleChanged = true
+		t.NextRun = cron.CalculateNextRun(schedule, time.Now(), t.Timezone)
+	} else {
+		t.NextRun = time.Time{}
+		t.IsRecurring = false
 	}
 
-	if err := svc.taskRepo.Update(ctx, dbT); err != nil {
+	if err := svc.taskRepo.Update(ctx, t); err != nil {
 		return task.Task{}, err
 	}
 
-	if !scheduleChanged || svc.cronScheduler == nil {
-		return dbT, nil
-	}
-
-	if dbT.Schedule != "" {
-		if err := svc.cronScheduler.ScheduleTask(ctx, dbT.ID); err != nil {
-			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
+	if svc.cronScheduler != nil {
+		if t.Schedule != "" {
+			if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
+				svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
+			}
+		} else {
+			if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
+				svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
+			}
 		}
-
-		return dbT, nil
 	}
 
-	if err := svc.cronScheduler.UnscheduleTask(ctx, dbT.ID); err != nil {
-		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
-	}
-
-	return dbT, nil
+	return t, nil
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {

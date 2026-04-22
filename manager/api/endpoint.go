@@ -244,35 +244,25 @@ func stopJobEndpoint(svc manager.Service) endpoint.Endpoint {
 
 func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
-		switch req := request.(type) {
-		case listEntityReq:
-			if err := req.validate(); err != nil {
-				return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
-			}
-			tasks, err := svc.ListTasks(ctx, req.offset, req.limit)
-			if err != nil {
-				return listTaskResponse{}, err
-			}
-
-			return listTaskResponse{TaskPage: tasks}, nil
-		case listTasksReq:
-			if err := req.validate(); err != nil {
-				return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
-			}
-			pm := sdk.PageMetadata{
-				Offset:         req.offset,
-				Limit:          req.limit,
-				MetadataFilter: req.metadataFilter,
-			}
-			tasks, err := svc.ListTasksByFilter(ctx, pm)
-			if err != nil {
-				return listTaskResponse{}, err
-			}
-
-			return listTaskResponse{TaskPage: tasks}, nil
-		default:
+		req, ok := request.(listTasksReq)
+		if !ok {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
+		if err := req.validate(); err != nil {
+			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		pm := sdk.PageMetadata{
+			Offset:         req.offset,
+			Limit:          req.limit,
+			MetadataFilter: req.metadataFilter,
+		}
+		tasks, err := svc.ListTasks(ctx, pm)
+		if err != nil {
+			return listTaskResponse{}, err
+		}
+
+		return listTaskResponse{TaskPage: tasks}, nil
 	}
 }
 

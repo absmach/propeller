@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	OffsetKey = "offset"
-	LimitKey  = "limit"
-	DefOffset = 0
-	DefLimit  = 100
+	OffsetKey   = "offset"
+	LimitKey    = "limit"
+	MetadataKey = "metadata"
+	DefOffset   = 0
+	DefLimit    = 100
 
 	ContentType = "application/json"
 

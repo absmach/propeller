@@ -22,8 +22,7 @@ type Service interface {
 	ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error)
 	StartJob(ctx context.Context, jobID string) error
 	StopJob(ctx context.Context, jobID string) error
-	ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error)
-	ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)
+	ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)
 	UpdateTask(ctx context.Context, task task.Task) (task.Task, error)
 	DeleteTask(ctx context.Context, taskID string) error
 	StartTask(ctx context.Context, taskID string) error

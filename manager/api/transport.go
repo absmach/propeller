@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/absmach/magistrala"
@@ -319,14 +318,6 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 	}, nil
 }
 
-const (
-	metadataQueryPrefix   = "metadata["
-	metadataQuerySuffix   = "]"
-	maxMetadataFilterKeys = 20
-)
-
-var metadataKeyRe = regexp.MustCompile(`^[a-zA-Z0-9._\-]+$`)
-
 func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
 	o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
 	if err != nil {
@@ -338,26 +329,18 @@ func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
 		return nil, errors.Join(apiutil.ErrValidation, err)
 	}
 
-	filter := map[string]string{}
-	for key, vals := range r.URL.Query() {
-		if !strings.HasPrefix(key, metadataQueryPrefix) || !strings.HasSuffix(key, metadataQuerySuffix) {
-			continue
-		}
-		if len(filter) >= maxMetadataFilterKeys {
-			return nil, errors.Join(apiutil.ErrValidation, errors.New("too many metadata filter keys"))
-		}
-		metaKey := key[len(metadataQueryPrefix) : len(key)-len(metadataQuerySuffix)]
-		if !metadataKeyRe.MatchString(metaKey) {
-			return nil, errors.Join(apiutil.ErrValidation, errors.New("metadata key contains invalid characters"))
-		}
-		if len(vals) > 1 {
-			return nil, errors.Join(apiutil.ErrValidation, errors.New("duplicate metadata filter key"))
-		}
-		filter[metaKey] = vals[0]
+	meta, err := apiutil.ReadMetadataQuery(r, api.MetadataKey, nil)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
 	}
 
-	if len(filter) == 0 {
-		return listEntityReq{offset: o, limit: l}, nil
+	filter := make(map[string]string, len(meta))
+	for k, v := range meta {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		filter[k] = s
 	}
 
 	return listTasksReq{

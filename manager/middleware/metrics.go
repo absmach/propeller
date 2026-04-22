@@ -90,22 +90,13 @@ func (mm *metricsMiddleware) GetTask(ctx context.Context, id string) (task.Task,
 	return mm.svc.GetTask(ctx, id)
 }
 
-func (mm *metricsMiddleware) ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error) {
+func (mm *metricsMiddleware) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "list-tasks").Add(1)
 		mm.latency.With("method", "list-tasks").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.ListTasks(ctx, offset, limit)
-}
-
-func (mm *metricsMiddleware) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
-	defer func(begin time.Time) {
-		mm.counter.With("method", "list-tasks-by-filter").Add(1)
-		mm.latency.With("method", "list-tasks-by-filter").Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return mm.svc.ListTasksByFilter(ctx, pm)
+	return mm.svc.ListTasks(ctx, pm)
 }
 
 func (mm *metricsMiddleware) UpdateTask(ctx context.Context, t task.Task) (task.Task, error) {

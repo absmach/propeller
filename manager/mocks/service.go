@@ -1273,83 +1273,11 @@ func (_c *MockService_ListProplets_Call) RunAndReturn(run func(ctx context.Conte
 }
 
 // ListTasks provides a mock function for the type MockService
-func (_mock *MockService) ListTasks(ctx context.Context, offset uint64, limit uint64) (task.TaskPage, error) {
-	ret := _mock.Called(ctx, offset, limit)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ListTasks")
-	}
-
-	var r0 task.TaskPage
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) (task.TaskPage, error)); ok {
-		return returnFunc(ctx, offset, limit)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) task.TaskPage); ok {
-		r0 = returnFunc(ctx, offset, limit)
-	} else {
-		r0 = ret.Get(0).(task.TaskPage)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64) error); ok {
-		r1 = returnFunc(ctx, offset, limit)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockService_ListTasks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasks'
-type MockService_ListTasks_Call struct {
-	*mock.Call
-}
-
-// ListTasks is a helper method to define mock.On call
-//   - ctx context.Context
-//   - offset uint64
-//   - limit uint64
-func (_e *MockService_Expecter) ListTasks(ctx interface{}, offset interface{}, limit interface{}) *MockService_ListTasks_Call {
-	return &MockService_ListTasks_Call{Call: _e.mock.On("ListTasks", ctx, offset, limit)}
-}
-
-func (_c *MockService_ListTasks_Call) Run(run func(ctx context.Context, offset uint64, limit uint64)) *MockService_ListTasks_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 uint64
-		if args[1] != nil {
-			arg1 = args[1].(uint64)
-		}
-		var arg2 uint64
-		if args[2] != nil {
-			arg2 = args[2].(uint64)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *MockService_ListTasks_Call) Return(taskPage task.TaskPage, err error) *MockService_ListTasks_Call {
-	_c.Call.Return(taskPage, err)
-	return _c
-}
-
-func (_c *MockService_ListTasks_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64) (task.TaskPage, error)) *MockService_ListTasks_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// ListTasksByFilter provides a mock function for the type MockService
-func (_mock *MockService) ListTasksByFilter(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+func (_mock *MockService) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
 	ret := _mock.Called(ctx, pm)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListTasksByFilter")
+		panic("no return value specified for ListTasks")
 	}
 
 	var r0 task.TaskPage
@@ -1370,19 +1298,19 @@ func (_mock *MockService) ListTasksByFilter(ctx context.Context, pm sdk.PageMeta
 	return r0, r1
 }
 
-// MockService_ListTasksByFilter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasksByFilter'
-type MockService_ListTasksByFilter_Call struct {
+// MockService_ListTasks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasks'
+type MockService_ListTasks_Call struct {
 	*mock.Call
 }
 
-// ListTasksByFilter is a helper method to define mock.On call
+// ListTasks is a helper method to define mock.On call
 //   - ctx context.Context
 //   - pm sdk.PageMetadata
-func (_e *MockService_Expecter) ListTasksByFilter(ctx interface{}, pm interface{}) *MockService_ListTasksByFilter_Call {
-	return &MockService_ListTasksByFilter_Call{Call: _e.mock.On("ListTasksByFilter", ctx, pm)}
+func (_e *MockService_Expecter) ListTasks(ctx interface{}, pm interface{}) *MockService_ListTasks_Call {
+	return &MockService_ListTasks_Call{Call: _e.mock.On("ListTasks", ctx, pm)}
 }
 
-func (_c *MockService_ListTasksByFilter_Call) Run(run func(ctx context.Context, pm sdk.PageMetadata)) *MockService_ListTasksByFilter_Call {
+func (_c *MockService_ListTasks_Call) Run(run func(ctx context.Context, pm sdk.PageMetadata)) *MockService_ListTasks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1400,12 +1328,12 @@ func (_c *MockService_ListTasksByFilter_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-func (_c *MockService_ListTasksByFilter_Call) Return(taskPage task.TaskPage, err error) *MockService_ListTasksByFilter_Call {
+func (_c *MockService_ListTasks_Call) Return(taskPage task.TaskPage, err error) *MockService_ListTasks_Call {
 	_c.Call.Return(taskPage, err)
 	return _c
 }
 
-func (_c *MockService_ListTasksByFilter_Call) RunAndReturn(run func(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)) *MockService_ListTasksByFilter_Call {
+func (_c *MockService_ListTasks_Call) RunAndReturn(run func(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error)) *MockService_ListTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }
