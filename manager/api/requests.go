@@ -6,15 +6,13 @@ import (
 	"fmt"
 
 	apiutil "github.com/absmach/magistrala/api/http/util"
+	"github.com/absmach/propeller/pkg/api"
 	"github.com/absmach/propeller/pkg/cron"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/task"
 )
 
-const (
-	maxMetadataBytes = 1048576 // 1MB
-	maxLimitSize     = 100
-)
+const maxMetadataBytes = 1048576 // 1MB
 
 type taskReq struct {
 	task.Task `json:",inline"`
@@ -129,7 +127,7 @@ type listTasksReq struct {
 }
 
 func (r *listTasksReq) validate() error {
-	if r.limit > maxLimitSize || r.limit < 1 {
+	if r.limit > api.MaxLimitSize || r.limit < 1 {
 		return apiutil.ErrLimitSize
 	}
 

@@ -784,6 +784,7 @@ func (_c *MockService_GetPropletMetrics_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// GetPropletAliveHistory provides a mock function for the type MockService
 func (_mock *MockService) GetPropletAliveHistory(ctx context.Context, propletID string, offset uint64, limit uint64) (proplet.PropletAliveHistoryPage, error) {
 	ret := _mock.Called(ctx, propletID, offset, limit)
 
@@ -809,11 +810,17 @@ func (_mock *MockService) GetPropletAliveHistory(ctx context.Context, propletID 
 	return r0, r1
 }
 
+// MockService_GetPropletAliveHistory_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPropletAliveHistory'
 type MockService_GetPropletAliveHistory_Call struct {
 	*mock.Call
 }
 
-func (_e *MockService_Expecter) GetPropletAliveHistory(ctx any, propletID any, offset any, limit any) *MockService_GetPropletAliveHistory_Call {
+// GetPropletAliveHistory is a helper method to define mock.On call
+//   - ctx context.Context
+//   - propletID string
+//   - offset uint64
+//   - limit uint64
+func (_e *MockService_Expecter) GetPropletAliveHistory(ctx interface{}, propletID interface{}, offset interface{}, limit interface{}) *MockService_GetPropletAliveHistory_Call {
 	return &MockService_GetPropletAliveHistory_Call{Call: _e.mock.On("GetPropletAliveHistory", ctx, propletID, offset, limit)}
 }
 
@@ -835,7 +842,12 @@ func (_c *MockService_GetPropletAliveHistory_Call) Run(run func(ctx context.Cont
 		if args[3] != nil {
 			arg3 = args[3].(uint64)
 		}
-		run(arg0, arg1, arg2, arg3)
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }
