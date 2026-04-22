@@ -571,19 +571,27 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 		return task.Task{}, err
 	}
 
-	if svc.cronScheduler != nil {
-		if t.Schedule != "" {
-			if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
-				svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
-			}
-		} else {
-			if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
-				svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
-			}
-		}
-	}
+	svc.updateCronTask(ctx, t)
 
 	return t, nil
+}
+
+func (svc *service) updateCronTask(ctx context.Context, t task.Task) {
+	if svc.cronScheduler == nil {
+		return
+	}
+
+	if t.Schedule != "" {
+		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
+		}
+
+		return
+	}
+
+	if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
+	}
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
