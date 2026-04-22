@@ -121,9 +121,9 @@ func (e *listEntityReq) validate() error {
 }
 
 type listTasksReq struct {
-	offset         uint64
-	limit          uint64
-	metadataFilter map[string]string
+	offset   uint64
+	limit    uint64
+	metadata map[string]any
 }
 
 func (r *listTasksReq) validate() error {

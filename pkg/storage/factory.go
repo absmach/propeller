@@ -153,7 +153,7 @@ func (a *postgresTaskAdapter) List(ctx context.Context, offset, limit uint64) ([
 	return a.repo.List(ctx, offset, limit)
 }
 
-func (a *postgresTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (a *postgresTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.ListByMetadataFilter(ctx, filter, offset, limit)
 }
 
@@ -309,7 +309,7 @@ func (a *sqliteTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]t
 	return a.repo.List(ctx, offset, limit)
 }
 
-func (a *sqliteTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (a *sqliteTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.ListByMetadataFilter(ctx, filter, offset, limit)
 }
 
@@ -465,7 +465,7 @@ func (a *badgerTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]t
 	return a.repo.List(ctx, offset, limit)
 }
 
-func (a *badgerTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (a *badgerTaskAdapter) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	return a.repo.ListByMetadataFilter(ctx, filter, offset, limit)
 }
 

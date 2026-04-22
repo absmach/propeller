@@ -85,7 +85,7 @@ func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task
 	return tasks, total, nil
 }
 
-func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
 		return r.List(ctx, offset, limit)
 	}
@@ -93,13 +93,17 @@ func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[st
 	r.mu.RLock()
 	var matchIDs map[string]struct{}
 	for k, v := range filter {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
 		vals, ok := r.metaIdx[k]
 		if !ok {
 			r.mu.RUnlock()
 
 			return []task.Task{}, 0, nil
 		}
-		taskIDs, ok := vals[v]
+		taskIDs, ok := vals[s]
 		if !ok {
 			r.mu.RUnlock()
 

@@ -238,7 +238,7 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	whereClause, args, nextIdx, err := buildPostgresMetadataWhere(filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
@@ -262,7 +262,7 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]s
 	return tasks, total, nil
 }
 
-func buildPostgresMetadataWhere(filter map[string]string) (clause string, args []any, nextIdx int, err error) {
+func buildPostgresMetadataWhere(filter map[string]any) (clause string, args []any, nextIdx int, err error) {
 	if len(filter) == 0 {
 		return "", nil, 1, nil
 	}
@@ -272,7 +272,7 @@ func buildPostgresMetadataWhere(filter map[string]string) (clause string, args [
 	i := 1
 	for k, v := range filter {
 		fmt.Fprintf(&sb, ` AND metadata @> $%d::jsonb`, i)
-		b, err := json.Marshal(map[string]string{k: v})
+		b, err := json.Marshal(map[string]any{k: v})
 		if err != nil {
 			return "", nil, 0, fmt.Errorf("failed to marshal metadata filter: %w", err)
 		}

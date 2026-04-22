@@ -334,19 +334,10 @@ func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
 		return nil, errors.Join(apiutil.ErrValidation, err)
 	}
 
-	filter := make(map[string]string, len(meta))
-	for k, v := range meta {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		filter[k] = s
-	}
-
 	return listTasksReq{
-		offset:         o,
-		limit:          l,
-		metadataFilter: filter,
+		offset:   o,
+		limit:    l,
+		metadata: meta,
 	}, nil
 }
 

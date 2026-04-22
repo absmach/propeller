@@ -253,9 +253,9 @@ func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 		}
 
 		pm := sdk.PageMetadata{
-			Offset:         req.offset,
-			Limit:          req.limit,
-			MetadataFilter: req.metadataFilter,
+			Offset:   req.offset,
+			Limit:    req.limit,
+			Metadata: req.metadata,
 		}
 		tasks, err := svc.ListTasks(ctx, pm)
 		if err != nil {

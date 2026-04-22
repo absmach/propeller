@@ -113,7 +113,7 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]string, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
 		return r.List(ctx, offset, limit)
 	}
@@ -122,7 +122,11 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]s
 	err := r.db.viewTxn(func(txn *badgerdb.Txn) error {
 		opts := badgerdb.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		for k, v := range filter {
+		for k, vAny := range filter {
+			v, ok := vAny.(string)
+			if !ok {
+				continue
+			}
 			prefix := []byte("meta-idx\x00" + k + "\x00" + v + "\x00")
 			it := txn.NewIterator(opts)
 			ids := make(map[string]struct{})
