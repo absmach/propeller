@@ -89,6 +89,8 @@ const (
 	RunIfFailure = "failure"
 )
 
+type Metadata map[string]any
+
 type Task struct {
 	ID                string                     `json:"id"`
 	Name              string                     `json:"name"`
@@ -121,7 +123,7 @@ type Task struct {
 	Timezone          string                     `json:"timezone,omitempty"`
 	Broadcast         bool                       `json:"broadcast,omitempty"`
 	Priority          int                        `json:"priority,omitempty"`
-	Metadata          map[string]any             `json:"metadata,omitempty"`
+	Metadata          Metadata                   `json:"metadata,omitempty"`
 }
 
 type TaskPage struct {

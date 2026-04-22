@@ -85,7 +85,7 @@ func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task
 	return tasks, total, nil
 }
 
-func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
 		return r.List(ctx, offset, limit)
 	}

@@ -215,7 +215,7 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	whereClause, args, err := buildSQLiteMetadataWhere(filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
@@ -237,7 +237,7 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]a
 	return tasks, total, nil
 }
 
-func buildSQLiteMetadataWhere(filter map[string]any) (clause string, args []any, err error) {
+func buildSQLiteMetadataWhere(filter task.Metadata) (clause string, args []any, err error) {
 	if len(filter) == 0 {
 		return "", nil, nil
 	}

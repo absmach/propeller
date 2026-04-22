@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 const CTJSON string = "application/json"
@@ -15,7 +16,7 @@ const CTJSON string = "application/json"
 type PageMetadata struct {
 	Offset         uint64            `json:"offset"`
 	Limit          uint64            `json:"limit"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Metadata task.Metadata `json:"metadata,omitempty"`
 }
 
 type SDK interface {

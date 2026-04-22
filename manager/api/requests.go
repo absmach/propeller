@@ -123,7 +123,7 @@ func (e *listEntityReq) validate() error {
 type listTasksReq struct {
 	offset   uint64
 	limit    uint64
-	metadata map[string]any
+	metadata task.Metadata
 }
 
 func (r *listTasksReq) validate() error {

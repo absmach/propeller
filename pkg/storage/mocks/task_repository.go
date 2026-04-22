@@ -376,7 +376,7 @@ func (_c *MockTaskRepository_ListByJobID_Call) RunAndReturn(run func(ctx context
 }
 
 // ListByMetadataFilter provides a mock function for the type MockTaskRepository
-func (_mock *MockTaskRepository) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset uint64, limit uint64) ([]task.Task, uint64, error) {
+func (_mock *MockTaskRepository) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset uint64, limit uint64) ([]task.Task, uint64, error) {
 	ret := _mock.Called(ctx, filter, offset, limit)
 
 	if len(ret) == 0 {
@@ -386,22 +386,22 @@ func (_mock *MockTaskRepository) ListByMetadataFilter(ctx context.Context, filte
 	var r0 []task.Task
 	var r1 uint64
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, map[string]any, uint64, uint64) ([]task.Task, uint64, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.Metadata, uint64, uint64) ([]task.Task, uint64, error)); ok {
 		return returnFunc(ctx, filter, offset, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, map[string]any, uint64, uint64) []task.Task); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, task.Metadata, uint64, uint64) []task.Task); ok {
 		r0 = returnFunc(ctx, filter, offset, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]task.Task)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, map[string]any, uint64, uint64) uint64); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, task.Metadata, uint64, uint64) uint64); ok {
 		r1 = returnFunc(ctx, filter, offset, limit)
 	} else {
 		r1 = ret.Get(1).(uint64)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, map[string]any, uint64, uint64) error); ok {
+	if returnFunc, ok := ret.Get(2).(func(context.Context, task.Metadata, uint64, uint64) error); ok {
 		r2 = returnFunc(ctx, filter, offset, limit)
 	} else {
 		r2 = ret.Error(2)
@@ -416,22 +416,22 @@ type MockTaskRepository_ListByMetadataFilter_Call struct {
 
 // ListByMetadataFilter is a helper method to define mock.On call
 //   - ctx context.Context
-//   - filter map[string]any
+//   - filter task.Metadata
 //   - offset uint64
 //   - limit uint64
 func (_e *MockTaskRepository_Expecter) ListByMetadataFilter(ctx interface{}, filter interface{}, offset interface{}, limit interface{}) *MockTaskRepository_ListByMetadataFilter_Call {
 	return &MockTaskRepository_ListByMetadataFilter_Call{Call: _e.mock.On("ListByMetadataFilter", ctx, filter, offset, limit)}
 }
 
-func (_c *MockTaskRepository_ListByMetadataFilter_Call) Run(run func(ctx context.Context, filter map[string]any, offset uint64, limit uint64)) *MockTaskRepository_ListByMetadataFilter_Call {
+func (_c *MockTaskRepository_ListByMetadataFilter_Call) Run(run func(ctx context.Context, filter task.Metadata, offset uint64, limit uint64)) *MockTaskRepository_ListByMetadataFilter_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 map[string]any
+		var arg1 task.Metadata
 		if args[1] != nil {
-			arg1 = args[1].(map[string]any)
+			arg1 = args[1].(task.Metadata)
 		}
 		var arg2 uint64
 		if args[2] != nil {
@@ -456,7 +456,7 @@ func (_c *MockTaskRepository_ListByMetadataFilter_Call) Return(tasks []task.Task
 	return _c
 }
 
-func (_c *MockTaskRepository_ListByMetadataFilter_Call) RunAndReturn(run func(ctx context.Context, filter map[string]any, offset uint64, limit uint64) ([]task.Task, uint64, error)) *MockTaskRepository_ListByMetadataFilter_Call {
+func (_c *MockTaskRepository_ListByMetadataFilter_Call) RunAndReturn(run func(ctx context.Context, filter task.Metadata, offset uint64, limit uint64) ([]task.Task, uint64, error)) *MockTaskRepository_ListByMetadataFilter_Call {
 	_c.Call.Return(run)
 	return _c
 }

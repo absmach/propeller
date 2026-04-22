@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/absmach/propeller/pkg/task"
 )
@@ -238,7 +237,7 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]any, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	whereClause, args, nextIdx, err := buildPostgresMetadataWhere(filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
@@ -262,25 +261,16 @@ func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter map[string]a
 	return tasks, total, nil
 }
 
-func buildPostgresMetadataWhere(filter map[string]any) (clause string, args []any, nextIdx int, err error) {
+func buildPostgresMetadataWhere(filter task.Metadata) (clause string, args []any, nextIdx int, err error) {
 	if len(filter) == 0 {
 		return "", nil, 1, nil
 	}
-	var sb strings.Builder
-	sb.WriteString(" WHERE metadata IS NOT NULL")
-	args = make([]any, 0, len(filter))
-	i := 1
-	for k, v := range filter {
-		fmt.Fprintf(&sb, ` AND metadata @> $%d::jsonb`, i)
-		b, err := json.Marshal(map[string]any{k: v})
-		if err != nil {
-			return "", nil, 0, fmt.Errorf("failed to marshal metadata filter: %w", err)
-		}
-		args = append(args, string(b))
-		i++
+	b, err := json.Marshal(filter)
+	if err != nil {
+		return "", nil, 0, fmt.Errorf("failed to marshal metadata filter: %w", err)
 	}
 
-	return sb.String(), args, i, nil
+	return " WHERE metadata IS NOT NULL AND metadata @> $1::jsonb", []any{string(b)}, 2, nil
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
