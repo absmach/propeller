@@ -576,24 +576,6 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 	return t, nil
 }
 
-func (svc *service) updateCronTask(ctx context.Context, t task.Task) {
-	if svc.cronScheduler == nil {
-		return
-	}
-
-	if t.Schedule != "" {
-		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
-			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
-		}
-
-		return
-	}
-
-	if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
-		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
-	}
-}
-
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
 	if svc.cronScheduler != nil {
 		if err := svc.cronScheduler.UnscheduleTask(ctx, taskID); err != nil {
@@ -978,6 +960,24 @@ func (svc *service) RecoverInterruptedTasks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (svc *service) updateCronTask(ctx context.Context, t task.Task) {
+	if svc.cronScheduler == nil {
+		return
+	}
+
+	if t.Schedule != "" {
+		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
+		}
+
+		return
+	}
+
+	if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
+	}
 }
 
 func (svc *service) listAllStoredJobs(ctx context.Context) ([]job.Job, error) {
