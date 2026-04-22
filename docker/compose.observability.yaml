@@ -1,0 +1,90 @@
+# Observability Stack for Propeller
+# This compose file extends the main compose.yaml with observability services.
+#
+# Usage:
+#   docker-compose -f compose.yaml -f compose.observability.yaml up -d
+#
+# Or with make:
+#   make start-observability
+
+name: "propeller-observability"
+
+networks:
+  supermq-base-net:
+    external: true
+
+services:
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.96.0
+    container_name: propeller-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    networks:
+      - supermq-base-net
+    ports:
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+      - "8889:8889"    # Prometheus exporter
+      - "13133:13133"  # Health check
+      - "55679:55679"  # zPages
+    volumes:
+      - ../deploy/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      - PROPELLER_ENV=${PROPELLER_ENV:-development}
+      - JAEGER_ENDPOINT=jaeger:4317
+    depends_on:
+      - jaeger
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: docker.io/prom/prometheus:v3.3.0
+    container_name: propeller-prometheus
+    restart: unless-stopped
+    networks:
+      - supermq-base-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: docker.io/grafana/grafana:12.0.1
+    container_name: propeller-grafana
+    restart: unless-stopped
+    networks:
+      - supermq-base-net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    depends_on:
+      - prometheus
+      - jaeger
+
+volumes:
+  prometheus-data:
+  grafana-data:

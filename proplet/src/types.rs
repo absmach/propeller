@@ -865,6 +865,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            broadcast: false,
         };
 
         assert!(req.validate().is_ok());
@@ -887,6 +888,7 @@ mod tests {
             kbs_resource_path: None,
             mode: None,
             proplet_id: None,
+            broadcast: false,
         };
 
         let result = req.validate();

@@ -47,6 +47,9 @@ pub struct PropletConfig {
     pub http_enabled: bool,
     pub preopened_dirs: Vec<String>,
     pub http_proxy_port: u16,
+    pub metrics_port: u16,
+    pub jaeger_endpoint: Option<String>,
+    pub jaeger_enabled: bool,
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub location: Option<String>,
@@ -82,6 +85,9 @@ impl Default for PropletConfig {
             http_enabled: false,
             preopened_dirs: Vec::new(),
             http_proxy_port: 8222,
+            metrics_port: 7072,
+            jaeger_endpoint: None,
+            jaeger_enabled: false,
             description: None,
             tags: Vec::new(),
             location: None,
@@ -313,6 +319,22 @@ impl PropletConfig {
                 if let Ok(port) = val.parse() {
                     config.http_proxy_port = port;
                 }
+            }
+
+            if let Ok(val) = env::var("PROPLET_METRICS_PORT") {
+                if let Ok(port) = val.parse() {
+                    config.metrics_port = port;
+                }
+            }
+
+            if let Ok(val) = env::var("JAEGER_ENDPOINT") {
+                if !val.is_empty() {
+                    config.jaeger_endpoint = Some(val);
+                }
+            }
+
+            if let Ok(val) = env::var("PROPELLER_TRACING_ENABLED") {
+                config.jaeger_enabled = val.to_lowercase() == "true" || val == "1";
             }
 
             if let Ok(val) = env::var("PROPLET_DIRS") {

@@ -110,6 +110,7 @@ func main() {
 		}()
 		tp = sdktp
 	}
+
 	tracer := tp.Tracer(svcName)
 
 	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.ClientID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)

@@ -1627,6 +1627,63 @@ void publish_active_task_metrics(const char *domain_id, const char *channel_id,
   }
 }
 
+void publish_wasm_metrics(const char *domain_id, const char *channel_id,
+                          const char *proplet_id) {
+  wasm_metrics_t metrics;
+
+  if (task_monitor_get_wasm_metrics(&metrics) != 0) {
+    LOG_DBG("No WASM metrics available");
+    return;
+  }
+
+  /* Skip publishing if no executions have occurred */
+  if (metrics.execution_count == 0 && metrics.error_count == 0) {
+    return;
+  }
+
+  cJSON *root = cJSON_CreateObject();
+  if (root == NULL) {
+    LOG_ERR("Failed to create JSON for WASM metrics");
+    return;
+  }
+
+  cJSON_AddStringToObject(root, "proplet_id", proplet_id);
+  cJSON_AddNumberToObject(root, "timestamp", (double)k_uptime_get());
+
+  cJSON *wasm_obj = cJSON_AddObjectToObject(root, "wasm_metrics");
+  if (wasm_obj != NULL) {
+    cJSON_AddNumberToObject(wasm_obj, "execution_count",
+                            (double)metrics.execution_count);
+    cJSON_AddNumberToObject(wasm_obj, "total_execution_us",
+                            (double)metrics.total_execution_us);
+    cJSON_AddNumberToObject(wasm_obj, "error_count",
+                            (double)metrics.error_count);
+    cJSON_AddNumberToObject(wasm_obj, "oom_count",
+                            (double)metrics.oom_count);
+    cJSON_AddNumberToObject(wasm_obj, "last_execution_us",
+                            (double)metrics.last_execution_us);
+    cJSON_AddNumberToObject(wasm_obj, "max_execution_us",
+                            (double)metrics.max_execution_us);
+
+    /* Calculate average execution time */
+    if (metrics.execution_count > 0) {
+      double avg_execution_us = (double)metrics.total_execution_us /
+                                 (double)metrics.execution_count;
+      cJSON_AddNumberToObject(wasm_obj, "avg_execution_us", avg_execution_us);
+    }
+  }
+
+  char *payload = cJSON_PrintUnformatted(root);
+  if (payload != NULL) {
+    if (publish(domain_id, channel_id, METRICS_TOPIC_TEMPLATE, payload) == 0) {
+      LOG_DBG("Published WASM metrics");
+    }
+    cJSON_free(payload);
+  }
+
+  cJSON_Delete(root);
+}
+
 void mqtt_client_process(void) {
   if (mqtt_connected) {
     int ret =

@@ -9,7 +9,7 @@ import (
 
 type Service interface {
 	GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error)
-	ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error)
+	ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error)
 	SelectProplet(ctx context.Context, task task.Task) (proplet.Proplet, error)
 	DeleteProplet(ctx context.Context, propletID string) error
 

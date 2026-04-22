@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/absmach/propeller/pkg/job"
 	"github.com/absmach/propeller/pkg/maps"
 	"github.com/absmach/propeller/pkg/mqtt"
+	"github.com/absmach/propeller/pkg/observability"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
@@ -116,7 +118,45 @@ func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.P
 	return w, nil
 }
 
-func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
+func (svc *service) ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error) {
+	switch status {
+	case "", "active", "inactive":
+		// valid
+	default:
+		return proplet.PropletPage{}, fmt.Errorf("invalid proplet status filter: %q", status)
+	}
+
+	if status != "" {
+		// When filtering by status, fetch all records so we can filter
+		// accurately and then apply offset/limit to the filtered set.
+		allProplets, _, err := svc.propletRepo.List(ctx, 0, math.MaxInt64)
+		if err != nil {
+			return proplet.PropletPage{}, err
+		}
+		for i := range allProplets {
+			allProplets[i].SetAlive()
+		}
+
+		filtered := make([]proplet.Proplet, 0, len(allProplets))
+		//nolint:gocritic
+		for _, p := range allProplets {
+			if (status == "active" && p.Alive) || (status == "inactive" && !p.Alive) {
+				filtered = append(filtered, p)
+			}
+		}
+
+		filteredTotal := uint64(len(filtered))
+		start := min(offset, filteredTotal)
+		end := min(start+limit, filteredTotal)
+
+		return proplet.PropletPage{
+			Offset:   offset,
+			Limit:    limit,
+			Total:    filteredTotal,
+			Proplets: filtered[start:end],
+		}, nil
+	}
+
 	proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
 	if err != nil {
 		return proplet.PropletPage{}, err
@@ -134,7 +174,7 @@ func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (pro
 }
 
 func (svc *service) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
-	proplets, err := svc.ListProplets(ctx, defOffset, defLimit)
+	proplets, err := svc.ListProplets(ctx, defOffset, defLimit, "")
 	if err != nil {
 		return proplet.Proplet{}, err
 	}
@@ -211,8 +251,17 @@ func (svc *service) CreateTask(ctx context.Context, t task.Task) (task.Task, err
 
 	t, err := svc.taskRepo.Create(ctx, t)
 	if err != nil {
+		observability.RecordError(observability.ErrorTypeTask)
+
 		return task.Task{}, err
 	}
+
+	// Record task creation metric
+	kind := observability.TaskKindStandard
+	if t.Kind == task.TaskKindFederated {
+		kind = observability.TaskKindFederated
+	}
+	observability.RecordTaskCreated(kind)
 
 	if t.Schedule != "" && svc.cronScheduler != nil {
 		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
@@ -268,10 +317,22 @@ func (svc *service) CreateWorkflow(ctx context.Context, tasks []task.Task) ([]ta
 				created := &createdTasks[j]
 				_ = svc.taskRepo.Delete(ctx, created.ID)
 			}
+			observability.RecordError(observability.ErrorTypeWorkflow)
 
 			return nil, fmt.Errorf("failed to create task %s: %w", t.ID, err)
 		}
 		createdTasks = append(createdTasks, created)
+	}
+
+	// Record workflow and task creation metrics
+	observability.RecordWorkflowCreated()
+	//nolint:gocritic
+	for _, t := range createdTasks {
+		kind := observability.TaskKindStandard
+		if t.Kind == task.TaskKindFederated {
+			kind = observability.TaskKindFederated
+		}
+		observability.RecordTaskCreated(kind)
 	}
 
 	return createdTasks, nil
@@ -333,10 +394,22 @@ func (svc *service) CreateJob(ctx context.Context, name string, tasks []task.Tas
 			if svc.jobRepo != nil {
 				_ = svc.jobRepo.Delete(ctx, jobID)
 			}
+			observability.RecordError(observability.ErrorTypeJob)
 
 			return "", nil, fmt.Errorf("failed to create task %s: %w", t.ID, err)
 		}
 		createdTasks = append(createdTasks, created)
+	}
+
+	// Record job and task creation metrics
+	observability.RecordJobCreated()
+	//nolint:gocritic
+	for _, t := range createdTasks {
+		kind := observability.TaskKindStandard
+		if t.Kind == task.TaskKindFederated {
+			kind = observability.TaskKindFederated
+		}
+		observability.RecordTaskCreated(kind)
 	}
 
 	return jobID, createdTasks, nil
@@ -677,6 +750,9 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 	if err := svc.markTaskRunning(ctx, &t); err != nil {
 		return err
 	}
+
+	// Record task started metric
+	observability.RecordTaskStarted()
 
 	return nil
 }
@@ -1110,18 +1186,29 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 	return func(topic string, msg map[string]any) error {
 		switch topic {
 		case svc.baseTopic + "/control/proplet/create":
+			observability.RecordMQTTReceived(observability.TopicTypeDiscovery)
 			if err := svc.createPropletHandler(ctx, msg); err != nil {
 				return err
 			}
 			svc.logger.InfoContext(ctx, "successfully created proplet")
 		case svc.baseTopic + "/control/proplet/alive":
+			observability.RecordMQTTReceived(observability.TopicTypeAlive)
+
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
+			observability.RecordMQTTReceived(observability.TopicTypeResults)
+
 			return svc.updateResultsHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/task_metrics":
+			observability.RecordMQTTReceived(observability.TopicTypeMetrics)
+
 			return svc.handleTaskMetrics(ctx, msg)
 		case svc.baseTopic + "/control/proplet/metrics":
+			observability.RecordMQTTReceived(observability.TopicTypeMetrics)
+
 			return svc.handlePropletMetrics(ctx, msg)
+		default:
+			observability.RecordMQTTReceived(observability.TopicTypeControl)
 		}
 
 		return nil
@@ -1157,8 +1244,13 @@ func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any
 		},
 	}
 	if err := svc.propletRepo.Create(ctx, p); err != nil {
+		observability.RecordError(observability.ErrorTypeProplet)
+
 		return err
 	}
+
+	// Record proplet registration metric
+	observability.RecordPropletRegistered()
 
 	return nil
 }
@@ -1218,6 +1310,19 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 
 	if err := svc.taskRepo.Update(ctx, t); err != nil {
 		return err
+	}
+
+	// Record task completion metrics
+	if t.State == task.Failed {
+		observability.RecordTaskCompleted(observability.TaskStatusFailed)
+	} else {
+		observability.RecordTaskCompleted(observability.TaskStatusSuccess)
+	}
+
+	// Record execution duration if start time is available
+	if !t.StartTime.IsZero() {
+		duration := t.FinishTime.Sub(t.StartTime).Seconds()
+		observability.ObserveWasmExecution(t.Name, duration)
 	}
 
 	if t.JobID == "" {
