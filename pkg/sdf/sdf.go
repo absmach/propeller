@@ -7,7 +7,6 @@ type Document struct {
 	SdfProperty      map[string]PropertyAfford `json:"sdfProperty,omitempty"`
 	SdfAction        map[string]ActionAfford   `json:"sdfAction,omitempty"`
 	SdfEvent         map[string]EventAfford    `json:"sdfEvent,omitempty"`
-	SdfObject        map[string]ObjectAfford   `json:"sdfObject,omitempty"`
 	SdfThing         map[string]ThingAfford    `json:"sdfThing,omitempty"`
 	SdfData          map[string]DataAfford     `json:"sdfData,omitempty"`
 }
@@ -63,12 +62,5 @@ type ThingAfford struct {
 	SdfProperty map[string]PropertyAfford `json:"sdfProperty,omitempty"`
 	SdfAction   map[string]ActionAfford   `json:"sdfAction,omitempty"`
 	SdfEvent    map[string]EventAfford    `json:"sdfEvent,omitempty"`
-	SdfObject   map[string]ObjectAfford   `json:"sdfObject,omitempty"`
 	SdfData     map[string]DataAfford     `json:"sdfData,omitempty"`
-}
-
-func minPtr() *float64 {
-	v := float64(0)
-
-	return &v
 }

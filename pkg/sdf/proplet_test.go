@@ -27,7 +27,7 @@ func TestPropletDocument(t *testing.T) {
 			wantProperties:  []string{"id", "name", "alive", "task_count", "metadata"},
 			wantActions:     []string{"start_task", "stop_task"},
 			wantEvents:      []string{"heartbeat", "task_result"},
-			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "HeartbeatPayload", "TaskResult"},
+			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "TaskStop", "HeartbeatPayload", "TaskResult"},
 		},
 		{
 			desc:            "proplet with empty name",
@@ -36,7 +36,7 @@ func TestPropletDocument(t *testing.T) {
 			wantProperties:  []string{"id", "name", "alive", "task_count", "metadata"},
 			wantActions:     []string{"start_task", "stop_task"},
 			wantEvents:      []string{"heartbeat", "task_result"},
-			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "HeartbeatPayload", "TaskResult"},
+			wantSdfDataKeys: []string{"PropletMetadata", "TaskDispatch", "TaskStop", "HeartbeatPayload", "TaskResult"},
 		},
 	}
 

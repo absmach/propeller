@@ -59,8 +59,7 @@ func PropletDocument(p proplet.Proplet) Document {
 					"stop_task": {
 						Description: "Stop a running task on this proplet",
 						SdfInputData: &DataAfford{
-							Description: "Identifier of the task to stop",
-							Type:        "string",
+							SdfRef: "#/sdfThing/Proplet/sdfData/TaskStop",
 						},
 					},
 				},
@@ -112,6 +111,14 @@ func PropletDocument(p proplet.Proplet) Document {
 							"kbs_resource_path": {Type: "string"},
 						},
 					},
+					"TaskStop": {
+						Description: "Payload used to stop a running task on the proplet",
+						Type:        "object",
+						Required:    []string{"id"},
+						Properties: map[string]DataAfford{
+							"id": {Type: "string", Description: "Identifier of the task to stop"},
+						},
+					},
 					"HeartbeatPayload": {
 						Description: "Payload of a proplet heartbeat event",
 						Type:        "object",
@@ -129,12 +136,21 @@ func PropletDocument(p proplet.Proplet) Document {
 							"task_id":    {Type: "string"},
 							"proplet_id": {Type: "string"},
 							"state":      {Type: "string", Enum: []any{"Completed", "Failed", "Skipped", "Interrupted"}},
-							"results":    {Description: "Arbitrary task output; schema varies by task"},
-							"error":      {Type: "string"},
+							"results": {
+								Type:        "object",
+								Description: "Key-value output produced by the task; keys and value types depend on the wasm module",
+							},
+							"error": {Type: "string"},
 						},
 					},
 				},
 			},
 		},
 	}
+}
+
+func minPtr() *float64 {
+	v := float64(0)
+
+	return &v
 }
