@@ -48,6 +48,7 @@ func (tm *tracing) ListProplets(ctx context.Context, offset, limit uint64, statu
 	))
 	defer span.End()
 
+
 	return tm.svc.ListProplets(ctx, offset, limit, status)
 }
 

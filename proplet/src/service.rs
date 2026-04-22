@@ -2,6 +2,9 @@ use crate::config::PropletConfig;
 use crate::metrics::MetricsCollector;
 use crate::monitoring::{system::SystemMonitor, ProcessMonitor};
 use crate::mqtt::{build_topic, MqttMessage, PubSub};
+use crate::observability::{
+    self, ERROR_CHUNK, ERROR_DECODE, ERROR_RUNTIME, TOPIC_CONTROL, TOPIC_REGISTRY, TOPIC_RESULTS,
+};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
 use anyhow::{Context, Result};
@@ -411,10 +414,13 @@ impl PropletService {
         }
 
         if msg.topic.contains("control/manager/start") {
+            observability::record_mqtt_received(TOPIC_CONTROL);
             self.handle_start_command(msg).await
         } else if msg.topic.contains("control/manager/stop") {
+            observability::record_mqtt_received(TOPIC_CONTROL);
             self.handle_stop_command(msg).await
         } else if msg.topic.contains("registry/server") {
+            observability::record_mqtt_received(TOPIC_REGISTRY);
             self.handle_chunk(msg).await
         } else {
             debug!("Ignoring message from unknown topic: {}", msg.topic);
@@ -425,6 +431,7 @@ impl PropletService {
     async fn handle_start_command(&self, msg: MqttMessage) -> Result<()> {
         let req: StartRequest = msg.decode().map_err(|e| {
             error!("Failed to decode start request: {}", e);
+            observability::record_error(ERROR_DECODE);
             if let Ok(payload_str) = String::from_utf8(msg.payload.clone()) {
                 error!("Payload was: {}", payload_str);
             }
@@ -464,6 +471,7 @@ impl PropletService {
             use std::collections::hash_map::Entry;
             if let Entry::Vacant(e) = tasks.entry(req.id.clone()) {
                 e.insert(TaskState::Running);
+                observability::record_task_started();
             } else {
                 warn!(
                     "Task {} is already running, ignoring duplicate start command",
@@ -762,7 +770,10 @@ impl PropletService {
             // Update config.env with the latest env (including MODEL_DATA and DATASET_DATA)
             config.env = env.clone();
 
+            let execution_start = std::time::Instant::now();
             let result = runtime.start_app(ctx, config).await;
+            let execution_duration = execution_start.elapsed().as_secs_f64();
+            observability::observe_wasm_execution(&task_name, execution_duration);
 
             if let Some(handle) = monitor_handle {
                 let _ = handle.await;
@@ -777,10 +788,13 @@ impl PropletService {
                         "Task {} completed successfully. Result: {}",
                         task_id, result_str
                     );
+                    observability::record_task_completed();
                     (result_str, None)
                 }
                 Err(e) => {
                     error!("Task {} failed: {:#}", task_id, e);
+                    observability::record_task_failed();
+                    observability::record_error(ERROR_RUNTIME);
                     (String::new(), Some(e.to_string()))
                 }
             };
@@ -871,8 +885,10 @@ impl PropletService {
 
                 if let Err(e) = pubsub.publish(&topic, &fl_result, qos).await {
                     error!("Failed to publish FL result for task {}: {}", task_id, e);
+                    observability::record_error(observability::ERROR_MQTT);
                 } else {
                     info!("Successfully published FL update for task {}", task_id);
+                    observability::record_mqtt_published(TOPIC_RESULTS);
                 }
             } else {
                 let result_msg = ResultMessage {
@@ -888,8 +904,10 @@ impl PropletService {
 
                 if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
                     error!("Failed to publish result for task {}: {}", task_id, e);
+                    observability::record_error(observability::ERROR_MQTT);
                 } else {
                     info!("Successfully published result for task {}", task_id);
+                    observability::record_mqtt_published(TOPIC_RESULTS);
                 }
             }
 
@@ -914,7 +932,11 @@ impl PropletService {
     }
 
     async fn handle_chunk(&self, msg: MqttMessage) -> Result<()> {
-        let chunk: Chunk = msg.decode()?;
+        let chunk: Chunk = msg.decode().inspect_err(|_| {
+            observability::record_error(ERROR_DECODE);
+        })?;
+
+        observability::record_chunk_received();
 
         debug!(
             "Received chunk {}/{} for app '{}'",
@@ -934,6 +956,7 @@ impl PropletService {
                 "Chunk total_chunks mismatch for '{}': expected {}, got {}",
                 chunk.app_name, state.total_chunks, chunk.total_chunks
             );
+            observability::record_error(ERROR_CHUNK);
             return Err(anyhow::anyhow!(
                 "Chunk total_chunks mismatch for '{}'",
                 chunk.app_name
@@ -1017,6 +1040,7 @@ impl PropletService {
                     state.total_chunks
                 );
 
+                observability::record_binary_assembled();
                 assembly.remove(app_name);
 
                 return Ok(Some(binary));

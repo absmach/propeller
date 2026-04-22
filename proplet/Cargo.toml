@@ -9,7 +9,11 @@ rumqttc = "0.25.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9.8"
-wasmtime = { version = "42.0.1", features = ["component-model", "async", "wave"] }
+wasmtime = { version = "42.0.1", features = [
+    "component-model",
+    "async",
+    "wave",
+] }
 wasmtime-wasi = "42.0.1"
 wasmtime-wasi-http = "42.0.1"
 hyper = { version = "1.7", features = ["full"] }
@@ -29,18 +33,49 @@ libc = "0.2"
 socket2 = { version = "0.5", features = ["all"] }
 reqwest = { version = "0.12", features = ["json"] }
 
+# Observability - Prometheus metrics
+prometheus = "0.13"
+lazy_static = "1.4"
+
+# Observability - OpenTelemetry (optional feature)
+opentelemetry = { version = "0.21", optional = true }
+opentelemetry_sdk = { version = "0.21", features = [
+    "rt-tokio",
+], optional = true }
+opentelemetry-jaeger = { version = "0.20", features = [
+    "rt-tokio",
+    "reqwest_collector_client",
+], optional = true }
+tracing-opentelemetry = { version = "0.22", optional = true }
+
 # TEE & Encryption Support (default feature)
-attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = ["rust-crypto", "kbs"] }
-image-rs = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = ["encryption-ring", "keywrap-grpc", "oci-client-rustls", "signature-cosign-rustls", "futures"] }
-kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", features = ["background_check", "rust-crypto"], default-features = false }
-oci-client = { version = "0.15", default-features = false, features = ["rustls-tls"] }
+attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = [
+    "rust-crypto",
+    "kbs",
+] }
+image-rs = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = [
+    "encryption-ring",
+    "keywrap-grpc",
+    "oci-client-rustls",
+    "signature-cosign-rustls",
+    "futures",
+] }
+kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", features = [
+    "background_check",
+    "rust-crypto",
+], default-features = false }
+oci-client = { version = "0.15", default-features = false, features = [
+    "rustls-tls",
+] }
 oci-spec = { version = "0.9.0" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
 hex = { version = "0.4" }
 futures-util = { version = "0.3" }
 
 # ELASTIC TEE HAL — hardware abstraction layer for TEE workloads
-elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", default-features = false, features = ["amd-sev"] }
+elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", default-features = false, features = [
+    "amd-sev",
+] }
 wasm-wave = "0.244.0"
 
 [dev-dependencies]
@@ -49,6 +84,12 @@ tokio = { version = "1.42", features = ["full"] }
 
 [features]
 default = []
+otlp = [
+    "opentelemetry",
+    "opentelemetry_sdk",
+    "opentelemetry-jaeger",
+    "tracing-opentelemetry",
+]
 
 [profile.release]
 strip = "symbols"

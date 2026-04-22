@@ -1,0 +1,73 @@
+# Prometheus configuration for Propeller observability
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+  external_labels:
+    monitor: 'propeller'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alertmanager:9093
+
+# Rule files (optional)
+# rule_files:
+#   - "first_rules.yml"
+#   - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    metrics_path: '/metrics'
+
+  # Propeller Manager service
+  - job_name: 'propeller-manager'
+    static_configs:
+      - targets: ['manager:7070']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'manager'
+
+  # Propeller Proxy service
+  - job_name: 'propeller-proxy'
+    static_configs:
+      - targets: ['proxy:7071']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'proxy'
+
+  # OTEL Collector Prometheus exporter (for OTLP metrics)
+  - job_name: 'propeller-otlp-metrics'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    metrics_path: '/metrics'
+
+  # Jaeger metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+
+  # Proplet (Rust) metrics - for local development
+  # In production, proplets register dynamically via service discovery
+  - job_name: 'proplet'
+    static_configs:
+      - targets: ['proplet:7072']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'proplet'

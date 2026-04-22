@@ -1300,6 +1300,7 @@ func (_mock *MockService) ListProplets(ctx context.Context, offset uint64, limit
 	} else {
 		r1 = ret.Error(1)
 	}
+
 	return r0, r1
 }
 

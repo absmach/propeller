@@ -45,6 +45,7 @@ func (mm *metricsMiddleware) GetPropletSDF(ctx context.Context, id string) (sdf.
 	return mm.svc.GetPropletSDF(ctx, id)
 }
 
+
 func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "list-proplets").Add(1)

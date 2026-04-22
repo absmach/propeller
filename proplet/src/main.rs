@@ -4,6 +4,7 @@ mod hal_linker;
 mod metrics;
 mod monitoring;
 mod mqtt;
+mod observability;
 mod runtime;
 mod service;
 mod task_handler;
@@ -18,10 +19,75 @@ use crate::runtime::wasmtime_runtime::WasmtimeRuntime;
 use crate::runtime::Runtime;
 use crate::service::PropletService;
 use anyhow::Result;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{body::Incoming, Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
+use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, Level};
+use tracing::{debug, error, info, Level};
 use tracing_subscriber::FmtSubscriber;
+
+/// HTTP handler for metrics and health endpoints
+async fn metrics_handler(req: Request<Incoming>) -> Result<Response<String>, Infallible> {
+    match (req.method(), req.uri().path()) {
+        (&Method::GET, "/metrics") => {
+            let metrics = observability::encode_metrics().unwrap_or_default();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "text/plain; charset=utf-8")
+                .body(metrics)
+                .unwrap())
+        }
+        (&Method::GET, "/health") => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body("OK".to_string())
+            .unwrap()),
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body("Not Found".to_string())
+            .unwrap()),
+    }
+}
+
+/// Start the metrics HTTP server
+async fn start_metrics_server(port: u16) {
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+
+    let listener = match TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Failed to bind metrics server to {}: {}", addr, e);
+            return;
+        }
+    };
+
+    info!("Metrics server listening on http://{}/metrics", addr);
+
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                error!("Failed to accept connection: {}", e);
+                continue;
+            }
+        };
+
+        let io = TokioIo::new(stream);
+
+        tokio::spawn(async move {
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service_fn(metrics_handler))
+                .await
+            {
+                debug!("Error serving connection: {}", e);
+            }
+        });
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,15 +103,27 @@ async fn main() -> Result<()> {
         _ => Level::INFO,
     };
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(log_level)
-        .with_target(false)
-        .with_thread_ids(false)
-        .with_file(false)
-        .with_line_number(false)
-        .finish();
+    if config.jaeger_enabled {
+        let tracing_config = observability::tracing::TracingConfig {
+            jaeger_endpoint: config.jaeger_endpoint.clone(),
+            service_name: "proplet".to_string(),
+        };
+        // Ensure RUST_LOG matches configured log level for EnvFilter in init_tracing
+        if std::env::var("RUST_LOG").is_err() {
+            std::env::set_var("RUST_LOG", &config.log_level);
+        }
+        observability::tracing::init_tracing(tracing_config)?;
+    } else {
+        let subscriber = FmtSubscriber::builder()
+            .with_max_level(log_level)
+            .with_target(false)
+            .with_thread_ids(false)
+            .with_file(false)
+            .with_line_number(false)
+            .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
+        tracing::subscriber::set_global_default(subscriber)?;
+    }
 
     debug!("Proplet configuration: {:?}", config);
 
@@ -109,6 +187,12 @@ async fn main() -> Result<()> {
     } else {
         Arc::new(PropletService::new(config.clone(), pubsub, runtime))
     };
+
+    // Start metrics HTTP server
+    let metrics_port = config.metrics_port;
+    tokio::spawn(async move {
+        start_metrics_server(metrics_port).await;
+    });
 
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()

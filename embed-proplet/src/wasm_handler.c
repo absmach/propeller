@@ -167,6 +167,8 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
   if (!module_inst)
   {
     LOG_ERR("Failed to instantiate WASM module: %s", error_buf);
+    /* Record potential OOM error (most common instantiation failure) */
+    task_monitor_wasm_oom();
     if (monitoring_started)
     {
       task_monitor_stop(task_id);
@@ -256,8 +258,7 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
       wasm_runtime_create_exec_env(module_inst, 16 * 1024);
   if (!exec_env)
   {
-
-    
+    task_monitor_wasm_error();
     LOG_ERR("Failed to create execution environment for WASM module.");
     if (monitoring_started)
     {
@@ -275,6 +276,9 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     return;
   }
 
+  /* Start WASM execution timing */
+  uint64_t wasm_start = task_monitor_wasm_start();
+
   if (!wasm_runtime_call_wasm_a(exec_env, func, result_count, results, n_args,
                                 args))
   {
@@ -283,13 +287,18 @@ void execute_wasm_module(const char *task_id, const uint8_t *wasm_data,
     snprintf(error_msg, sizeof(error_msg), "WASM execution failed: %s",
              exception ? exception : "Unknown error");
     LOG_ERR("Error invoking WASM function: %s", error_msg);
-    
+
+    /* Record WASM execution error */
+    task_monitor_wasm_error();
+
     extern const char *channel_id;
     extern const char *domain_id;
     publish_results_with_error(domain_id, channel_id, task_id, NULL, error_msg);
   }
   else
   {
+    /* Record successful WASM execution with timing */
+    task_monitor_wasm_end(wasm_start);
     char results_string[MAX_RESULTS * 16] = {0};
 
     for (uint32_t i = 0; i < result_count; i++)

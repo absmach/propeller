@@ -33,6 +33,10 @@ static monitored_task_t g_monitored_tasks[MAX_MONITORED_TASKS];
 static bool g_initialized = false;
 static K_MUTEX_DEFINE(g_task_monitor_mutex);
 
+/* Global WASM execution metrics */
+static wasm_metrics_t g_wasm_metrics = {0};
+static K_MUTEX_DEFINE(g_wasm_metrics_mutex);
+
 static int find_task_slot(const char *task_id);
 static int find_free_slot(void);
 static void collect_current_metrics(process_metrics_t *metrics,
@@ -368,4 +372,74 @@ static void collect_current_metrics(process_metrics_t *metrics,
 #else
   metrics->thread_count = 1;
 #endif
+}
+
+/* WASM execution metrics functions */
+
+uint64_t task_monitor_wasm_start(void)
+{
+  return (uint64_t)k_uptime_ticks();
+}
+
+void task_monitor_wasm_end(uint64_t start_ticks)
+{
+  uint64_t end_ticks = (uint64_t)k_uptime_ticks();
+  uint32_t elapsed_us = (uint32_t)k_ticks_to_us_floor64(end_ticks - start_ticks);
+
+  k_mutex_lock(&g_wasm_metrics_mutex, K_FOREVER);
+
+  g_wasm_metrics.execution_count++;
+  g_wasm_metrics.total_execution_us += elapsed_us;
+  g_wasm_metrics.last_execution_us = elapsed_us;
+
+  if (elapsed_us > g_wasm_metrics.max_execution_us) {
+    g_wasm_metrics.max_execution_us = elapsed_us;
+  }
+
+  k_mutex_unlock(&g_wasm_metrics_mutex);
+
+  LOG_DBG("WASM execution completed in %u us (total: %u executions)",
+          elapsed_us, g_wasm_metrics.execution_count);
+}
+
+void task_monitor_wasm_error(void)
+{
+  k_mutex_lock(&g_wasm_metrics_mutex, K_FOREVER);
+  g_wasm_metrics.error_count++;
+  k_mutex_unlock(&g_wasm_metrics_mutex);
+
+  LOG_WRN("WASM execution error recorded (total errors: %u)",
+          g_wasm_metrics.error_count);
+}
+
+void task_monitor_wasm_oom(void)
+{
+  k_mutex_lock(&g_wasm_metrics_mutex, K_FOREVER);
+  g_wasm_metrics.oom_count++;
+  g_wasm_metrics.error_count++;
+  k_mutex_unlock(&g_wasm_metrics_mutex);
+
+  LOG_ERR("WASM OOM error recorded (total OOM: %u)", g_wasm_metrics.oom_count);
+}
+
+int task_monitor_get_wasm_metrics(wasm_metrics_t *metrics)
+{
+  if (metrics == NULL) {
+    return -EINVAL;
+  }
+
+  k_mutex_lock(&g_wasm_metrics_mutex, K_FOREVER);
+  memcpy(metrics, &g_wasm_metrics, sizeof(wasm_metrics_t));
+  k_mutex_unlock(&g_wasm_metrics_mutex);
+
+  return 0;
+}
+
+void task_monitor_reset_wasm_metrics(void)
+{
+  k_mutex_lock(&g_wasm_metrics_mutex, K_FOREVER);
+  memset(&g_wasm_metrics, 0, sizeof(g_wasm_metrics));
+  k_mutex_unlock(&g_wasm_metrics_mutex);
+
+  LOG_INF("WASM metrics reset");
 }

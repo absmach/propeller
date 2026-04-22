@@ -63,6 +63,7 @@ func (lm *loggingMiddleware) GetPropletSDF(ctx context.Context, id string) (resp
 	return lm.svc.GetPropletSDF(ctx, id)
 }
 
+
 func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uint64, status string) (resp proplet.PropletPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{

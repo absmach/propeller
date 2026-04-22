@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	pkgmqtt "github.com/absmach/propeller/pkg/mqtt"
+	"github.com/absmach/propeller/pkg/observability"
 	"github.com/absmach/propeller/pkg/proplet"
 )
 
@@ -77,11 +79,18 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 			s.mu.Unlock()
 
 			go func(name string) {
+				startTime := time.Now()
+				observability.RecordContainerFetch()
+				observability.RecordActiveFetchStart()
+
 				defer func() {
 					s.mu.Lock()
 					delete(s.fetching, name)
 					s.activeFetches--
 					s.mu.Unlock()
+
+					observability.RecordActiveFetchEnd()
+					observability.ObserveFetchDuration(time.Since(startTime).Seconds())
 				}()
 
 				s.logger.Info("fetching container from registry",
@@ -92,6 +101,7 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 					s.logger.Error("failed to fetch container",
 						slog.String("container", name),
 						slog.Any("error", err))
+					observability.RecordContainerFetchError()
 
 					return
 				}
@@ -99,6 +109,13 @@ func (s *ProxyService) StreamHTTP(ctx context.Context) error {
 				s.logger.Info("successfully fetched container, sending chunks",
 					slog.String("container", name),
 					slog.Int("total_chunks", len(chunks)))
+
+				// Calculate total bytes for metrics
+				var totalBytes int
+				for _, chunk := range chunks {
+					totalBytes += len(chunk.Data)
+				}
+				observability.RecordBytesTransferred(float64(totalBytes))
 
 				for _, chunk := range chunks {
 					select {
@@ -132,6 +149,9 @@ func (s *ProxyService) StreamMQTT(ctx context.Context) error {
 
 				continue
 			}
+
+			// Record chunk sent metric
+			observability.RecordChunkSent()
 
 			containerChunks[chunk.AppName]++
 

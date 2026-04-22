@@ -12,6 +12,18 @@ extern "C" {
 #define MAX_TASK_ID_LEN 64
 
 /**
+ * @brief WASM-specific execution metrics.
+ */
+typedef struct {
+    uint32_t execution_count;       /**< Number of WASM executions completed */
+    uint64_t total_execution_us;    /**< Total WASM execution time in microseconds */
+    uint32_t error_count;           /**< Number of WASM execution errors */
+    uint32_t oom_count;             /**< Number of out-of-memory errors */
+    uint32_t last_execution_us;     /**< Duration of last WASM execution in microseconds */
+    uint32_t max_execution_us;      /**< Maximum WASM execution time in microseconds */
+} wasm_metrics_t;
+
+/**
  * @brief Process-level metrics for a single sample.
  */
 typedef struct {
@@ -127,6 +139,45 @@ int task_monitor_get_active_count(void);
  * @return 0 on success, -EINVAL if index is out of bounds or task_id_out is NULL.
  */
 int task_monitor_get_active_task_id_at(int index, char *task_id_out);
+
+/**
+ * @brief Record a WASM execution start.
+ *
+ * Call this just before starting WASM execution to begin timing.
+ *
+ * @return Start timestamp in microseconds (for use with record_wasm_execution_end).
+ */
+uint64_t task_monitor_wasm_start(void);
+
+/**
+ * @brief Record a successful WASM execution completion.
+ *
+ * @param start_us Start timestamp from task_monitor_wasm_start().
+ */
+void task_monitor_wasm_end(uint64_t start_us);
+
+/**
+ * @brief Record a WASM execution error.
+ */
+void task_monitor_wasm_error(void);
+
+/**
+ * @brief Record an out-of-memory error during WASM execution.
+ */
+void task_monitor_wasm_oom(void);
+
+/**
+ * @brief Get global WASM execution metrics.
+ *
+ * @param metrics Pointer to wasm_metrics_t to populate.
+ * @return 0 on success, negative errno on failure.
+ */
+int task_monitor_get_wasm_metrics(wasm_metrics_t *metrics);
+
+/**
+ * @brief Reset WASM execution metrics.
+ */
+void task_monitor_reset_wasm_metrics(void);
 
 #ifdef __cplusplus
 }

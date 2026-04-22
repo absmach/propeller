@@ -1,0 +1,138 @@
+# OpenTelemetry Collector Configuration for Propeller
+# This configuration receives telemetry data from Propeller services and exports
+# it to various backends for visualization and alerting.
+#
+# Usage:
+#   docker run --rm -p 4317:4317 -p 4318:4318 -p 8889:8889 \
+#     -v $(pwd)/deploy/otel-collector-config.yaml:/etc/otelcol/config.yaml \
+#     otel/opentelemetry-collector-contrib:latest
+
+receivers:
+  # OTLP receiver for traces, metrics, and logs from Propeller services
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Prometheus receiver to scrape metrics from services
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'propeller-manager'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['manager:7070']
+          metrics_path: '/metrics'
+
+        - job_name: 'propeller-proxy'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['proxy:7071']
+          metrics_path: '/metrics'
+
+processors:
+  # Batch processor for efficient export
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Resource processor to add common attributes
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${PROPELLER_ENV:-development}
+        action: upsert
+      - key: service.namespace
+        value: propeller
+        action: upsert
+
+  # Attributes processor for filtering sensitive data
+  attributes:
+    actions:
+      - key: client_key
+        action: delete
+      - key: password
+        action: delete
+      - key: token
+        action: delete
+
+exporters:
+  # Debug exporter for local development
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # Prometheus exporter for metrics (scraped by Prometheus/Grafana)
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: propeller
+    const_labels:
+      collector: otel
+
+  # OTLP exporter for traces (to Jaeger, Tempo, etc.)
+  otlp/traces:
+    endpoint: ${JAEGER_ENDPOINT:-jaeger:4317}
+    tls:
+      insecure: true
+
+  # Loki exporter for logs (optional)
+  # Uncomment if using Grafana Loki
+  # loki:
+  #   endpoint: ${LOKI_ENDPOINT:-http://loki:3100/loki/api/v1/push}
+  #   labels:
+  #     attributes:
+  #       service.name: "service_name"
+  #       service.namespace: "namespace"
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Performance profiler (pprof)
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  # zPages for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, attributes]
+      exporters: [otlp/traces, debug]
+
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, debug]
+
+    # Logs pipeline
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, attributes]
+      exporters: [debug]
+      # Uncomment to enable Loki export:
+      # exporters: [loki, debug]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888
