@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use image_rs::layer_store::LayerStore;
 use image_rs::meta_store::MetaStore;
 use image_rs::pull::PullClient;
-use oci_client::client::ClientConfig;
-use oci_client::secrets::RegistryAuth;
-use oci_client::Reference;
+use oci_client_old::client::ClientConfig as OldClientConfig;
+use oci_client_old::secrets::RegistryAuth as OldRegistryAuth;
+use oci_client_old::Reference as OldReference;
 use oci_spec::image::ImageConfiguration;
 use std::path::PathBuf;
 use std::process::Command;
@@ -87,18 +87,18 @@ impl TeeWasmRuntime {
     }
 
     async fn pull_and_decrypt_wasm(&self, oci_reference: &str) -> Result<PathBuf> {
-        let image_ref = Reference::try_from(oci_reference.to_string())
+        let image_ref = OldReference::try_from(oci_reference.to_string())
             .context("Failed to parse image reference")?;
 
         let layer_store = LayerStore::new(PathBuf::from(&self.config.layer_store_path))
             .context("Failed to create layer store")?;
 
-        let client_config = ClientConfig::default();
+        let client_config = OldClientConfig::default();
 
         let mut pull_client = PullClient::new(
             image_ref.clone(),
             layer_store,
-            &RegistryAuth::Anonymous,
+            &OldRegistryAuth::Anonymous,
             self.config.pull_concurrent_limit,
             client_config,
         )?;
