@@ -65,11 +65,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	err = r.db.updateTxn(func(txn *badgerdb.Txn) error {
 		item, err := txn.Get(key)
 		if err != nil {
-			if err := txn.Set(key, val); err != nil {
-				return err
-			}
-
-			return r.indexTaskTxn(txn, t)
+			return ErrTaskNotFound
 		}
 
 		oldVal, err := item.ValueCopy(nil)

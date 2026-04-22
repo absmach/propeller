@@ -184,7 +184,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 		return fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
-	_, err = r.db.ExecContext(ctx, query,
+	res, err := r.db.ExecContext(ctx, query,
 		t.ID, t.Name, uint8(t.State),
 		nullString(t.ImageURL),
 		t.File,
@@ -209,6 +209,13 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUpdate, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUpdate, err)
+	}
+	if n < 1 {
+		return fmt.Errorf("%w: task not found", ErrUpdate)
 	}
 
 	return nil
