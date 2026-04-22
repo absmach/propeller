@@ -116,6 +116,13 @@ type SDK interface {
 	//  fmt.Println(page)
 	GetPropletAliveHistory(id string, offset, limit uint64) (proplet.PropletAliveHistoryPage, error)
 
+	// ListProplets returns a paginated list of proplets, optionally filtered by status.
+	//
+	// example:
+	//  page, _ := sdk.ListProplets(0, 10, "")
+	//  fmt.Println(page)
+	ListProplets(offset, limit uint64, status string) (PropletPage, error)
+
 	// GetPropletSDF returns the SDF description of a proplet.
 	//
 	// example:

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -30,9 +29,9 @@ type PropletPage struct {
 }
 
 func (sdk *propSDK) GetPropletAliveHistory(id string, offset, limit uint64) (proplet.PropletAliveHistoryPage, error) {
-	reqURL := fmt.Sprintf("%s%s/%s/alive-history?offset=%d&limit=%d", sdk.managerURL, propletsEndpoint, id, offset, limit)
+	url := fmt.Sprintf("%s%s/%s/alive-history?offset=%d&limit=%d", sdk.managerURL, propletsEndpoint, id, offset, limit)
 
-	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
 	if err != nil {
 		return proplet.PropletAliveHistoryPage{}, err
 	}
@@ -46,9 +45,9 @@ func (sdk *propSDK) GetPropletAliveHistory(id string, offset, limit uint64) (pro
 }
 
 func (sdk *propSDK) GetPropletSDF(id string) (sdf.Document, error) {
-	reqURL := sdk.managerURL + propletsEndpoint + "/" + id + "/sdf"
+	url := sdk.managerURL + propletsEndpoint + "/" + id + "/sdf"
 
-	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
 	if err != nil {
 		return sdf.Document{}, err
 	}
@@ -70,15 +69,15 @@ func (sdk *propSDK) ListProplets(offset, limit uint64, status string) (PropletPa
 		params = append(params, fmt.Sprintf("limit=%d", limit))
 	}
 	if status != "" {
-		params = append(params, "status="+url.QueryEscape(status))
+		params = append(params, "status="+status)
 	}
 	query := ""
 	if len(params) > 0 {
 		query = "?" + strings.Join(params, "&")
 	}
-	reqURL := sdk.managerURL + propletsEndpoint + query
+	url := sdk.managerURL + propletsEndpoint + query
 
-	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
 	if err != nil {
 		return PropletPage{}, err
 	}
@@ -92,9 +91,9 @@ func (sdk *propSDK) ListProplets(offset, limit uint64, status string) (PropletPa
 }
 
 func (sdk *propSDK) DeleteProplet(id string) error {
-	reqURL := sdk.managerURL + propletsEndpoint + "/" + id
+	url := sdk.managerURL + propletsEndpoint + "/" + id
 
-	if _, err := sdk.processRequest(http.MethodDelete, reqURL, nil, http.StatusNoContent); err != nil {
+	if _, err := sdk.processRequest(http.MethodDelete, url, nil, http.StatusNoContent); err != nil {
 		return err
 	}
 

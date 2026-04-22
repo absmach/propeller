@@ -706,6 +706,7 @@ func (_c *MockService_GetProplet_Call) RunAndReturn(run func(ctx context.Context
 	return _c
 }
 
+// GetPropletSDF provides a mock function for the type MockService
 func (_mock *MockService) GetPropletSDF(ctx context.Context, propletID string) (sdf.Document, error) {
 	ret := _mock.Called(ctx, propletID)
 
