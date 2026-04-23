@@ -64,10 +64,44 @@ type TaskEvent struct {
 	Error   string   `json:"error,omitempty"`
 }
 
+type PropletInfo struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Tags             []string `json:"tags,omitempty"`
+	TotalMemoryBytes uint64   `json:"total_memory_bytes,omitempty"`
+	Location         string   `json:"location,omitempty"`
+}
+
+type PropletSelectRequest struct {
+	Context AuthContext `json:"context"`
+	Task    TaskInfo    `json:"task"`
+}
+
+type PropletSelectResponse struct {
+	Allow            bool     `json:"allow"`
+	Reason           string   `json:"reason,omitempty"`
+	RequiredTags     []string `json:"required_tags,omitempty"`
+	MinMemoryBytes   *uint64  `json:"min_memory_bytes,omitempty"`
+}
+
+type DispatchRequest struct {
+	Context AuthContext `json:"context"`
+	Task    TaskInfo    `json:"task"`
+	Proplet PropletInfo `json:"proplet"`
+}
+
+type DispatchResponse struct {
+	Allow    bool              `json:"allow"`
+	Reason   string            `json:"reason,omitempty"`
+	ExtraEnv map[string]string `json:"extra_env,omitempty"`
+}
+
 type Plugin interface {
 	Name() string
 	Authorize(ctx context.Context, req AuthorizeRequest) (AuthorizeResponse, error)
 	Enrich(ctx context.Context, req EnrichRequest) (EnrichResponse, error)
+	OnBeforePropletSelect(ctx context.Context, req PropletSelectRequest) (PropletSelectResponse, error)
+	OnBeforeDispatch(ctx context.Context, req DispatchRequest) (DispatchResponse, error)
 	OnTaskStart(ctx context.Context, evt TaskEvent) error
 	OnTaskComplete(ctx context.Context, evt TaskEvent) error
 	Close(ctx context.Context) error

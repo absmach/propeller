@@ -14,25 +14,29 @@ import (
 )
 
 const (
-	exportAlloc      = "plugin_alloc"
-	exportFree       = "plugin_free"
-	exportAuthorize  = "authorize"
-	exportEnrich     = "enrich_task"
-	exportOnStart    = "on_task_start"
-	exportOnComplete = "on_task_complete"
+	exportAlloc             = "plugin_alloc"
+	exportFree              = "plugin_free"
+	exportAuthorize         = "authorize"
+	exportEnrich            = "enrich_task"
+	exportOnBeforeSelect    = "on_before_proplet_select"
+	exportOnBeforeDispatch  = "on_before_dispatch"
+	exportOnStart           = "on_task_start"
+	exportOnComplete        = "on_task_complete"
 )
 
 type wasmPlugin struct {
-	name    string
-	runtime wazero.Runtime
-	module  api.Module
-	alloc   api.Function
-	free    api.Function
-	auth    api.Function
-	enrich  api.Function
-	onStart api.Function
-	onDone  api.Function
-	mu      sync.Mutex
+	name           string
+	runtime        wazero.Runtime
+	module         api.Module
+	alloc          api.Function
+	free           api.Function
+	auth           api.Function
+	enrich         api.Function
+	beforeSelect   api.Function
+	beforeDispatch api.Function
+	onStart        api.Function
+	onDone         api.Function
+	mu             sync.Mutex
 }
 
 func LoadWasm(ctx context.Context, name, path string) (Plugin, error) {
@@ -61,15 +65,17 @@ func LoadWasm(ctx context.Context, name, path string) (Plugin, error) {
 	}
 
 	p := &wasmPlugin{
-		name:    name,
-		runtime: rt,
-		module:  mod,
-		alloc:   mod.ExportedFunction(exportAlloc),
-		free:    mod.ExportedFunction(exportFree),
-		auth:    mod.ExportedFunction(exportAuthorize),
-		enrich:  mod.ExportedFunction(exportEnrich),
-		onStart: mod.ExportedFunction(exportOnStart),
-		onDone:  mod.ExportedFunction(exportOnComplete),
+		name:           name,
+		runtime:        rt,
+		module:         mod,
+		alloc:          mod.ExportedFunction(exportAlloc),
+		free:           mod.ExportedFunction(exportFree),
+		auth:           mod.ExportedFunction(exportAuthorize),
+		enrich:         mod.ExportedFunction(exportEnrich),
+		beforeSelect:   mod.ExportedFunction(exportOnBeforeSelect),
+		beforeDispatch: mod.ExportedFunction(exportOnBeforeDispatch),
+		onStart:        mod.ExportedFunction(exportOnStart),
+		onDone:         mod.ExportedFunction(exportOnComplete),
 	}
 
 	if p.alloc == nil || p.free == nil {
@@ -108,6 +114,32 @@ func (p *wasmPlugin) Enrich(ctx context.Context, req EnrichRequest) (EnrichRespo
 	var resp EnrichResponse
 	if err := p.invoke(ctx, p.enrich, req, &resp); err != nil {
 		return EnrichResponse{}, err
+	}
+
+	return resp, nil
+}
+
+func (p *wasmPlugin) OnBeforePropletSelect(ctx context.Context, req PropletSelectRequest) (PropletSelectResponse, error) {
+	if p.beforeSelect == nil {
+		return PropletSelectResponse{Allow: true}, nil
+	}
+
+	var resp PropletSelectResponse
+	if err := p.invoke(ctx, p.beforeSelect, req, &resp); err != nil {
+		return PropletSelectResponse{}, err
+	}
+
+	return resp, nil
+}
+
+func (p *wasmPlugin) OnBeforeDispatch(ctx context.Context, req DispatchRequest) (DispatchResponse, error) {
+	if p.beforeDispatch == nil {
+		return DispatchResponse{Allow: true}, nil
+	}
+
+	var resp DispatchResponse
+	if err := p.invoke(ctx, p.beforeDispatch, req, &resp); err != nil {
+		return DispatchResponse{}, err
 	}
 
 	return resp, nil

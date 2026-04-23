@@ -145,14 +145,6 @@ func main() {
 		}()
 	}
 
-	svc, cronScheduler := manager.NewService(
-		repos,
-		scheduler.NewRoundRobin(),
-		mqttPubSub,
-		cfg.DomainID,
-		cfg.ChannelID,
-		logger,
-	)
 	pluginRegistry, err := plugin.LoadDirectory(ctx, cfg.PluginDir, logger)
 	if err != nil {
 		logger.Error("failed to load plugins", slog.String("error", err.Error()))
@@ -166,6 +158,15 @@ func main() {
 		}
 	}()
 
+	svc, cronScheduler := manager.NewService(
+		repos,
+		scheduler.NewRoundRobin(),
+		mqttPubSub,
+		cfg.DomainID,
+		cfg.ChannelID,
+		logger,
+		pluginRegistry,
+	)
 	svc = middleware.Plugin(pluginRegistry, logger, svc)
 	svc = middleware.Logging(logger, svc)
 	svc = middleware.Tracing(tracer, svc)
