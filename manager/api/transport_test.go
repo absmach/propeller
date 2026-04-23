@@ -59,11 +59,18 @@ func TestGetPropletSDF(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			desc:       "get SDF with invalid proplet ID returns 500",
+			desc:       "get SDF for non-existent proplet ID returns 404",
 			propletID:  "not-a-valid-uuid",
 			svcDoc:     sdf.Document{},
 			svcErr:     pkgerrors.ErrNotFound,
 			wantStatus: http.StatusNotFound,
+		},
+		{
+			desc:       "get SDF with empty proplet ID returns 400",
+			propletID:  "",
+			svcDoc:     sdf.Document{},
+			svcErr:     nil,
+			wantStatus: http.StatusBadRequest,
 		},
 	}
 

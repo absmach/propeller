@@ -2,11 +2,13 @@ package sdf
 
 import "github.com/absmach/propeller/pkg/proplet"
 
+const schemaVersion = "1.0"
+
 func PropletDocument(p proplet.Proplet) Document {
 	return Document{
 		Info: Info{
 			Title:   "Propeller Proplet: " + p.Name + " (" + p.ID + ")",
-			Version: "1.0",
+			Version: schemaVersion,
 			License: "Apache-2.0",
 		},
 		SdfThing: map[string]ThingAfford{

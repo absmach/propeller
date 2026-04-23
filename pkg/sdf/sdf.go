@@ -49,14 +49,6 @@ type EventAfford struct {
 	SdfOutputData *DataAfford `json:"sdfOutputData,omitempty"`
 }
 
-type ObjectAfford struct {
-	Description string                    `json:"description,omitempty"`
-	SdfProperty map[string]PropertyAfford `json:"sdfProperty,omitempty"`
-	SdfAction   map[string]ActionAfford   `json:"sdfAction,omitempty"`
-	SdfEvent    map[string]EventAfford    `json:"sdfEvent,omitempty"`
-	SdfData     map[string]DataAfford     `json:"sdfData,omitempty"`
-}
-
 type ThingAfford struct {
 	Description string                    `json:"description,omitempty"`
 	SdfProperty map[string]PropertyAfford `json:"sdfProperty,omitempty"`
@@ -64,3 +56,5 @@ type ThingAfford struct {
 	SdfEvent    map[string]EventAfford    `json:"sdfEvent,omitempty"`
 	SdfData     map[string]DataAfford     `json:"sdfData,omitempty"`
 }
+
+type ObjectAfford = ThingAfford
