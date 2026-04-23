@@ -26,11 +26,7 @@ impl PluginRegistry {
         let mut plugins = Vec::new();
         let mut entries: Vec<_> = std::fs::read_dir(path)?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map_or(false, |ext| ext == "wasm")
-            })
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "wasm"))
             .collect();
         entries.sort_by_key(|e| e.file_name());
 
@@ -51,7 +47,11 @@ impl PluginRegistry {
                     }
                 },
                 Err(e) => {
-                    warn!("Skipping plugin {} (read error): {}", wasm_path.display(), e);
+                    warn!(
+                        "Skipping plugin {} (read error): {}",
+                        wasm_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -60,7 +60,10 @@ impl PluginRegistry {
             info!("No proplet plugins found in '{}'", dir);
         }
 
-        Ok(Self { _engine: engine, plugins })
+        Ok(Self {
+            _engine: engine,
+            plugins,
+        })
     }
 
     pub fn is_empty(&self) -> bool {

@@ -3,9 +3,9 @@ pub mod registry;
 use anyhow::Result;
 use std::sync::Mutex;
 use tracing::warn;
+use wasmtime::component::ResourceTable;
 use wasmtime::component::{Component, Linker};
 use wasmtime::{Engine, Store};
-use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 wasmtime::component::bindgen!({
