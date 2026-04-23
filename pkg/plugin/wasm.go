@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	exportAlloc             = "plugin_alloc"
-	exportFree              = "plugin_free"
-	exportAuthorize         = "authorize"
-	exportEnrich            = "enrich_task"
-	exportOnBeforeSelect    = "on_before_proplet_select"
-	exportOnBeforeDispatch  = "on_before_dispatch"
-	exportOnStart           = "on_task_start"
-	exportOnComplete        = "on_task_complete"
+	exportAlloc            = "plugin_alloc"
+	exportFree             = "plugin_free"
+	exportAuthorize        = "authorize"
+	exportEnrich           = "enrich_task"
+	exportOnBeforeSelect   = "on_before_proplet_select"
+	exportOnBeforeDispatch = "on_before_dispatch"
+	exportOnStart          = "on_task_start"
+	exportOnComplete       = "on_task_complete"
 )
 
 type wasmPlugin struct {

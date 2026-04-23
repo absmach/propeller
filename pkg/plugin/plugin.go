@@ -78,10 +78,10 @@ type PropletSelectRequest struct {
 }
 
 type PropletSelectResponse struct {
-	Allow            bool     `json:"allow"`
-	Reason           string   `json:"reason,omitempty"`
-	RequiredTags     []string `json:"required_tags,omitempty"`
-	MinMemoryBytes   *uint64  `json:"min_memory_bytes,omitempty"`
+	Allow          bool     `json:"allow"`
+	Reason         string   `json:"reason,omitempty"`
+	RequiredTags   []string `json:"required_tags,omitempty"`
+	MinMemoryBytes *uint64  `json:"min_memory_bytes,omitempty"`
 }
 
 type DispatchRequest struct {

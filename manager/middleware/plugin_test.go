@@ -24,22 +24,30 @@ func (m *mockPlugin) Name() string { return "mock-plugin" }
 
 func (m *mockPlugin) Authorize(ctx context.Context, req plugin.AuthorizeRequest) (plugin.AuthorizeResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(plugin.AuthorizeResponse), args.Error(1)
+	resp, _ := args.Get(0).(plugin.AuthorizeResponse)
+
+	return resp, args.Error(1)
 }
 
 func (m *mockPlugin) Enrich(ctx context.Context, req plugin.EnrichRequest) (plugin.EnrichResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(plugin.EnrichResponse), args.Error(1)
+	resp, _ := args.Get(0).(plugin.EnrichResponse)
+
+	return resp, args.Error(1)
 }
 
 func (m *mockPlugin) OnBeforePropletSelect(ctx context.Context, req plugin.PropletSelectRequest) (plugin.PropletSelectResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(plugin.PropletSelectResponse), args.Error(1)
+	resp, _ := args.Get(0).(plugin.PropletSelectResponse)
+
+	return resp, args.Error(1)
 }
 
 func (m *mockPlugin) OnBeforeDispatch(ctx context.Context, req plugin.DispatchRequest) (plugin.DispatchResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(plugin.DispatchResponse), args.Error(1)
+	resp, _ := args.Get(0).(plugin.DispatchResponse)
+
+	return resp, args.Error(1)
 }
 
 func (m *mockPlugin) OnTaskStart(ctx context.Context, evt plugin.TaskEvent) error {
@@ -66,6 +74,7 @@ func newPluginMiddleware(t *testing.T, pl plugin.Plugin) (*managermocks.MockServ
 	t.Helper()
 	svc := managermocks.NewMockService(t)
 	reg := &mockRegistry{plugins: []plugin.Plugin{pl}}
+
 	return svc, middleware.Plugin(reg, slog.Default(), svc)
 }
 
@@ -173,6 +182,7 @@ func TestPluginMiddleware_CreateTask_Enrich(t *testing.T) {
 						return false
 					}
 				}
+
 				return true
 			})).Return(task.Task{}, nil)
 
