@@ -51,6 +51,7 @@ pub struct PropletConfig {
     pub tags: Vec<String>,
     pub location: Option<String>,
     pub collect_system_info: bool,
+    pub plugin_dir: Option<String>,
 }
 
 impl Default for PropletConfig {
@@ -86,6 +87,7 @@ impl Default for PropletConfig {
             tags: Vec::new(),
             location: None,
             collect_system_info: true,
+            plugin_dir: None,
         }
     }
 }
@@ -348,6 +350,12 @@ impl PropletConfig {
 
         if let Ok(val) = env::var("PROPLET_COLLECT_SYSTEM_INFO") {
             config.collect_system_info = val.to_lowercase() != "false" && val != "0";
+        }
+
+        if let Ok(val) = env::var("PROPLET_PLUGIN_DIR") {
+            if !val.is_empty() {
+                config.plugin_dir = Some(val);
+            }
         }
 
         config
