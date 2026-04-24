@@ -15,8 +15,6 @@ import (
 	"github.com/absmach/propeller/manager/middleware"
 	"github.com/absmach/propeller/pkg/api"
 	"github.com/absmach/propeller/pkg/plugin"
-	"github.com/absmach/supermq"
-	apiutil "github.com/absmach/supermq/api/http/util"
 	"github.com/go-chi/chi/v5"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
