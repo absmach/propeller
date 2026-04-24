@@ -221,6 +221,19 @@ void publish_active_task_metrics(const char *domain_id,
                                  const char *proplet_id);
 
 /**
+ * @brief Publish WASM execution metrics.
+ *
+ * Publishes aggregate WASM execution statistics (execution count, timing, errors).
+ *
+ * @param domain_id   Domain ID used for topic generation.
+ * @param channel_id  Channel ID used for topic generation.
+ * @param proplet_id  Proplet identity.
+ */
+void publish_wasm_metrics(const char *domain_id,
+                          const char *channel_id,
+                          const char *proplet_id);
+
+/**
  * @brief Process incoming MQTT messages and maintain keepalive.
  */
 void mqtt_client_process(void);

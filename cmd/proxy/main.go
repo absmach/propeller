@@ -6,19 +6,28 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proxy"
+	"github.com/absmach/supermq/pkg/jaeger"
 	"github.com/caarlos0/env/v11"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	svcName    = "proxy"
-	configPath = "config.toml"
+	svcName        = "proxy"
+	configPath     = "config.toml"
+	defMetricsPort = "7071"
 )
 
 type config struct {
@@ -37,11 +46,13 @@ type config struct {
 	Username     string `env:"PROXY_REGISTRY_USERNAME"     envDefault:""`
 	Password     string `env:"PROXY_REGISTRY_PASSWORD"     envDefault:""`
 	RegistryURL  string `env:"PROXY_REGISTRY_URL,notEmpty"`
+	// Observability
+	MetricsPort string  `env:"PROXY_METRICS_PORT" envDefault:"7071"`
+	OTELURL     url.URL `env:"PROXY_OTEL_URL"`
+	TraceRatio  float64 `env:"PROXY_TRACE_RATIO" envDefault:"0"`
 }
 
 func main() {
-	g, ctx := errgroup.WithContext(context.Background())
-
 	cfg := config{}
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatalf("failed to load configuration : %s", err.Error())
@@ -72,11 +83,36 @@ func main() {
 	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
 		log.Fatalf("failed to parse log level: %s", err.Error())
 	}
+
 	logHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
 	})
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	g, ctx := errgroup.WithContext(ctx)
+
+	var tp trace.TracerProvider
+	switch cfg.OTELURL {
+	case url.URL{}:
+		tp = noop.NewTracerProvider()
+	default:
+		sdktp, err := jaeger.NewProvider(ctx, svcName, cfg.OTELURL, "", cfg.TraceRatio)
+		if err != nil {
+			logger.Error("failed to initialize jaeger tracing", slog.String("error", err.Error()))
+			//nolint:gocritic
+			os.Exit(1)
+		}
+		defer func() {
+			if err := sdktp.Shutdown(ctx); err != nil {
+				logger.Error("error shutting down tracer provider", slog.Any("error", err))
+			}
+		}()
+		tp = sdktp
+	}
+	_ = tp
 
 	mqttPubSub, err := mqtt.NewPubSub(cfg.MQTTAddress, cfg.MQTTQoS, cfg.ClientID, cfg.ClientID, cfg.ClientKey, cfg.DomainID, cfg.ChannelID, cfg.MQTTTimeout, logger)
 	if err != nil {
@@ -117,6 +153,27 @@ func main() {
 	}
 
 	slog.Info("successfully subscribed to topic")
+
+	// Start Prometheus metrics server
+	metricsPort := cfg.MetricsPort
+	if metricsPort == "" {
+		metricsPort = defMetricsPort
+	}
+	g.Go(func() error {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("OK"))
+		})
+		server := &http.Server{
+			Addr:    ":" + metricsPort,
+			Handler: mux,
+		}
+		logger.Info("starting metrics server", slog.String("port", metricsPort))
+
+		return server.ListenAndServe()
+	})
 
 	g.Go(func() error {
 		return service.StreamHTTP(ctx)

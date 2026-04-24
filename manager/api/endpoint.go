@@ -20,7 +20,7 @@ func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
 			return listpropletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		proplets, err := svc.ListProplets(ctx, req.offset, req.limit)
+		proplets, err := svc.ListProplets(ctx, req.offset, req.limit, "")
 		if err != nil {
 			return listpropletResponse{}, err
 		}

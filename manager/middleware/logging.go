@@ -42,12 +42,13 @@ func (lm *loggingMiddleware) GetProplet(ctx context.Context, id string) (resp pr
 	return lm.svc.GetProplet(ctx, id)
 }
 
-func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (resp proplet.PropletPage, err error) {
+func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uint64, status string) (resp proplet.PropletPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
 			slog.Uint64("offset", offset),
 			slog.Uint64("limit", limit),
+			slog.String("status", status),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
@@ -58,7 +59,7 @@ func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uin
 		lm.logger.Info("List proplets completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.ListProplets(ctx, offset, limit)
+	return lm.svc.ListProplets(ctx, offset, limit, status)
 }
 
 func (lm *loggingMiddleware) SelectProplet(ctx context.Context, t task.Task) (w proplet.Proplet, err error) {

@@ -30,14 +30,15 @@ func (tm *tracing) GetProplet(ctx context.Context, id string) (resp proplet.Prop
 	return tm.svc.GetProplet(ctx, id)
 }
 
-func (tm *tracing) ListProplets(ctx context.Context, offset, limit uint64) (resp proplet.PropletPage, err error) {
+func (tm *tracing) ListProplets(ctx context.Context, offset, limit uint64, status string) (resp proplet.PropletPage, err error) {
 	ctx, span := tm.tracer.Start(ctx, "list-proplets", trace.WithAttributes(
 		attribute.Int64("offset", int64(offset)),
 		attribute.Int64("limit", int64(limit)),
+		attribute.String("status", status),
 	))
 	defer span.End()
 
-	return tm.svc.ListProplets(ctx, offset, limit)
+	return tm.svc.ListProplets(ctx, offset, limit, status)
 }
 
 func (tm *tracing) SelectProplet(ctx context.Context, t task.Task) (resp proplet.Proplet, err error) {
