@@ -70,81 +70,10 @@ func (r *memoryTaskRepo) Update(ctx context.Context, t task.Task) error {
 
 func (r *memoryTaskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
-		data, total, err := r.storage.List(ctx, offset, limit)
-		if err != nil {
-			return nil, 0, err
-		}
-		tasks := make([]task.Task, len(data))
-		for i, d := range data {
-			t, ok := d.(task.Task)
-			if !ok {
-				return nil, 0, pkgerrors.ErrInvalidData
-			}
-			tasks[i] = t
-		}
-
-		return tasks, total, nil
+		return r.listAll(ctx, offset, limit)
 	}
 
-	r.mu.RLock()
-	var matchIDs map[string]struct{}
-	for k, v := range filter {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		vals, ok := r.metaIdx[k]
-		if !ok {
-			r.mu.RUnlock()
-
-			return []task.Task{}, 0, nil
-		}
-		taskIDs, ok := vals[s]
-		if !ok {
-			r.mu.RUnlock()
-
-			return []task.Task{}, 0, nil
-		}
-		if matchIDs == nil {
-			matchIDs = make(map[string]struct{}, len(taskIDs))
-			for id := range taskIDs {
-				matchIDs[id] = struct{}{}
-			}
-		} else {
-			for id := range matchIDs {
-				if _, ok := taskIDs[id]; !ok {
-					delete(matchIDs, id)
-				}
-			}
-		}
-		if len(matchIDs) == 0 {
-			r.mu.RUnlock()
-
-			return []task.Task{}, 0, nil
-		}
-	}
-	r.mu.RUnlock()
-
-	tasks := make([]task.Task, 0, len(matchIDs))
-	for id := range matchIDs {
-		data, err := r.storage.Get(ctx, id)
-		if err != nil {
-			continue
-		}
-		t, ok := data.(task.Task)
-		if !ok {
-			continue
-		}
-		tasks = append(tasks, t)
-	}
-
-	total := uint64(len(tasks))
-	if offset >= total {
-		return []task.Task{}, total, nil
-	}
-	end := min(offset+limit, total)
-
-	return tasks[offset:end], total, nil
+	return r.listByMetadata(ctx, filter, offset, limit)
 }
 
 func (r *memoryTaskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -233,6 +162,88 @@ func (r *memoryTaskRepo) deindexTask(t task.Task) {
 			delete(r.metaIdx, k)
 		}
 	}
+}
+
+func (r *memoryTaskRepo) listAll(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
+	data, total, err := r.storage.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	tasks := make([]task.Task, len(data))
+	for i, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			return nil, 0, pkgerrors.ErrInvalidData
+		}
+		tasks[i] = t
+	}
+
+	return tasks, total, nil
+}
+
+func (r *memoryTaskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]struct{}, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var matchIDs map[string]struct{}
+	for k, v := range filter {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		vals, ok := r.metaIdx[k]
+		if !ok {
+			return nil, false
+		}
+		taskIDs, ok := vals[s]
+		if !ok {
+			return nil, false
+		}
+		if matchIDs == nil {
+			matchIDs = make(map[string]struct{}, len(taskIDs))
+			for id := range taskIDs {
+				matchIDs[id] = struct{}{}
+			}
+		} else {
+			for id := range matchIDs {
+				if _, ok := taskIDs[id]; !ok {
+					delete(matchIDs, id)
+				}
+			}
+		}
+		if len(matchIDs) == 0 {
+			return nil, false
+		}
+	}
+
+	return matchIDs, true
+}
+
+func (r *memoryTaskRepo) listByMetadata(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	matchIDs, ok := r.filterIDsByMetadata(filter)
+	if !ok || len(matchIDs) == 0 {
+		return []task.Task{}, 0, nil
+	}
+
+	tasks := make([]task.Task, 0, len(matchIDs))
+	for id := range matchIDs {
+		data, err := r.storage.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		t, ok := data.(task.Task)
+		if !ok {
+			continue
+		}
+		tasks = append(tasks, t)
+	}
+
+	total := uint64(len(tasks))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+
+	return tasks[offset:min(offset+limit, total)], total, nil
 }
 
 type memoryPropletRepo struct {
