@@ -138,6 +138,7 @@ func TestPluginMiddleware_CreateTask_Authorize(t *testing.T) {
 func TestPluginMiddleware_CreateTask_Enrich(t *testing.T) {
 	t.Parallel()
 
+	prio := 99
 	cases := []struct {
 		desc      string
 		enrichRes plugin.EnrichResponse
@@ -152,7 +153,7 @@ func TestPluginMiddleware_CreateTask_Enrich(t *testing.T) {
 		},
 		{
 			desc:      "enrich sets priority",
-			enrichRes: plugin.EnrichResponse{Priority: ptrInt(99)},
+			enrichRes: plugin.EnrichResponse{Priority: &prio},
 			wantEnv:   nil,
 			wantPrio:  99,
 		},
@@ -360,5 +361,3 @@ func TestPluginMiddleware_EmptyRegistry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "t1", got.Name)
 }
-
-func ptrInt(i int) *int { return &i }
