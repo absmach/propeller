@@ -521,21 +521,7 @@ func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, erro
 }
 
 func (svc *service) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
-	if len(pm.Metadata) == 0 {
-		tasks, total, err := svc.taskRepo.List(ctx, pm.Offset, pm.Limit)
-		if err != nil {
-			return task.TaskPage{}, err
-		}
-
-		return task.TaskPage{
-			Offset: pm.Offset,
-			Limit:  pm.Limit,
-			Total:  total,
-			Tasks:  tasks,
-		}, nil
-	}
-
-	tasks, total, err := svc.taskRepo.ListByMetadataFilter(ctx, pm.Metadata, pm.Offset, pm.Limit)
+	tasks, total, err := svc.taskRepo.List(ctx, pm.Metadata, pm.Offset, pm.Limit)
 	if err != nil {
 		return task.TaskPage{}, err
 	}
@@ -1685,7 +1671,7 @@ func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
 	var offset uint64
 
 	for {
-		tasks, total, err := svc.taskRepo.List(ctx, offset, pageSize)
+		tasks, total, err := svc.taskRepo.List(ctx, nil, offset, pageSize)
 		if err != nil {
 			return nil, err
 		}

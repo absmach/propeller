@@ -91,31 +91,27 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	return nil
 }
 
-func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	prefix := []byte("task:")
-	total, err := r.db.countWithPrefix(prefix)
-	if err != nil {
-		return nil, 0, err
-	}
-	values, err := r.db.listWithPrefix(prefix, offset, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	tasks := make([]task.Task, len(values))
-	for i, val := range values {
-		var t task.Task
-		if err := json.Unmarshal(val, &t); err != nil {
-			return nil, 0, fmt.Errorf("unmarshal error: %w", err)
-		}
-		tasks[i] = t
-	}
-
-	return tasks, total, nil
-}
-
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
-		return r.List(ctx, offset, limit)
+		prefix := []byte("task:")
+		total, err := r.db.countWithPrefix(prefix)
+		if err != nil {
+			return nil, 0, err
+		}
+		values, err := r.db.listWithPrefix(prefix, offset, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		tasks := make([]task.Task, len(values))
+		for i, val := range values {
+			var t task.Task
+			if err := json.Unmarshal(val, &t); err != nil {
+				return nil, 0, fmt.Errorf("unmarshal error: %w", err)
+			}
+			tasks[i] = t
+		}
+
+		return tasks, total, nil
 	}
 
 	var matchIDs map[string]struct{}

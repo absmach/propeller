@@ -220,24 +220,7 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	return nil
 }
 
-func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	var total uint64
-	err := r.db.GetContext(ctx, &total, "SELECT COUNT(*) FROM tasks")
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
-	}
-
-	query := `SELECT ` + taskColumns + ` FROM tasks ORDER BY created_at DESC LIMIT $1 OFFSET $2`
-
-	tasks, err := r.scanTasks(ctx, query, limit, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return tasks, total, nil
-}
-
-func (r *taskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	whereClause, args, nextIdx, err := buildPostgresMetadataWhere(filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)

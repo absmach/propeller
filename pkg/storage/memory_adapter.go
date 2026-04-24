@@ -68,26 +68,22 @@ func (r *memoryTaskRepo) Update(ctx context.Context, t task.Task) error {
 	return nil
 }
 
-func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	data, total, err := r.storage.List(ctx, offset, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	tasks := make([]task.Task, len(data))
-	for i, d := range data {
-		t, ok := d.(task.Task)
-		if !ok {
-			return nil, 0, pkgerrors.ErrInvalidData
-		}
-		tasks[i] = t
-	}
-
-	return tasks, total, nil
-}
-
-func (r *memoryTaskRepo) ListByMetadataFilter(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *memoryTaskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
-		return r.List(ctx, offset, limit)
+		data, total, err := r.storage.List(ctx, offset, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		tasks := make([]task.Task, len(data))
+		for i, d := range data {
+			t, ok := d.(task.Task)
+			if !ok {
+				return nil, 0, pkgerrors.ErrInvalidData
+			}
+			tasks[i] = t
+		}
+
+		return tasks, total, nil
 	}
 
 	r.mu.RLock()
