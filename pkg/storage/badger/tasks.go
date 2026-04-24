@@ -93,27 +93,61 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 
 func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
 	if len(filter) == 0 {
-		prefix := []byte("task:")
-		total, err := r.db.countWithPrefix(prefix)
-		if err != nil {
-			return nil, 0, err
-		}
-		values, err := r.db.listWithPrefix(prefix, offset, limit)
-		if err != nil {
-			return nil, 0, err
-		}
-		tasks := make([]task.Task, len(values))
-		for i, val := range values {
-			var t task.Task
-			if err := json.Unmarshal(val, &t); err != nil {
-				return nil, 0, fmt.Errorf("unmarshal error: %w", err)
-			}
-			tasks[i] = t
-		}
-
-		return tasks, total, nil
+		return r.listAll(ctx, offset, limit)
 	}
 
+	return r.listByMetadata(ctx, filter, offset, limit)
+}
+
+func (r *taskRepo) listAll(_ context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
+	prefix := []byte("task:")
+	total, err := r.db.countWithPrefix(prefix)
+	if err != nil {
+		return nil, 0, err
+	}
+	values, err := r.db.listWithPrefix(prefix, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	tasks := make([]task.Task, len(values))
+	for i, val := range values {
+		var t task.Task
+		if err := json.Unmarshal(val, &t); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal error: %w", err)
+		}
+		tasks[i] = t
+	}
+
+	return tasks, total, nil
+}
+
+func (r *taskRepo) listByMetadata(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	matchIDs, err := r.filterIDsByMetadata(filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(matchIDs) == 0 {
+		return []task.Task{}, 0, nil
+	}
+
+	tasks := make([]task.Task, 0, len(matchIDs))
+	for id := range matchIDs {
+		t, err := r.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		tasks = append(tasks, t)
+	}
+
+	total := uint64(len(tasks))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+
+	return tasks[offset:min(offset+limit, total)], total, nil
+}
+
+func (r *taskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]struct{}, error) {
 	var matchIDs map[string]struct{}
 	err := r.db.viewTxn(func(txn *badgerdb.Txn) error {
 		opts := badgerdb.DefaultIteratorOptions
@@ -128,8 +162,7 @@ func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit
 			ids := make(map[string]struct{})
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				key := it.Item().KeyCopy(nil)
-				taskID := string(key[len(prefix):])
-				ids[taskID] = struct{}{}
+				ids[string(key[len(prefix):])] = struct{}{}
 			}
 			it.Close()
 
@@ -150,29 +183,10 @@ func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit
 		return nil
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+		return nil, fmt.Errorf("%w: %w", ErrDBQuery, err)
 	}
 
-	if len(matchIDs) == 0 {
-		return []task.Task{}, 0, nil
-	}
-
-	tasks := make([]task.Task, 0, len(matchIDs))
-	for id := range matchIDs {
-		t, err := r.Get(ctx, id)
-		if err != nil {
-			continue
-		}
-		tasks = append(tasks, t)
-	}
-
-	total := uint64(len(tasks))
-	if offset >= total {
-		return []task.Task{}, total, nil
-	}
-	end := min(offset+limit, total)
-
-	return tasks[offset:end], total, nil
+	return matchIDs, nil
 }
 
 func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
