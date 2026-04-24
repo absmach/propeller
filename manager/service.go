@@ -1703,6 +1703,7 @@ type startPayload struct {
 	File              []byte                     `json:"file,omitempty"`
 	Inputs            task.FlexStrings           `json:"inputs,omitempty"`
 	CLIArgs           []string                   `json:"cli_args"`
+	Broadcast         bool                       `json:"broadcast"`
 	Daemon            bool                       `json:"daemon"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Encrypted         bool                       `json:"encrypted"`
@@ -1721,6 +1722,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		File:              t.File,
 		Inputs:            t.Inputs,
 		CLIArgs:           t.CLIArgs,
+		Broadcast:         t.Broadcast,
 		Daemon:            t.Daemon,
 		Env:               t.Env,
 		Encrypted:         t.Encrypted,
