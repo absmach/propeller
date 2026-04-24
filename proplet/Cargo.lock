@@ -1599,7 +1599,7 @@ dependencies = [
  "ciborium",
  "cose-rust",
  "hex",
- "jsonwebtoken 9.3.1",
+ "jsonwebtoken",
  "lazy_static",
  "openssl",
  "phf",
@@ -2602,7 +2602,7 @@ dependencies = [
  "log",
  "loopdev",
  "nix",
- "oci-client 0.15.0",
+ "oci-client",
  "oci-spec 0.8.4",
  "ocicrypt-rs",
  "protos",
@@ -2870,20 +2870,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "jsonwebtoken"
-version = "10.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0529410abe238729a60b108898784df8984c87f6054c9c4fcacc47e4803c1ce1"
-dependencies = [
- "base64 0.22.1",
- "getrandom 0.2.17",
- "js-sys",
- "serde",
- "serde_json",
- "signature",
 ]
 
 [[package]]
@@ -3433,32 +3419,6 @@ dependencies = [
  "olpc-cjson",
  "regex",
  "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "unicase",
-]
-
-[[package]]
-name = "oci-client"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b7f8deaffcd3b0e3baf93dddcab3d18b91d46dc37d38a8b170089b234de5bb3"
-dependencies = [
- "bytes",
- "chrono",
- "futures-util",
- "http",
- "http-auth",
- "jsonwebtoken 10.3.0",
- "lazy_static",
- "oci-spec 0.9.0",
- "olpc-cjson",
- "regex",
- "reqwest 0.13.2",
  "serde",
  "serde_json",
  "sha2",
@@ -4077,9 +4037,7 @@ dependencies = [
  "image-rs",
  "kbs_protocol",
  "libc",
- "oci-client 0.15.0",
- "oci-client 0.16.1",
- "oci-spec 0.8.4",
+ "oci-client",
  "oci-spec 0.9.0",
  "reqwest 0.13.2",
  "resource_uri",
@@ -4463,7 +4421,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams 0.4.2",
+ "wasm-streams",
  "web-sys",
  "webpki-roots 1.0.7",
 ]
@@ -4478,7 +4436,6 @@ dependencies = [
  "bytes",
  "encoding_rs",
  "futures-core",
- "futures-util",
  "h2",
  "http",
  "http-body",
@@ -4497,18 +4454,15 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
- "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams 0.5.0",
  "web-sys",
 ]
 
@@ -5126,7 +5080,7 @@ dependencies = [
  "ed25519",
  "ed25519-dalek",
  "elliptic-curve",
- "oci-client 0.15.0",
+ "oci-client",
  "olpc-cjson",
  "openidconnect",
  "p256",
@@ -6179,19 +6133,6 @@ name = "wasm-streams"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "wasm-streams"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
 dependencies = [
  "futures-util",
  "js-sys",

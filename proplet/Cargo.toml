@@ -49,14 +49,10 @@ kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch
     "background_check",
     "rust-crypto",
 ], default-features = false }
-oci-client = { version = "0.16", default-features = false, features = [
-    "rustls-tls",
-] }
-oci-client-old = { package = "oci-client", version = "0.15.0", default-features = false, features = [
+oci-client = { version = "0.15", default-features = false, features = [
     "rustls-tls",
 ] }
 oci-spec = { version = "0.9.0" }
-oci-spec-old = { package = "oci-spec", version = "0.8.4" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
 hex = { version = "0.4" }
 futures-util = { version = "0.3" }
