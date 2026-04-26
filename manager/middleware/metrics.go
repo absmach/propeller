@@ -6,7 +6,6 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/go-kit/kit/metrics"
 )
@@ -90,7 +89,7 @@ func (mm *metricsMiddleware) GetTask(ctx context.Context, id string) (task.Task,
 	return mm.svc.GetTask(ctx, id)
 }
 
-func (mm *metricsMiddleware) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+func (mm *metricsMiddleware) ListTasks(ctx context.Context, pm manager.PageMetadata) (task.TaskPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "list-tasks").Add(1)
 		mm.latency.With("method", "list-tasks").Observe(time.Since(begin).Seconds())

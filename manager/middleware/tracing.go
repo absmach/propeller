@@ -5,7 +5,6 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -92,7 +91,7 @@ func (tm *tracing) GetTask(ctx context.Context, id string) (resp task.Task, err 
 	return tm.svc.GetTask(ctx, id)
 }
 
-func (tm *tracing) ListTasks(ctx context.Context, pm sdk.PageMetadata) (resp task.TaskPage, err error) {
+func (tm *tracing) ListTasks(ctx context.Context, pm manager.PageMetadata) (resp task.TaskPage, err error) {
 	ctx, span := tm.tracer.Start(ctx, "list-tasks", trace.WithAttributes(
 		attribute.Int64("offset", int64(pm.Offset)),
 		attribute.Int64("limit", int64(pm.Limit)),

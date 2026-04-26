@@ -7,7 +7,6 @@ import (
 	apiutil "github.com/absmach/magistrala/api/http/util"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
-	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/go-kit/kit/endpoint"
 )
 
@@ -252,7 +251,7 @@ func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		pm := sdk.PageMetadata{
+		pm := manager.PageMetadata{
 			Offset:   req.offset,
 			Limit:    req.limit,
 			Metadata: req.metadata,

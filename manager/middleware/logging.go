@@ -7,7 +7,6 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
-	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/task"
 )
 
@@ -169,7 +168,7 @@ func (lm *loggingMiddleware) GetTask(ctx context.Context, id string) (resp task.
 	return lm.svc.GetTask(ctx, id)
 }
 
-func (lm *loggingMiddleware) ListTasks(ctx context.Context, pm sdk.PageMetadata) (resp task.TaskPage, err error) {
+func (lm *loggingMiddleware) ListTasks(ctx context.Context, pm manager.PageMetadata) (resp task.TaskPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),

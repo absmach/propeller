@@ -257,8 +257,10 @@ func (db *Database) Migrate() error {
 				Id: "5_add_task_metadata",
 				Up: []string{
 					`ALTER TABLE tasks ADD COLUMN metadata TEXT`,
+					`CREATE INDEX IF NOT EXISTS idx_tasks_metadata ON tasks(metadata) WHERE metadata IS NOT NULL`,
 				},
 				Down: []string{
+					`DROP INDEX IF EXISTS idx_tasks_metadata`,
 					`ALTER TABLE tasks DROP COLUMN metadata`,
 				},
 			},

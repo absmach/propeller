@@ -220,6 +220,12 @@ func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit
 	return tasks, total, nil
 }
 
+// buildSQLiteMetadataWhere builds a WHERE clause for metadata filtering.
+// Keys are interpolated directly into the SQL because sqliteMetadataKeyRe
+// restricts them to [a-zA-Z0-9._\-]+, which contains no SQL metacharacters.
+// Values are always bound as parameters. Metadata filtering performs a full
+// table scan since SQLite does not support expression indexes on json_extract
+// for arbitrary key sets.
 func buildSQLiteMetadataWhere(filter task.Metadata) (clause string, args []any, err error) {
 	if len(filter) == 0 {
 		return "", nil, nil

@@ -23,7 +23,6 @@ import (
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
-	"github.com/absmach/propeller/pkg/sdk"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/google/uuid"
@@ -520,7 +519,7 @@ func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, erro
 	return svc.taskRepo.Get(ctx, taskID)
 }
 
-func (svc *service) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.TaskPage, error) {
+func (svc *service) ListTasks(ctx context.Context, pm PageMetadata) (task.TaskPage, error) {
 	tasks, total, err := svc.taskRepo.List(ctx, pm.Metadata, pm.Offset, pm.Limit)
 	if err != nil {
 		return task.TaskPage{}, err
@@ -535,31 +534,61 @@ func (svc *service) ListTasks(ctx context.Context, pm sdk.PageMetadata) (task.Ta
 }
 
 func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, error) {
-	t.UpdatedAt = time.Now()
+	dbT, err := svc.GetTask(ctx, t.ID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	dbT.UpdatedAt = time.Now()
 
-	if t.Schedule != "" {
+	if t.Name != "" {
+		dbT.Name = t.Name
+	}
+	if t.Inputs != nil {
+		dbT.Inputs = t.Inputs
+	}
+	if t.File != nil {
+		dbT.File = t.File
+	}
+	if t.Priority != 0 {
+		dbT.Priority = t.Priority
+	}
+	if t.Metadata != nil {
+		dbT.Metadata = t.Metadata
+	}
+
+	scheduleChanged := false
+	if t.Schedule != "" && t.Schedule != dbT.Schedule {
 		schedule, err := cron.ParseCronExpression(t.Schedule)
 		if err != nil {
 			return task.Task{}, fmt.Errorf("invalid cron expression: %w", err)
 		}
 
-		if t.Timezone == "" {
-			t.Timezone = defaultTimezone
+		timezone := t.Timezone
+		if timezone == "" {
+			timezone = defaultTimezone
 		}
 
-		t.NextRun = cron.CalculateNextRun(schedule, time.Now(), t.Timezone)
-	} else {
-		t.NextRun = time.Time{}
-		t.IsRecurring = false
+		dbT.Schedule = t.Schedule
+		dbT.IsRecurring = t.IsRecurring
+		dbT.Timezone = timezone
+		dbT.NextRun = cron.CalculateNextRun(schedule, time.Now(), timezone)
+		scheduleChanged = true
+	} else if t.Schedule == "" && dbT.Schedule != "" {
+		dbT.Schedule = ""
+		dbT.NextRun = time.Time{}
+		dbT.IsRecurring = false
+		scheduleChanged = true
 	}
 
-	if err := svc.taskRepo.Update(ctx, t); err != nil {
+	if err := svc.taskRepo.Update(ctx, dbT); err != nil {
 		return task.Task{}, err
 	}
 
-	svc.updateCronTask(ctx, t)
+	if scheduleChanged {
+		svc.updateCronTask(ctx, dbT)
+	}
 
-	return t, nil
+	return dbT, nil
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
@@ -1708,7 +1737,7 @@ type startPayload struct {
 	Env               map[string]string          `json:"env,omitempty"`
 	Encrypted         bool                       `json:"encrypted"`
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
-	MonitoringProfile *proplet.MonitoringProfile `json:"monitoringProfile,omitempty"`
+	MonitoringProfile *proplet.MonitoringProfile `json:"monitoring_profile,omitempty"`
 	PropletID         string                     `json:"proplet_id,omitempty"`
 	ParentResults     map[string]any             `json:"parent_results,omitempty"`
 }

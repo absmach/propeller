@@ -130,10 +130,7 @@ func (r *memoryTaskRepo) Delete(ctx context.Context, id string) error {
 
 func (r *memoryTaskRepo) indexTask(t task.Task) {
 	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
+		s := metaValueStr(v)
 		if r.metaIdx[k] == nil {
 			r.metaIdx[k] = make(map[string]map[string]struct{})
 		}
@@ -146,10 +143,7 @@ func (r *memoryTaskRepo) indexTask(t task.Task) {
 
 func (r *memoryTaskRepo) deindexTask(t task.Task) {
 	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
+		s := metaValueStr(v)
 		ids, ok := r.metaIdx[k][s]
 		if !ok {
 			continue
@@ -164,7 +158,18 @@ func (r *memoryTaskRepo) deindexTask(t task.Task) {
 	}
 }
 
+func metaValueStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(v)
+}
+
 func (r *memoryTaskRepo) listAll(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	data, total, err := r.storage.List(ctx, offset, limit)
 	if err != nil {
 		return nil, 0, err
@@ -187,10 +192,7 @@ func (r *memoryTaskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]s
 
 	var matchIDs map[string]struct{}
 	for k, v := range filter {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
+		s := metaValueStr(v)
 		vals, ok := r.metaIdx[k]
 		if !ok {
 			return nil, false

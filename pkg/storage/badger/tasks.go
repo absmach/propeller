@@ -115,8 +115,11 @@ func (r *taskRepo) Delete(ctx context.Context, id string) error {
 	key := []byte("task:" + id)
 	err := r.db.updateTxn(func(txn *badgerdb.Txn) error {
 		item, err := txn.Get(key)
+		if errors.Is(err, badgerdb.ErrKeyNotFound) {
+			return nil
+		}
 		if err != nil {
-			return txn.Delete(key)
+			return err
 		}
 
 		val, err := item.ValueCopy(nil)
@@ -142,10 +145,7 @@ func (r *taskRepo) Delete(ctx context.Context, id string) error {
 
 func (r *taskRepo) indexTaskTxn(txn *badgerdb.Txn, t task.Task) error {
 	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
+		s := metaValueString(v)
 		if err := txn.Set(metaIdxKey(k, s, t.ID), []byte{}); err != nil {
 			return err
 		}
@@ -156,16 +156,21 @@ func (r *taskRepo) indexTaskTxn(txn *badgerdb.Txn, t task.Task) error {
 
 func (r *taskRepo) deindexTaskTxn(txn *badgerdb.Txn, t task.Task) error {
 	for k, v := range t.Metadata {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
+		s := metaValueString(v)
 		if err := txn.Delete(metaIdxKey(k, s, t.ID)); err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func metaValueString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(v)
 }
 
 func (r *taskRepo) listAll(_ context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
@@ -222,10 +227,7 @@ func (r *taskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]struct{
 		opts := badgerdb.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		for k, vAny := range filter {
-			v, ok := vAny.(string)
-			if !ok {
-				continue
-			}
+			v := metaValueString(vAny)
 			prefix := []byte("meta-idx\x00" + k + "\x00" + v + "\x00")
 			it := txn.NewIterator(opts)
 			ids := make(map[string]struct{})
