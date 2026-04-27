@@ -20,7 +20,7 @@ func listPropletsEndpoint(svc manager.Service) endpoint.Endpoint {
 			return listpropletResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		proplets, err := svc.ListProplets(ctx, req.offset, req.limit)
+		proplets, err := svc.ListProplets(ctx, req.offset, req.limit, req.status)
 		if err != nil {
 			return listpropletResponse{}, err
 		}
@@ -188,7 +188,7 @@ func listJobsEndpoint(svc manager.Service) endpoint.Endpoint {
 			return listJobResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		jobs, err := svc.ListJobs(ctx, req.offset, req.limit)
+		jobs, err := svc.ListJobs(ctx, req.offset, req.limit, req.status)
 		if err != nil {
 			return listJobResponse{}, err
 		}

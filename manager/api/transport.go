@@ -34,7 +34,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 	mux.Route("/proplets", func(r chi.Router) {
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listPropletsEndpoint(svc),
-			decodeListEntityReq,
+			decodeListEntityReq(propletStatusFilter),
 			api.EncodeResponse,
 			opts...,
 		), "list-proplets").ServeHTTP)
@@ -75,7 +75,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		), "create-task").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listTasksEndpoint(svc),
-			decodeListEntityReq,
+			decodeListEntityReq(withoutStatusFilter),
 			api.EncodeResponse,
 			opts...,
 		), "list-tasks").ServeHTTP)
@@ -211,7 +211,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		), "create-job").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listJobsEndpoint(svc),
-			decodeListEntityReq,
+			decodeListEntityReq(jobStatusFilter),
 			api.EncodeResponse,
 			opts...,
 		), "list-jobs").ServeHTTP)
@@ -301,21 +301,30 @@ func decodeUpdateTaskReq(_ context.Context, r *http.Request) (any, error) {
 	return req, nil
 }
 
-func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
-	o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
-	if err != nil {
-		return nil, errors.Join(apiutil.ErrValidation, err)
-	}
+func decodeListEntityReq(statusFilter listEntityStatus) kithttp.DecodeRequestFunc {
+	return func(_ context.Context, r *http.Request) (any, error) {
+		o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
+		if err != nil {
+			return nil, errors.Join(apiutil.ErrValidation, err)
+		}
 
-	l, err := apiutil.ReadNumQuery[uint64](r, api.LimitKey, api.DefLimit)
-	if err != nil {
-		return nil, errors.Join(apiutil.ErrValidation, err)
-	}
+		l, err := apiutil.ReadNumQuery[uint64](r, api.LimitKey, api.DefLimit)
+		if err != nil {
+			return nil, errors.Join(apiutil.ErrValidation, err)
+		}
 
-	return listEntityReq{
-		offset: o,
-		limit:  l,
-	}, nil
+		s, err := apiutil.ReadStringQuery(r, "status", "")
+		if err != nil {
+			return nil, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		return listEntityReq{
+			offset:       o,
+			limit:        l,
+			status:       s,
+			statusFilter: statusFilter,
+		}, nil
+	}
 }
 
 func decodeMetricsReq(key string) kithttp.DecodeRequestFunc {

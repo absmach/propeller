@@ -35,13 +35,13 @@ func (mm *metricsMiddleware) GetProplet(ctx context.Context, id string) (proplet
 	return mm.svc.GetProplet(ctx, id)
 }
 
-func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
+func (mm *metricsMiddleware) ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "list-proplets").Add(1)
 		mm.latency.With("method", "list-proplets").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.ListProplets(ctx, offset, limit)
+	return mm.svc.ListProplets(ctx, offset, limit, status)
 }
 
 func (mm *metricsMiddleware) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
@@ -179,13 +179,13 @@ func (mm *metricsMiddleware) GetJob(ctx context.Context, jobID string) ([]task.T
 	return mm.svc.GetJob(ctx, jobID)
 }
 
-func (mm *metricsMiddleware) ListJobs(ctx context.Context, offset, limit uint64) (manager.JobPage, error) {
+func (mm *metricsMiddleware) ListJobs(ctx context.Context, offset, limit uint64, status string) (manager.JobPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "list-jobs").Add(1)
 		mm.latency.With("method", "list-jobs").Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return mm.svc.ListJobs(ctx, offset, limit)
+	return mm.svc.ListJobs(ctx, offset, limit, status)
 }
 
 func (mm *metricsMiddleware) StartJob(ctx context.Context, jobID string) error {

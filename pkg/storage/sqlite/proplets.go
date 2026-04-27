@@ -121,6 +121,55 @@ func (r *propletRepo) List(ctx context.Context, offset, limit uint64) ([]proplet
 	return proplets, total, nil
 }
 
+func (r *propletRepo) ListByAlive(ctx context.Context, offset, limit uint64, alive bool, since time.Time) ([]proplet.Proplet, uint64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	sinceArg := since.Format(time.RFC3339Nano)
+
+	// Use '$[' || (json_array_length-1) || ']' instead of '$[#-1]' to support
+	// SQLite < 3.38.0 (the last-element shorthand was added in 3.38, Feb 2022).
+	// Use strftime('%s',...) instead of unixepoch() for the same reason: unixepoch()
+	// was also added in 3.38.0, while strftime has been available since SQLite 2.8.
+	whereClause := `WHERE alive_history IS NOT NULL AND json_array_length(alive_history) > 0 AND CAST(strftime('%s', json_extract(alive_history, '$[' || (json_array_length(alive_history) - 1) || ']')) AS INTEGER) >= CAST(strftime('%s', ?) AS INTEGER)`
+	if !alive {
+		whereClause = `WHERE alive_history IS NULL OR json_array_length(alive_history) = 0 OR CAST(strftime('%s', json_extract(alive_history, '$[' || (json_array_length(alive_history) - 1) || ']')) AS INTEGER) < CAST(strftime('%s', ?) AS INTEGER)`
+	}
+
+	var total uint64
+	if err := tx.GetContext(ctx, &total, "SELECT COUNT(*) FROM proplets "+whereClause, sinceArg); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	query := `SELECT id, name, task_count, alive, alive_history, metadata FROM proplets ` + whereClause + ` LIMIT ? OFFSET ?`
+	rows, err := tx.QueryContext(ctx, query, sinceArg, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+	defer rows.Close()
+
+	proplets := make([]proplet.Proplet, 0)
+	for rows.Next() {
+		var dbp dbProplet
+		if err := rows.Scan(&dbp.ID, &dbp.Name, &dbp.TaskCount, &dbp.Alive, &dbp.AliveHistory, &dbp.Metadata); err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+		p, err := r.toProplet(dbp)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+		proplets = append(proplets, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	return proplets, total, nil
+}
+
 func (r *propletRepo) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM proplets WHERE id = ?`
 

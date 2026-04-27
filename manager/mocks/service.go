@@ -1128,8 +1128,8 @@ func (_c *MockService_GetTaskResults_Call) RunAndReturn(run func(ctx context.Con
 }
 
 // ListJobs provides a mock function for the type MockService
-func (_mock *MockService) ListJobs(ctx context.Context, offset uint64, limit uint64) (manager.JobPage, error) {
-	ret := _mock.Called(ctx, offset, limit)
+func (_mock *MockService) ListJobs(ctx context.Context, offset uint64, limit uint64, status string) (manager.JobPage, error) {
+	ret := _mock.Called(ctx, offset, limit, status)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListJobs")
@@ -1137,16 +1137,16 @@ func (_mock *MockService) ListJobs(ctx context.Context, offset uint64, limit uin
 
 	var r0 manager.JobPage
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) (manager.JobPage, error)); ok {
-		return returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, string) (manager.JobPage, error)); ok {
+		return returnFunc(ctx, offset, limit, status)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) manager.JobPage); ok {
-		r0 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, string) manager.JobPage); ok {
+		r0 = returnFunc(ctx, offset, limit, status)
 	} else {
 		r0 = ret.Get(0).(manager.JobPage)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64) error); ok {
-		r1 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64, string) error); ok {
+		r1 = returnFunc(ctx, offset, limit, status)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1162,11 +1162,12 @@ type MockService_ListJobs_Call struct {
 //   - ctx context.Context
 //   - offset uint64
 //   - limit uint64
-func (_e *MockService_Expecter) ListJobs(ctx interface{}, offset interface{}, limit interface{}) *MockService_ListJobs_Call {
-	return &MockService_ListJobs_Call{Call: _e.mock.On("ListJobs", ctx, offset, limit)}
+//   - status string
+func (_e *MockService_Expecter) ListJobs(ctx interface{}, offset interface{}, limit interface{}, status interface{}) *MockService_ListJobs_Call {
+	return &MockService_ListJobs_Call{Call: _e.mock.On("ListJobs", ctx, offset, limit, status)}
 }
 
-func (_c *MockService_ListJobs_Call) Run(run func(ctx context.Context, offset uint64, limit uint64)) *MockService_ListJobs_Call {
+func (_c *MockService_ListJobs_Call) Run(run func(ctx context.Context, offset uint64, limit uint64, status string)) *MockService_ListJobs_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1180,10 +1181,15 @@ func (_c *MockService_ListJobs_Call) Run(run func(ctx context.Context, offset ui
 		if args[2] != nil {
 			arg2 = args[2].(uint64)
 		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -1194,14 +1200,14 @@ func (_c *MockService_ListJobs_Call) Return(jobPage manager.JobPage, err error) 
 	return _c
 }
 
-func (_c *MockService_ListJobs_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64) (manager.JobPage, error)) *MockService_ListJobs_Call {
+func (_c *MockService_ListJobs_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64, status string) (manager.JobPage, error)) *MockService_ListJobs_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListProplets provides a mock function for the type MockService
-func (_mock *MockService) ListProplets(ctx context.Context, offset uint64, limit uint64) (proplet.PropletPage, error) {
-	ret := _mock.Called(ctx, offset, limit)
+func (_mock *MockService) ListProplets(ctx context.Context, offset uint64, limit uint64, status string) (proplet.PropletPage, error) {
+	ret := _mock.Called(ctx, offset, limit, status)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListProplets")
@@ -1209,16 +1215,16 @@ func (_mock *MockService) ListProplets(ctx context.Context, offset uint64, limit
 
 	var r0 proplet.PropletPage
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) (proplet.PropletPage, error)); ok {
-		return returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, string) (proplet.PropletPage, error)); ok {
+		return returnFunc(ctx, offset, limit, status)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) proplet.PropletPage); ok {
-		r0 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, string) proplet.PropletPage); ok {
+		r0 = returnFunc(ctx, offset, limit, status)
 	} else {
 		r0 = ret.Get(0).(proplet.PropletPage)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64) error); ok {
-		r1 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64, string) error); ok {
+		r1 = returnFunc(ctx, offset, limit, status)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1234,11 +1240,12 @@ type MockService_ListProplets_Call struct {
 //   - ctx context.Context
 //   - offset uint64
 //   - limit uint64
-func (_e *MockService_Expecter) ListProplets(ctx interface{}, offset interface{}, limit interface{}) *MockService_ListProplets_Call {
-	return &MockService_ListProplets_Call{Call: _e.mock.On("ListProplets", ctx, offset, limit)}
+//   - status string
+func (_e *MockService_Expecter) ListProplets(ctx interface{}, offset interface{}, limit interface{}, status interface{}) *MockService_ListProplets_Call {
+	return &MockService_ListProplets_Call{Call: _e.mock.On("ListProplets", ctx, offset, limit, status)}
 }
 
-func (_c *MockService_ListProplets_Call) Run(run func(ctx context.Context, offset uint64, limit uint64)) *MockService_ListProplets_Call {
+func (_c *MockService_ListProplets_Call) Run(run func(ctx context.Context, offset uint64, limit uint64, status string)) *MockService_ListProplets_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1252,10 +1259,15 @@ func (_c *MockService_ListProplets_Call) Run(run func(ctx context.Context, offse
 		if args[2] != nil {
 			arg2 = args[2].(uint64)
 		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -1266,7 +1278,7 @@ func (_c *MockService_ListProplets_Call) Return(propletPage proplet.PropletPage,
 	return _c
 }
 
-func (_c *MockService_ListProplets_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64) (proplet.PropletPage, error)) *MockService_ListProplets_Call {
+func (_c *MockService_ListProplets_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64, status string) (proplet.PropletPage, error)) *MockService_ListProplets_Call {
 	_c.Call.Return(run)
 	return _c
 }

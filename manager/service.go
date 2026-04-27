@@ -116,8 +116,32 @@ func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.P
 	return w, nil
 }
 
-func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
-	proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
+func (svc *service) ListProplets(ctx context.Context, offset, limit uint64, status string) (proplet.PropletPage, error) {
+	if status == "" {
+		proplets, total, err := svc.propletRepo.List(ctx, offset, limit)
+		if err != nil {
+			return proplet.PropletPage{}, err
+		}
+		for i := range proplets {
+			proplets[i].SetAlive()
+		}
+
+		return proplet.PropletPage{
+			Offset:   offset,
+			Limit:    limit,
+			Total:    total,
+			Proplets: proplets,
+		}, nil
+	}
+
+	st, err := proplet.ToStatus(status)
+	if err != nil {
+		return proplet.PropletPage{}, fmt.Errorf("%w: %w", pkgerrors.ErrInvalidValue, err)
+	}
+
+	alive := st == proplet.ActiveStatus
+	since := time.Now().Add(-proplet.AliveTimeout)
+	proplets, total, err := svc.propletRepo.ListByAlive(ctx, offset, limit, alive, since)
 	if err != nil {
 		return proplet.PropletPage{}, err
 	}
@@ -134,7 +158,7 @@ func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (pro
 }
 
 func (svc *service) SelectProplet(ctx context.Context, t task.Task) (proplet.Proplet, error) {
-	proplets, err := svc.ListProplets(ctx, defOffset, defLimit)
+	proplets, err := svc.ListProplets(ctx, defOffset, defLimit, "")
 	if err != nil {
 		return proplet.Proplet{}, err
 	}
@@ -346,7 +370,21 @@ func (svc *service) GetJob(ctx context.Context, jobID string) ([]task.Task, erro
 	return svc.getJobTasks(ctx, jobID)
 }
 
-func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage, error) {
+// ListJobs is O(total tasks): job state is derived in-memory from the full task
+// set, so a status filter does not reduce storage I/O — every task is fetched
+// and aggregated before the filtered slice is built.
+func (svc *service) ListJobs(ctx context.Context, offset, limit uint64, status string) (JobPage, error) {
+	var jobStatus task.JobStatus
+	if status != "" {
+		var err error
+		jobStatus, err = task.ToJobStatus(status)
+		if err != nil {
+			return JobPage{}, fmt.Errorf("%w: %w", pkgerrors.ErrInvalidValue, err)
+		}
+	}
+
+	// Job state is derived from the current task set rather than stored independently,
+	// so filtering has to happen after we aggregate tasks into job summaries in memory.
 	allTasks, err := svc.listAllTasks(ctx)
 	if err != nil {
 		return JobPage{}, err
@@ -394,6 +432,17 @@ func (svc *service) ListJobs(ctx context.Context, offset, limit uint64) (JobPage
 			return strings.Compare(a.JobID, b.JobID)
 		}
 	})
+
+	if status != "" {
+		targetState := jobStatus.State()
+		filtered := make([]JobSummary, 0, len(jobs))
+		for i := range jobs {
+			if jobs[i].State == targetState {
+				filtered = append(filtered, jobs[i])
+			}
+		}
+		jobs = filtered
+	}
 
 	total := uint64(len(jobs))
 	if offset >= total {

@@ -299,6 +299,84 @@ func (_c *MockPropletRepository_List_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+func (_mock *MockPropletRepository) ListByAlive(ctx context.Context, offset uint64, limit uint64, alive bool, since time.Time) ([]proplet.Proplet, uint64, error) {
+	ret := _mock.Called(ctx, offset, limit, alive, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListByAlive")
+	}
+
+	var r0 []proplet.Proplet
+	var r1 uint64
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, bool, time.Time) ([]proplet.Proplet, uint64, error)); ok {
+		return returnFunc(ctx, offset, limit, alive, since)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64, bool, time.Time) []proplet.Proplet); ok {
+		r0 = returnFunc(ctx, offset, limit, alive, since)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]proplet.Proplet)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64, bool, time.Time) uint64); ok {
+		r1 = returnFunc(ctx, offset, limit, alive, since)
+	} else {
+		r1 = ret.Get(1).(uint64)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, uint64, uint64, bool, time.Time) error); ok {
+		r2 = returnFunc(ctx, offset, limit, alive, since)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+type MockPropletRepository_ListByAlive_Call struct {
+	*mock.Call
+}
+
+func (_e *MockPropletRepository_Expecter) ListByAlive(ctx interface{}, offset interface{}, limit interface{}, alive interface{}, since interface{}) *MockPropletRepository_ListByAlive_Call {
+	return &MockPropletRepository_ListByAlive_Call{Call: _e.mock.On("ListByAlive", ctx, offset, limit, alive, since)}
+}
+
+func (_c *MockPropletRepository_ListByAlive_Call) Run(run func(ctx context.Context, offset uint64, limit uint64, alive bool, since time.Time)) *MockPropletRepository_ListByAlive_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uint64
+		if args[1] != nil {
+			arg1 = args[1].(uint64)
+		}
+		var arg2 uint64
+		if args[2] != nil {
+			arg2 = args[2].(uint64)
+		}
+		var arg3 bool
+		if args[3] != nil {
+			arg3 = args[3].(bool)
+		}
+		var arg4 time.Time
+		if args[4] != nil {
+			arg4 = args[4].(time.Time)
+		}
+		run(arg0, arg1, arg2, arg3, arg4)
+	})
+	return _c
+}
+
+func (_c *MockPropletRepository_ListByAlive_Call) Return(proplets []proplet.Proplet, v uint64, err error) *MockPropletRepository_ListByAlive_Call {
+	_c.Call.Return(proplets, v, err)
+	return _c
+}
+
+func (_c *MockPropletRepository_ListByAlive_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64, alive bool, since time.Time) ([]proplet.Proplet, uint64, error)) *MockPropletRepository_ListByAlive_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Update provides a mock function for the type MockPropletRepository
 func (_mock *MockPropletRepository) Update(ctx context.Context, p proplet.Proplet) error {
 	ret := _mock.Called(ctx, p)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/absmach/magistrala"
+	apiutil "github.com/absmach/magistrala/api/http/util"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 )
 
@@ -40,9 +41,9 @@ func EncodeResponse(_ context.Context, w http.ResponseWriter, response any) erro
 func EncodeError(_ context.Context, err error, w http.ResponseWriter) {
 	w.Header().Set("Content-Type", ContentType)
 	switch {
-	case errors.Is(err, pkgerrors.ErrEmptyKey):
-		w.WriteHeader(http.StatusBadRequest)
-	case errors.Is(err, pkgerrors.ErrInvalidValue):
+	case errors.Is(err, apiutil.ErrValidation),
+		errors.Is(err, pkgerrors.ErrEmptyKey),
+		errors.Is(err, pkgerrors.ErrInvalidValue):
 		w.WriteHeader(http.StatusBadRequest)
 	case errors.Is(err, pkgerrors.ErrNotFound):
 		w.WriteHeader(http.StatusNotFound)

@@ -120,6 +120,51 @@ func (r *propletRepo) List(ctx context.Context, offset, limit uint64) ([]proplet
 	return proplets, total, nil
 }
 
+func (r *propletRepo) ListByAlive(ctx context.Context, offset, limit uint64, alive bool, since time.Time) ([]proplet.Proplet, uint64, error) {
+	var whereClause string
+	if alive {
+		whereClause = `WHERE alive_history IS NOT NULL AND jsonb_array_length(alive_history) > 0 AND (alive_history ->> (jsonb_array_length(alive_history) - 1))::timestamptz >= $1`
+	} else {
+		whereClause = `WHERE alive_history IS NULL OR jsonb_array_length(alive_history) = 0 OR (alive_history ->> (jsonb_array_length(alive_history) - 1))::timestamptz < $1`
+	}
+
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var total uint64
+	if err := tx.GetContext(ctx, &total, "SELECT COUNT(*) FROM proplets "+whereClause, since); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	query := fmt.Sprintf(`SELECT id, name, task_count, alive, alive_history, metadata FROM proplets %s LIMIT $2 OFFSET $3`, whereClause)
+	rows, err := tx.QueryContext(ctx, query, since, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+	defer rows.Close()
+
+	proplets := make([]proplet.Proplet, 0)
+	for rows.Next() {
+		var dbp dbProplet
+		if err := rows.Scan(&dbp.ID, &dbp.Name, &dbp.TaskCount, &dbp.Alive, &dbp.AliveHistory, &dbp.Metadata); err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+		p, err := r.toProplet(dbp)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: %w", ErrDBScan, err)
+		}
+		proplets = append(proplets, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
+
+	return proplets, total, nil
+}
+
 func (r *propletRepo) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM proplets WHERE id = $1`
 

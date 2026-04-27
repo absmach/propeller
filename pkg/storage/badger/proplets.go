@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/absmach/propeller/pkg/proplet"
@@ -77,6 +78,51 @@ func (r *propletRepo) List(ctx context.Context, offset, limit uint64) ([]proplet
 	}
 
 	return proplets, total, nil
+}
+
+const maxBadgerScan uint64 = 100000
+
+func (r *propletRepo) ListByAlive(ctx context.Context, offset, limit uint64, alive bool, since time.Time) ([]proplet.Proplet, uint64, error) {
+	prefix := []byte("proplet:")
+	total, err := r.db.countWithPrefix(prefix)
+	if err != nil {
+		return nil, 0, err
+	}
+	scanLimit := total
+	if total > maxBadgerScan {
+		// Badger has no index for liveness filtering; a full keyspace scan is
+		// required. Beyond maxBadgerScan records the scan is truncated and results
+		// will be incomplete. TODO: consider an indexed approach for large deployments.
+		slog.Warn("Badger ListByAlive scan truncated", "total", total, "cap", maxBadgerScan)
+		scanLimit = maxBadgerScan
+	}
+
+	// Badger cannot push liveness filtering into key iteration, so we scan the
+	// full proplet keyspace up to scanLimit and paginate the filtered slice.
+	values, err := r.db.listWithPrefix(prefix, 0, scanLimit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var filtered []proplet.Proplet
+	for _, val := range values {
+		var p proplet.Proplet
+		if err := json.Unmarshal(val, &p); err != nil {
+			return nil, 0, fmt.Errorf("unmarshal error: %w", err)
+		}
+		isAlive := len(p.AliveHistory) > 0 && !p.AliveHistory[len(p.AliveHistory)-1].Before(since)
+		if isAlive == alive {
+			filtered = append(filtered, p)
+		}
+	}
+
+	filteredTotal := uint64(len(filtered))
+	if offset >= filteredTotal {
+		return []proplet.Proplet{}, filteredTotal, nil
+	}
+	end := min(offset+limit, filteredTotal)
+
+	return filtered[offset:end], filteredTotal, nil
 }
 
 func (r *propletRepo) Delete(ctx context.Context, id string) error {

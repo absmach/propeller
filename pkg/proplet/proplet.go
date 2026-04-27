@@ -1,8 +1,50 @@
 package proplet
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
-const aliveTimeout = 10 * time.Second
+var ErrInvalidStatus = errors.New("invalid proplet status")
+
+type Status uint8
+
+const (
+	ActiveStatus Status = iota
+	InactiveStatus
+)
+
+const (
+	AliveTimeout = 10 * time.Second
+
+	Active   = "active"
+	Inactive = "inactive"
+	// unknown is unexported: it is only used as the default String() return value
+	// and is not a valid ?status= filter value (ToStatus rejects it with ErrInvalidStatus).
+	unknown = "unknown"
+)
+
+func (s Status) String() string {
+	switch s {
+	case ActiveStatus:
+		return Active
+	case InactiveStatus:
+		return Inactive
+	default:
+		return unknown
+	}
+}
+
+func ToStatus(status string) (Status, error) {
+	switch status {
+	case Active:
+		return ActiveStatus, nil
+	case Inactive:
+		return InactiveStatus, nil
+	default:
+		return Status(0), ErrInvalidStatus
+	}
+}
 
 type PropletMetadata struct {
 	Description      string   `json:"description,omitempty"`
@@ -30,7 +72,7 @@ type Proplet struct {
 func (p *Proplet) SetAlive() {
 	if len(p.AliveHistory) > 0 {
 		lastAlive := p.AliveHistory[len(p.AliveHistory)-1]
-		if time.Since(lastAlive) <= aliveTimeout {
+		if time.Since(lastAlive) <= AliveTimeout {
 			p.Alive = true
 
 			return

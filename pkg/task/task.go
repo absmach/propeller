@@ -2,6 +2,7 @@ package task
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -88,6 +89,70 @@ const (
 	RunIfSuccess = "success"
 	RunIfFailure = "failure"
 )
+
+var ErrInvalidJobStatus = errors.New("invalid job status")
+
+type JobStatus uint8
+
+const (
+	PendingStatus JobStatus = iota
+	RunningStatus
+	CompletedStatus
+	FailedStatus
+)
+
+const (
+	JobStatusPending   = "pending"
+	JobStatusRunning   = "running"
+	JobStatusCompleted = "completed"
+	JobStatusFailed    = "failed"
+	JobStatusUnknown   = "unknown"
+)
+
+func (s JobStatus) String() string {
+	switch s {
+	case PendingStatus:
+		return JobStatusPending
+	case RunningStatus:
+		return JobStatusRunning
+	case CompletedStatus:
+		return JobStatusCompleted
+	case FailedStatus:
+		return JobStatusFailed
+	default:
+		return JobStatusUnknown
+	}
+}
+
+func ToJobStatus(status string) (JobStatus, error) {
+	switch status {
+	case JobStatusPending:
+		return PendingStatus, nil
+	case JobStatusRunning:
+		return RunningStatus, nil
+	case JobStatusCompleted:
+		return CompletedStatus, nil
+	case JobStatusFailed:
+		return FailedStatus, nil
+	default:
+		return JobStatus(0), ErrInvalidJobStatus
+	}
+}
+
+func (s JobStatus) State() State {
+	switch s {
+	case PendingStatus:
+		return Pending
+	case RunningStatus:
+		return Running
+	case CompletedStatus:
+		return Completed
+	case FailedStatus:
+		return Failed
+	default:
+		return Pending
+	}
+}
 
 type Task struct {
 	ID                string                     `json:"id"`

@@ -90,11 +90,13 @@ type SDK interface {
 	//  job, _ := sdk.GetJob("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040")
 	GetJob(jobID string) (JobResponse, error)
 
-	// ListJobs lists jobs.
+	// ListJobs lists jobs with optional status filter.
+	// Status can be "pending", "running", "completed", "failed", or "" (all).
 	//
 	// example:
-	//  jobPage, _ := sdk.ListJobs(0, 10)
-	ListJobs(offset uint64, limit uint64) (JobPage, error)
+	//  jobPage, _ := sdk.ListJobs(0, 10, "")
+	//  jobPage, _ := sdk.ListJobs(0, 10, "running")
+	ListJobs(offset uint64, limit uint64, status string) (JobPage, error)
 
 	// StartJob starts a job.
 	//
@@ -114,6 +116,14 @@ type SDK interface {
 	//  page, _ := sdk.GetPropletAliveHistory("b1d10738-c5d7-4ff1-8f4d-b9328ce6f040", 0, 10)
 	//  fmt.Println(page)
 	GetPropletAliveHistory(id string, offset, limit uint64) (proplet.PropletAliveHistoryPage, error)
+
+	// ListProplets lists proplets with optional status filter.
+	// Status can be "active", "inactive", or "" (all).
+	//
+	// example:
+	//  page, _ := sdk.ListProplets(0, 10, "")
+	//  page, _ := sdk.ListProplets(0, 10, "active")
+	ListProplets(offset uint64, limit uint64, status string) (PropletPage, error)
 
 	// DeleteProplet deletes a proplet by id.
 	//

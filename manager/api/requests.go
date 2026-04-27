@@ -1,13 +1,17 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 
 	apiutil "github.com/absmach/magistrala/api/http/util"
 	"github.com/absmach/propeller/pkg/cron"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/task"
 )
+
+var errStatusFilterUnsupported = errors.New("status filter is not supported")
 
 type taskReq struct {
 	task.Task `json:",inline"`
@@ -97,12 +101,39 @@ func (e *entityReq) validate() error {
 	return nil
 }
 
+type listEntityStatus uint8
+
+const (
+	withoutStatusFilter listEntityStatus = iota
+	propletStatusFilter
+	jobStatusFilter
+)
+
 type listEntityReq struct {
 	offset, limit uint64
+	status        string
+	statusFilter  listEntityStatus
 }
 
-func (e *listEntityReq) validate() error {
-	return nil
+func (e listEntityReq) validate() error {
+	if e.status == "" {
+		return nil
+	}
+
+	switch e.statusFilter {
+	case withoutStatusFilter:
+		return errStatusFilterUnsupported
+	case propletStatusFilter:
+		_, err := proplet.ToStatus(e.status)
+
+		return err
+	case jobStatusFilter:
+		_, err := task.ToJobStatus(e.status)
+
+		return err
+	default:
+		return pkgerrors.ErrInvalidValue
+	}
 }
 
 type metricsReq struct {

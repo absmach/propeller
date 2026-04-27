@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,9 +41,9 @@ func (sdk *propSDK) CreateTask(task Task) (Task, error) {
 		return Task{}, err
 	}
 
-	url := sdk.managerURL + tasksEndpoint
+	reqURL := sdk.managerURL + tasksEndpoint
 
-	body, err := sdk.processRequest(http.MethodPost, url, data, http.StatusCreated)
+	body, err := sdk.processRequest(http.MethodPost, reqURL, data, http.StatusCreated)
 	if err != nil {
 		return Task{}, err
 	}
@@ -56,9 +57,9 @@ func (sdk *propSDK) CreateTask(task Task) (Task, error) {
 }
 
 func (sdk *propSDK) GetTask(id string) (Task, error) {
-	url := sdk.managerURL + tasksEndpoint + "/" + id
+	reqURL := sdk.managerURL + tasksEndpoint + "/" + id
 
-	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
 	if err != nil {
 		return Task{}, err
 	}
@@ -83,9 +84,9 @@ func (sdk *propSDK) ListTasks(offset, limit uint64) (TaskPage, error) {
 	if len(queries) > 0 {
 		query = "?" + strings.Join(queries, "&")
 	}
-	url := sdk.managerURL + tasksEndpoint + query
+	reqURL := sdk.managerURL + tasksEndpoint + query
 
-	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
 	if err != nil {
 		return TaskPage{}, err
 	}
@@ -103,9 +104,9 @@ func (sdk *propSDK) UpdateTask(task Task) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	url := sdk.managerURL + tasksEndpoint + "/" + task.ID
+	reqURL := sdk.managerURL + tasksEndpoint + "/" + task.ID
 
-	body, err := sdk.processRequest(http.MethodPut, url, data, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodPut, reqURL, data, http.StatusOK)
 	if err != nil {
 		return Task{}, err
 	}
@@ -119,9 +120,9 @@ func (sdk *propSDK) UpdateTask(task Task) (Task, error) {
 }
 
 func (sdk *propSDK) DeleteTask(id string) error {
-	url := sdk.managerURL + tasksEndpoint + "/" + id
+	reqURL := sdk.managerURL + tasksEndpoint + "/" + id
 
-	if _, err := sdk.processRequest(http.MethodDelete, url, nil, http.StatusNoContent); err != nil {
+	if _, err := sdk.processRequest(http.MethodDelete, reqURL, nil, http.StatusNoContent); err != nil {
 		return err
 	}
 
@@ -129,9 +130,9 @@ func (sdk *propSDK) DeleteTask(id string) error {
 }
 
 func (sdk *propSDK) StartTask(id string) error {
-	url := fmt.Sprintf("%s/tasks/%s/start", sdk.managerURL, id)
+	reqURL := fmt.Sprintf("%s/tasks/%s/start", sdk.managerURL, id)
 
-	if _, err := sdk.processRequest(http.MethodPost, url, nil, http.StatusOK); err != nil {
+	if _, err := sdk.processRequest(http.MethodPost, reqURL, nil, http.StatusOK); err != nil {
 		return err
 	}
 
@@ -139,9 +140,9 @@ func (sdk *propSDK) StartTask(id string) error {
 }
 
 func (sdk *propSDK) StopTask(id string) error {
-	url := fmt.Sprintf("%s/tasks/%s/stop", sdk.managerURL, id)
+	reqURL := fmt.Sprintf("%s/tasks/%s/stop", sdk.managerURL, id)
 
-	if _, err := sdk.processRequest(http.MethodPost, url, nil, http.StatusOK); err != nil {
+	if _, err := sdk.processRequest(http.MethodPost, reqURL, nil, http.StatusOK); err != nil {
 		return err
 	}
 
@@ -184,9 +185,9 @@ func (sdk *propSDK) CreateJob(req JobRequest) (JobResponse, error) {
 		return JobResponse{}, err
 	}
 
-	url := sdk.managerURL + jobsEndpoint
+	reqURL := sdk.managerURL + jobsEndpoint
 
-	body, err := sdk.processRequest(http.MethodPost, url, data, http.StatusCreated)
+	body, err := sdk.processRequest(http.MethodPost, reqURL, data, http.StatusCreated)
 	if err != nil {
 		return JobResponse{}, err
 	}
@@ -200,9 +201,9 @@ func (sdk *propSDK) CreateJob(req JobRequest) (JobResponse, error) {
 }
 
 func (sdk *propSDK) GetJob(jobID string) (JobResponse, error) {
-	url := sdk.managerURL + jobsEndpoint + "/" + jobID
+	reqURL := sdk.managerURL + jobsEndpoint + "/" + jobID
 
-	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
 	if err != nil {
 		return JobResponse{}, err
 	}
@@ -215,21 +216,24 @@ func (sdk *propSDK) GetJob(jobID string) (JobResponse, error) {
 	return jr, nil
 }
 
-func (sdk *propSDK) ListJobs(offset, limit uint64) (JobPage, error) {
-	queries := make([]string, 0)
+func (sdk *propSDK) ListJobs(offset, limit uint64, status string) (JobPage, error) {
+	params := make([]string, 0)
 	if offset > 0 {
-		queries = append(queries, fmt.Sprintf("offset=%d", offset))
+		params = append(params, fmt.Sprintf("offset=%d", offset))
 	}
 	if limit > 0 {
-		queries = append(queries, fmt.Sprintf("limit=%d", limit))
+		params = append(params, fmt.Sprintf("limit=%d", limit))
+	}
+	if status != "" {
+		params = append(params, "status="+url.QueryEscape(status))
 	}
 	query := ""
-	if len(queries) > 0 {
-		query = "?" + strings.Join(queries, "&")
+	if len(params) > 0 {
+		query = "?" + strings.Join(params, "&")
 	}
-	url := sdk.managerURL + jobsEndpoint + query
+	reqURL := sdk.managerURL + jobsEndpoint + query
 
-	body, err := sdk.processRequest(http.MethodGet, url, nil, http.StatusOK)
+	body, err := sdk.processRequest(http.MethodGet, reqURL, nil, http.StatusOK)
 	if err != nil {
 		return JobPage{}, err
 	}
@@ -243,9 +247,9 @@ func (sdk *propSDK) ListJobs(offset, limit uint64) (JobPage, error) {
 }
 
 func (sdk *propSDK) StartJob(jobID string) error {
-	url := fmt.Sprintf("%s/jobs/%s/start", sdk.managerURL, jobID)
+	reqURL := fmt.Sprintf("%s/jobs/%s/start", sdk.managerURL, jobID)
 
-	if _, err := sdk.processRequest(http.MethodPost, url, nil, http.StatusOK); err != nil {
+	if _, err := sdk.processRequest(http.MethodPost, reqURL, nil, http.StatusOK); err != nil {
 		return err
 	}
 
@@ -253,9 +257,9 @@ func (sdk *propSDK) StartJob(jobID string) error {
 }
 
 func (sdk *propSDK) StopJob(jobID string) error {
-	url := fmt.Sprintf("%s/jobs/%s/stop", sdk.managerURL, jobID)
+	reqURL := fmt.Sprintf("%s/jobs/%s/stop", sdk.managerURL, jobID)
 
-	if _, err := sdk.processRequest(http.MethodPost, url, nil, http.StatusOK); err != nil {
+	if _, err := sdk.processRequest(http.MethodPost, reqURL, nil, http.StatusOK); err != nil {
 		return err
 	}
 
