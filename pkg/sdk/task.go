@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -85,7 +85,7 @@ func (sdk *propSDK) ListTasks(pm PageMetadata) (TaskPage, error) {
 		if err != nil {
 			return TaskPage{}, fmt.Errorf("marshal metadata: %w", err)
 		}
-		queries = append(queries, "metadata="+url.QueryEscape(string(b)))
+		queries = append(queries, "metadata="+neturl.QueryEscape(string(b)))
 	}
 	query := ""
 	if len(queries) > 0 {
