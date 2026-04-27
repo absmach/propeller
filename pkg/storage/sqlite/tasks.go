@@ -237,14 +237,10 @@ func buildSQLiteMetadataWhere(filter task.Metadata) (clause string, args []any, 
 		if !sqliteMetadataKeyRe.MatchString(k) {
 			return "", nil, fmt.Errorf("invalid metadata key: %q", k)
 		}
-		vJSON, err := json.Marshal(v)
-		if err != nil {
-			return "", nil, fmt.Errorf("invalid metadata value for key %q: %w", k, err)
-		}
 		sb.WriteString(` AND json_extract(metadata, '$."`)
 		sb.WriteString(k)
-		sb.WriteString(`"') = json(?)`)
-		args = append(args, string(vJSON))
+		sb.WriteString(`"') = ?`)
+		args = append(args, v)
 	}
 
 	return sb.String(), args, nil
