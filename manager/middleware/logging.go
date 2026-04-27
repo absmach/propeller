@@ -7,6 +7,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 )
 
@@ -40,6 +41,26 @@ func (lm *loggingMiddleware) GetProplet(ctx context.Context, id string) (resp pr
 	}(time.Now())
 
 	return lm.svc.GetProplet(ctx, id)
+}
+
+func (lm *loggingMiddleware) GetPropletSDF(ctx context.Context, id string) (resp sdf.Document, err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("proplet",
+				slog.String("id", id),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Get proplet SDF failed", args...)
+
+			return
+		}
+		lm.logger.Info("Get proplet SDF completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.GetPropletSDF(ctx, id)
 }
 
 func (lm *loggingMiddleware) ListProplets(ctx context.Context, offset, limit uint64) (resp proplet.PropletPage, err error) {

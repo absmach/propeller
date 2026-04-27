@@ -6,11 +6,13 @@ import (
 	"github.com/absmach/magistrala"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
 )
 
 var (
 	_ magistrala.Response = (*propletResponse)(nil)
+	_ magistrala.Response = (*propletSDFResponse)(nil)
 	_ magistrala.Response = (*listpropletResponse)(nil)
 	_ magistrala.Response = (*propletAliveHistoryResponse)(nil)
 	_ magistrala.Response = (*taskResponse)(nil)
@@ -54,6 +56,22 @@ func (w propletResponse) Headers() map[string]string {
 
 func (w propletResponse) Empty() bool {
 	return w.deleted
+}
+
+type propletSDFResponse struct {
+	sdf.Document
+}
+
+func (r propletSDFResponse) Code() int {
+	return http.StatusOK
+}
+
+func (r propletSDFResponse) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (r propletSDFResponse) Empty() bool {
+	return false
 }
 
 type listpropletResponse struct {

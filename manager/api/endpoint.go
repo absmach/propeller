@@ -71,6 +71,25 @@ func getPropletAliveHistoryEndpoint(svc manager.Service) endpoint.Endpoint {
 	}
 }
 
+func getPropletSDFEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(entityReq)
+		if !ok {
+			return propletSDFResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return propletSDFResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		doc, err := svc.GetPropletSDF(ctx, req.id)
+		if err != nil {
+			return propletSDFResponse{}, err
+		}
+
+		return propletSDFResponse{Document: doc}, nil
+	}
+}
+
 func deletePropletEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(entityReq)

@@ -7,6 +7,7 @@ import (
 	"github.com/absmach/propeller/pkg/cron"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/task"
+	"github.com/google/uuid"
 )
 
 type taskReq struct {
@@ -92,6 +93,10 @@ type entityReq struct {
 func (e *entityReq) validate() error {
 	if e.id == "" {
 		return apiutil.ErrMissingID
+	}
+
+	if _, err := uuid.Parse(e.id); err != nil {
+		return apiutil.ErrInvalidQueryParams
 	}
 
 	return nil

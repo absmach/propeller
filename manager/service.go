@@ -23,6 +23,7 @@ import (
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
+	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/google/uuid"
@@ -114,6 +115,15 @@ func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.P
 	w.SetAlive()
 
 	return w, nil
+}
+
+func (svc *service) GetPropletSDF(ctx context.Context, propletID string) (sdf.Document, error) {
+	p, err := svc.GetProplet(ctx, propletID)
+	if err != nil {
+		return sdf.Document{}, err
+	}
+
+	return sdf.PropletDocument(p), nil
 }
 
 func (svc *service) ListProplets(ctx context.Context, offset, limit uint64) (proplet.PropletPage, error) {
