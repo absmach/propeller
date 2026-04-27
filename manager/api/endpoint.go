@@ -243,7 +243,7 @@ func stopJobEndpoint(svc manager.Service) endpoint.Endpoint {
 
 func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
-		req, ok := request.(listEntityReq)
+		req, ok := request.(listTasksReq)
 		if !ok {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
 		}
@@ -251,14 +251,17 @@ func listTasksEndpoint(svc manager.Service) endpoint.Endpoint {
 			return listTaskResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		tasks, err := svc.ListTasks(ctx, req.offset, req.limit)
+		pm := manager.PageMetadata{
+			Offset:   req.offset,
+			Limit:    req.limit,
+			Metadata: req.metadata,
+		}
+		tasks, err := svc.ListTasks(ctx, pm)
 		if err != nil {
 			return listTaskResponse{}, err
 		}
 
-		return listTaskResponse{
-			TaskPage: tasks,
-		}, nil
+		return listTaskResponse{TaskPage: tasks}, nil
 	}
 }
 

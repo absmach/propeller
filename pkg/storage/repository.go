@@ -13,7 +13,7 @@ type TaskRepository interface {
 	Create(ctx context.Context, t task.Task) (task.Task, error)
 	Get(ctx context.Context, id string) (task.Task, error)
 	Update(ctx context.Context, t task.Task) error
-	List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error)
+	List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error)
 	ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error)
 	ListByJobID(ctx context.Context, jobID string) ([]task.Task, error)
 	Delete(ctx context.Context, id string) error

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -71,13 +72,20 @@ func (sdk *propSDK) GetTask(id string) (Task, error) {
 	return t, nil
 }
 
-func (sdk *propSDK) ListTasks(offset, limit uint64) (TaskPage, error) {
+func (sdk *propSDK) ListTasks(pm PageMetadata) (TaskPage, error) {
 	queries := make([]string, 0)
-	if offset > 0 {
-		queries = append(queries, fmt.Sprintf("offset=%d", offset))
+	if pm.Offset > 0 {
+		queries = append(queries, fmt.Sprintf("offset=%d", pm.Offset))
 	}
-	if limit > 0 {
-		queries = append(queries, fmt.Sprintf("limit=%d", limit))
+	if pm.Limit > 0 {
+		queries = append(queries, fmt.Sprintf("limit=%d", pm.Limit))
+	}
+	if len(pm.Metadata) > 0 {
+		b, err := json.Marshal(pm.Metadata)
+		if err != nil {
+			return TaskPage{}, fmt.Errorf("marshal metadata: %w", err)
+		}
+		queries = append(queries, "metadata="+neturl.QueryEscape(string(b)))
 	}
 	query := ""
 	if len(queries) > 0 {

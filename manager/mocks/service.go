@@ -783,6 +783,7 @@ func (_c *MockService_GetPropletMetrics_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// GetPropletAliveHistory provides a mock function for the type MockService
 func (_mock *MockService) GetPropletAliveHistory(ctx context.Context, propletID string, offset uint64, limit uint64) (proplet.PropletAliveHistoryPage, error) {
 	ret := _mock.Called(ctx, propletID, offset, limit)
 
@@ -808,11 +809,17 @@ func (_mock *MockService) GetPropletAliveHistory(ctx context.Context, propletID 
 	return r0, r1
 }
 
+// MockService_GetPropletAliveHistory_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPropletAliveHistory'
 type MockService_GetPropletAliveHistory_Call struct {
 	*mock.Call
 }
 
-func (_e *MockService_Expecter) GetPropletAliveHistory(ctx any, propletID any, offset any, limit any) *MockService_GetPropletAliveHistory_Call {
+// GetPropletAliveHistory is a helper method to define mock.On call
+//   - ctx context.Context
+//   - propletID string
+//   - offset uint64
+//   - limit uint64
+func (_e *MockService_Expecter) GetPropletAliveHistory(ctx interface{}, propletID interface{}, offset interface{}, limit interface{}) *MockService_GetPropletAliveHistory_Call {
 	return &MockService_GetPropletAliveHistory_Call{Call: _e.mock.On("GetPropletAliveHistory", ctx, propletID, offset, limit)}
 }
 
@@ -834,7 +841,12 @@ func (_c *MockService_GetPropletAliveHistory_Call) Run(run func(ctx context.Cont
 		if args[3] != nil {
 			arg3 = args[3].(uint64)
 		}
-		run(arg0, arg1, arg2, arg3)
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }
@@ -1272,8 +1284,8 @@ func (_c *MockService_ListProplets_Call) RunAndReturn(run func(ctx context.Conte
 }
 
 // ListTasks provides a mock function for the type MockService
-func (_mock *MockService) ListTasks(ctx context.Context, offset uint64, limit uint64) (task.TaskPage, error) {
-	ret := _mock.Called(ctx, offset, limit)
+func (_mock *MockService) ListTasks(ctx context.Context, pm manager.PageMetadata) (task.TaskPage, error) {
+	ret := _mock.Called(ctx, pm)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListTasks")
@@ -1281,16 +1293,16 @@ func (_mock *MockService) ListTasks(ctx context.Context, offset uint64, limit ui
 
 	var r0 task.TaskPage
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) (task.TaskPage, error)); ok {
-		return returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, manager.PageMetadata) (task.TaskPage, error)); ok {
+		return returnFunc(ctx, pm)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uint64, uint64) task.TaskPage); ok {
-		r0 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, manager.PageMetadata) task.TaskPage); ok {
+		r0 = returnFunc(ctx, pm)
 	} else {
 		r0 = ret.Get(0).(task.TaskPage)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, uint64, uint64) error); ok {
-		r1 = returnFunc(ctx, offset, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, manager.PageMetadata) error); ok {
+		r1 = returnFunc(ctx, pm)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1304,30 +1316,24 @@ type MockService_ListTasks_Call struct {
 
 // ListTasks is a helper method to define mock.On call
 //   - ctx context.Context
-//   - offset uint64
-//   - limit uint64
-func (_e *MockService_Expecter) ListTasks(ctx interface{}, offset interface{}, limit interface{}) *MockService_ListTasks_Call {
-	return &MockService_ListTasks_Call{Call: _e.mock.On("ListTasks", ctx, offset, limit)}
+//   - pm manager.PageMetadata
+func (_e *MockService_Expecter) ListTasks(ctx interface{}, pm interface{}) *MockService_ListTasks_Call {
+	return &MockService_ListTasks_Call{Call: _e.mock.On("ListTasks", ctx, pm)}
 }
 
-func (_c *MockService_ListTasks_Call) Run(run func(ctx context.Context, offset uint64, limit uint64)) *MockService_ListTasks_Call {
+func (_c *MockService_ListTasks_Call) Run(run func(ctx context.Context, pm manager.PageMetadata)) *MockService_ListTasks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 uint64
+		var arg1 manager.PageMetadata
 		if args[1] != nil {
-			arg1 = args[1].(uint64)
-		}
-		var arg2 uint64
-		if args[2] != nil {
-			arg2 = args[2].(uint64)
+			arg1 = args[1].(manager.PageMetadata)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -1338,7 +1344,7 @@ func (_c *MockService_ListTasks_Call) Return(taskPage task.TaskPage, err error) 
 	return _c
 }
 
-func (_c *MockService_ListTasks_Call) RunAndReturn(run func(ctx context.Context, offset uint64, limit uint64) (task.TaskPage, error)) *MockService_ListTasks_Call {
+func (_c *MockService_ListTasks_Call) RunAndReturn(run func(ctx context.Context, pm manager.PageMetadata) (task.TaskPage, error)) *MockService_ListTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }

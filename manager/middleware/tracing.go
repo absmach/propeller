@@ -91,14 +91,14 @@ func (tm *tracing) GetTask(ctx context.Context, id string) (resp task.Task, err 
 	return tm.svc.GetTask(ctx, id)
 }
 
-func (tm *tracing) ListTasks(ctx context.Context, offset, limit uint64) (resp task.TaskPage, err error) {
+func (tm *tracing) ListTasks(ctx context.Context, pm manager.PageMetadata) (resp task.TaskPage, err error) {
 	ctx, span := tm.tracer.Start(ctx, "list-tasks", trace.WithAttributes(
-		attribute.Int64("offset", int64(offset)),
-		attribute.Int64("limit", int64(limit)),
+		attribute.Int64("offset", int64(pm.Offset)),
+		attribute.Int64("limit", int64(pm.Limit)),
 	))
 	defer span.End()
 
-	return tm.svc.ListTasks(ctx, offset, limit)
+	return tm.svc.ListTasks(ctx, pm)
 }
 
 func (tm *tracing) UpdateTask(ctx context.Context, t task.Task) (resp task.Task, err error) {

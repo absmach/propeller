@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
@@ -15,16 +18,25 @@ const memoryScanPageSize uint64 = 100
 
 type memoryTaskRepo struct {
 	storage Storage
+	mu      sync.RWMutex
+	// metaIdx[key][value] → set of task IDs
+	metaIdx map[string]map[string]map[string]struct{}
 }
 
 func newMemoryTaskRepository(s Storage) TaskRepository {
-	return &memoryTaskRepo{storage: s}
+	return &memoryTaskRepo{
+		storage: s,
+		metaIdx: make(map[string]map[string]map[string]struct{}),
+	}
 }
 
 func (r *memoryTaskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if err := r.storage.Create(ctx, t.ID, t); err != nil {
 		return task.Task{}, err
 	}
+	r.indexTask(t)
 
 	return t, nil
 }
@@ -43,24 +55,27 @@ func (r *memoryTaskRepo) Get(ctx context.Context, id string) (task.Task, error) 
 }
 
 func (r *memoryTaskRepo) Update(ctx context.Context, t task.Task) error {
-	return r.storage.Update(ctx, t.ID, t)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if old, err := r.storage.Get(ctx, t.ID); err == nil {
+		if oldTask, ok := old.(task.Task); ok {
+			r.deindexTask(oldTask)
+		}
+	}
+	if err := r.storage.Update(ctx, t.ID, t); err != nil {
+		return err
+	}
+	r.indexTask(t)
+
+	return nil
 }
 
-func (r *memoryTaskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	data, total, err := r.storage.List(ctx, offset, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	tasks := make([]task.Task, len(data))
-	for i, d := range data {
-		t, ok := d.(task.Task)
-		if !ok {
-			return nil, 0, pkgerrors.ErrInvalidData
-		}
-		tasks[i] = t
+func (r *memoryTaskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	if len(filter) == 0 {
+		return r.listAll(ctx, offset, limit)
 	}
 
-	return tasks, total, nil
+	return r.listByMetadata(ctx, filter, offset, limit)
 }
 
 func (r *memoryTaskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -104,7 +119,138 @@ func (r *memoryTaskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.
 }
 
 func (r *memoryTaskRepo) Delete(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if old, err := r.storage.Get(ctx, id); err == nil {
+		if oldTask, ok := old.(task.Task); ok {
+			r.deindexTask(oldTask)
+		}
+	}
+
 	return r.storage.Delete(ctx, id)
+}
+
+func (r *memoryTaskRepo) indexTask(t task.Task) {
+	for k, v := range t.Metadata {
+		s := metaValueStr(v)
+		if r.metaIdx[k] == nil {
+			r.metaIdx[k] = make(map[string]map[string]struct{})
+		}
+		if r.metaIdx[k][s] == nil {
+			r.metaIdx[k][s] = make(map[string]struct{})
+		}
+		r.metaIdx[k][s][t.ID] = struct{}{}
+	}
+}
+
+func (r *memoryTaskRepo) deindexTask(t task.Task) {
+	for k, v := range t.Metadata {
+		s := metaValueStr(v)
+		ids, ok := r.metaIdx[k][s]
+		if !ok {
+			continue
+		}
+		delete(ids, t.ID)
+		if len(ids) == 0 {
+			delete(r.metaIdx[k], s)
+		}
+		if len(r.metaIdx[k]) == 0 {
+			delete(r.metaIdx, k)
+		}
+	}
+}
+
+func metaValueStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(v)
+}
+
+func (r *memoryTaskRepo) listAll(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	data, total, err := r.storage.List(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	tasks := make([]task.Task, len(data))
+	for i, d := range data {
+		t, ok := d.(task.Task)
+		if !ok {
+			return nil, 0, pkgerrors.ErrInvalidData
+		}
+		tasks[i] = t
+	}
+
+	return tasks, total, nil
+}
+
+func (r *memoryTaskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]struct{}, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var matchIDs map[string]struct{}
+	for k, v := range filter {
+		s := metaValueStr(v)
+		vals, ok := r.metaIdx[k]
+		if !ok {
+			return nil, false
+		}
+		taskIDs, ok := vals[s]
+		if !ok {
+			return nil, false
+		}
+		if matchIDs == nil {
+			matchIDs = make(map[string]struct{}, len(taskIDs))
+			for id := range taskIDs {
+				matchIDs[id] = struct{}{}
+			}
+		} else {
+			for id := range matchIDs {
+				if _, ok := taskIDs[id]; !ok {
+					delete(matchIDs, id)
+				}
+			}
+		}
+		if len(matchIDs) == 0 {
+			return nil, false
+		}
+	}
+
+	return matchIDs, true
+}
+
+func (r *memoryTaskRepo) listByMetadata(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	matchIDs, ok := r.filterIDsByMetadata(filter)
+	if !ok || len(matchIDs) == 0 {
+		return []task.Task{}, 0, nil
+	}
+
+	tasks := make([]task.Task, 0, len(matchIDs))
+	for id := range matchIDs {
+		data, err := r.storage.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		t, ok := data.(task.Task)
+		if !ok {
+			continue
+		}
+		tasks = append(tasks, t)
+	}
+	slices.SortFunc(tasks, func(a, b task.Task) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+
+	total := uint64(len(tasks))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+
+	return tasks[offset:min(offset+limit, total)], total, nil
 }
 
 type memoryPropletRepo struct {

@@ -149,8 +149,8 @@ func (a *postgresTaskAdapter) Update(ctx context.Context, t task.Task) error {
 	return a.repo.Update(ctx, t)
 }
 
-func (a *postgresTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	return a.repo.List(ctx, offset, limit)
+func (a *postgresTaskAdapter) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.List(ctx, filter, offset, limit)
 }
 
 func (a *postgresTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -301,8 +301,8 @@ func (a *sqliteTaskAdapter) Update(ctx context.Context, t task.Task) error {
 	return a.repo.Update(ctx, t)
 }
 
-func (a *sqliteTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	return a.repo.List(ctx, offset, limit)
+func (a *sqliteTaskAdapter) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.List(ctx, filter, offset, limit)
 }
 
 func (a *sqliteTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
@@ -453,8 +453,8 @@ func (a *badgerTaskAdapter) Update(ctx context.Context, t task.Task) error {
 	return a.repo.Update(ctx, t)
 }
 
-func (a *badgerTaskAdapter) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
-	return a.repo.List(ctx, offset, limit)
+func (a *badgerTaskAdapter) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	return a.repo.List(ctx, filter, offset, limit)
 }
 
 func (a *badgerTaskAdapter) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {

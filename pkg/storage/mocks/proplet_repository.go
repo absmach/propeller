@@ -356,6 +356,7 @@ func (_c *MockPropletRepository_Update_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
+// GetAliveHistory provides a mock function for the type MockPropletRepository
 func (_mock *MockPropletRepository) GetAliveHistory(ctx context.Context, id string, offset uint64, limit uint64) ([]time.Time, uint64, error) {
 	ret := _mock.Called(ctx, id, offset, limit)
 
@@ -389,10 +390,16 @@ func (_mock *MockPropletRepository) GetAliveHistory(ctx context.Context, id stri
 	return r0, r1, r2
 }
 
+// MockPropletRepository_GetAliveHistory_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetAliveHistory'
 type MockPropletRepository_GetAliveHistory_Call struct {
 	*mock.Call
 }
 
+// GetAliveHistory is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id string
+//   - offset uint64
+//   - limit uint64
 func (_e *MockPropletRepository_Expecter) GetAliveHistory(ctx interface{}, id interface{}, offset interface{}, limit interface{}) *MockPropletRepository_GetAliveHistory_Call {
 	return &MockPropletRepository_GetAliveHistory_Call{Call: _e.mock.On("GetAliveHistory", ctx, id, offset, limit)}
 }
@@ -415,7 +422,12 @@ func (_c *MockPropletRepository_GetAliveHistory_Call) Run(run func(ctx context.C
 		if args[3] != nil {
 			arg3 = args[3].(uint64)
 		}
-		run(arg0, arg1, arg2, arg3)
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }

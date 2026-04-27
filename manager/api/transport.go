@@ -75,7 +75,7 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		), "create-task").ServeHTTP)
 		r.Get("/", otelhttp.NewHandler(kithttp.NewServer(
 			listTasksEndpoint(svc),
-			decodeListEntityReq,
+			decodeListTasksReq,
 			api.EncodeResponse,
 			opts...,
 		), "list-tasks").ServeHTTP)
@@ -315,6 +315,29 @@ func decodeListEntityReq(_ context.Context, r *http.Request) (any, error) {
 	return listEntityReq{
 		offset: o,
 		limit:  l,
+	}, nil
+}
+
+func decodeListTasksReq(_ context.Context, r *http.Request) (any, error) {
+	o, err := apiutil.ReadNumQuery[uint64](r, api.OffsetKey, api.DefOffset)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
+	}
+
+	l, err := apiutil.ReadNumQuery[uint64](r, api.LimitKey, api.DefLimit)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
+	}
+
+	meta, err := apiutil.ReadMetadataQuery(r, api.MetadataKey, nil)
+	if err != nil {
+		return nil, errors.Join(apiutil.ErrValidation, err)
+	}
+
+	return listTasksReq{
+		offset:   o,
+		limit:    l,
+		metadata: meta,
 	}, nil
 }
 

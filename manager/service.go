@@ -519,15 +519,15 @@ func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, erro
 	return svc.taskRepo.Get(ctx, taskID)
 }
 
-func (svc *service) ListTasks(ctx context.Context, offset, limit uint64) (task.TaskPage, error) {
-	tasks, total, err := svc.taskRepo.List(ctx, offset, limit)
+func (svc *service) ListTasks(ctx context.Context, pm PageMetadata) (task.TaskPage, error) {
+	tasks, total, err := svc.taskRepo.List(ctx, pm.Metadata, pm.Offset, pm.Limit)
 	if err != nil {
 		return task.TaskPage{}, err
 	}
 
 	return task.TaskPage{
-		Offset: offset,
-		Limit:  limit,
+		Offset: pm.Offset,
+		Limit:  pm.Limit,
 		Total:  total,
 		Tasks:  tasks,
 	}, nil
@@ -551,6 +551,9 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 	}
 	if t.Priority != 0 {
 		dbT.Priority = t.Priority
+	}
+	if t.Metadata != nil {
+		dbT.Metadata = t.Metadata
 	}
 
 	scheduleChanged := false
@@ -581,20 +584,8 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 		return task.Task{}, err
 	}
 
-	if !scheduleChanged || svc.cronScheduler == nil {
-		return dbT, nil
-	}
-
-	if dbT.Schedule != "" {
-		if err := svc.cronScheduler.ScheduleTask(ctx, dbT.ID); err != nil {
-			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
-		}
-
-		return dbT, nil
-	}
-
-	if err := svc.cronScheduler.UnscheduleTask(ctx, dbT.ID); err != nil {
-		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", dbT.ID)
+	if scheduleChanged {
+		svc.updateCronTask(ctx, dbT)
 	}
 
 	return dbT, nil
@@ -984,6 +975,24 @@ func (svc *service) RecoverInterruptedTasks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (svc *service) updateCronTask(ctx context.Context, t task.Task) {
+	if svc.cronScheduler == nil {
+		return
+	}
+
+	if t.Schedule != "" {
+		if err := svc.cronScheduler.ScheduleTask(ctx, t.ID); err != nil {
+			svc.logger.WarnContext(ctx, "failed to reschedule task in cron scheduler", "error", err, "task_id", t.ID)
+		}
+
+		return
+	}
+
+	if err := svc.cronScheduler.UnscheduleTask(ctx, t.ID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to unschedule task in cron scheduler", "error", err, "task_id", t.ID)
+	}
 }
 
 func (svc *service) listAllStoredJobs(ctx context.Context) ([]job.Job, error) {
@@ -1691,7 +1700,7 @@ func (svc *service) listAllTasks(ctx context.Context) ([]task.Task, error) {
 	var offset uint64
 
 	for {
-		tasks, total, err := svc.taskRepo.List(ctx, offset, pageSize)
+		tasks, total, err := svc.taskRepo.List(ctx, nil, offset, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -1715,24 +1724,42 @@ func (svc *service) persistTaskBeforeStart(ctx context.Context, t *task.Task) er
 	return svc.taskRepo.Update(ctx, *t)
 }
 
+type startPayload struct {
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	State             task.State                 `json:"state"`
+	ImageURL          string                     `json:"image_url,omitempty"`
+	File              []byte                     `json:"file,omitempty"`
+	Inputs            task.FlexStrings           `json:"inputs,omitempty"`
+	CLIArgs           []string                   `json:"cli_args"`
+	Broadcast         bool                       `json:"broadcast"`
+	Daemon            bool                       `json:"daemon"`
+	Env               map[string]string          `json:"env,omitempty"`
+	Encrypted         bool                       `json:"encrypted"`
+	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
+	MonitoringProfile *proplet.MonitoringProfile `json:"monitoring_profile,omitempty"`
+	PropletID         string                     `json:"proplet_id,omitempty"`
+	ParentResults     map[string]any             `json:"parent_results,omitempty"`
+	// Metadata is intentionally excluded: it is a manager-side filtering field
+	// and is not needed by the proplet runtime.
+}
+
 func (svc *service) publishStart(ctx context.Context, t task.Task, propletID string) error {
-	payload := map[string]any{
-		"id":                 t.ID,
-		"name":               t.Name,
-		"state":              t.State,
-		"image_url":          t.ImageURL,
-		"file":               t.File,
-		"inputs":             t.Inputs,
-		"cli_args":           t.CLIArgs,
-		"daemon":             t.Daemon,
-		"env":                t.Env,
-		"encrypted":          t.Encrypted,
-		"kbs_resource_path":  t.KBSResourcePath,
-		"monitoring_profile": t.MonitoringProfile,
-		"broadcast":          t.Broadcast,
-	}
-	if propletID != "" {
-		payload["proplet_id"] = propletID
+	payload := startPayload{
+		ID:                t.ID,
+		Name:              t.Name,
+		State:             t.State,
+		ImageURL:          t.ImageURL,
+		File:              t.File,
+		Inputs:            t.Inputs,
+		CLIArgs:           t.CLIArgs,
+		Broadcast:         t.Broadcast,
+		Daemon:            t.Daemon,
+		Env:               t.Env,
+		Encrypted:         t.Encrypted,
+		KBSResourcePath:   t.KBSResourcePath,
+		MonitoringProfile: t.MonitoringProfile,
+		PropletID:         propletID,
 	}
 
 	if len(t.DependsOn) > 0 {
@@ -1741,7 +1768,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 			svc.logger.WarnContext(ctx, "failed to get parent results", "task_id", t.ID, "error", err)
 			parentResults = make(map[string]any)
 		}
-		payload["parent_results"] = parentResults
+		payload.ParentResults = parentResults
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"

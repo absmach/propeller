@@ -8,13 +8,15 @@ import (
 	"net/http"
 
 	"github.com/absmach/propeller/pkg/proplet"
+	"github.com/absmach/propeller/pkg/task"
 )
 
 const CTJSON string = "application/json"
 
 type PageMetadata struct {
-	Offset uint64 `json:"offset"`
-	Limit  uint64 `json:"limit"`
+	Offset   uint64        `json:"offset"`
+	Limit    uint64        `json:"limit"`
+	Metadata task.Metadata `json:"metadata,omitempty"`
 }
 
 type SDK interface {
@@ -35,12 +37,12 @@ type SDK interface {
 	//  fmt.Println(task)
 	GetTask(id string) (Task, error)
 
-	// ListTasks lists tasks.
+	// ListTasks lists tasks with optional metadata filtering.
 	//
 	// example:
-	//  taskPage, _ := sdk.ListTasks(0, 10)
+	//  taskPage, _ := sdk.ListTasks(sdk.PageMetadata{Offset: 0, Limit: 10})
 	//  fmt.Println(taskPage)
-	ListTasks(offset uint64, limit uint64) (TaskPage, error)
+	ListTasks(pm PageMetadata) (TaskPage, error)
 
 	// UpdateTask updates a task.
 	//

@@ -1,9 +1,12 @@
 package badger
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/absmach/propeller/pkg/task"
 	badgerdb "github.com/dgraph-io/badger/v4"
@@ -17,13 +20,24 @@ func NewTaskRepository(db *Database) TaskRepository {
 	return &taskRepo{db: db}
 }
 
+func metaIdxKey(k, v, id string) []byte {
+	return []byte("meta-idx\x00" + k + "\x00" + v + "\x00" + id)
+}
+
 func (r *taskRepo) Create(ctx context.Context, t task.Task) (task.Task, error) {
 	key := []byte("task:" + t.ID)
 	val, err := json.Marshal(t)
 	if err != nil {
 		return task.Task{}, fmt.Errorf("marshal error: %w", err)
 	}
-	if err := r.db.set(key, val); err != nil {
+	err = r.db.updateTxn(func(txn *badgerdb.Txn) error {
+		if err := txn.Set(key, val); err != nil {
+			return err
+		}
+
+		return r.indexTaskTxn(txn, t)
+	})
+	if err != nil {
 		return task.Task{}, fmt.Errorf("%w: %w", ErrCreate, err)
 	}
 
@@ -50,14 +64,118 @@ func (r *taskRepo) Update(ctx context.Context, t task.Task) error {
 	if err != nil {
 		return fmt.Errorf("marshal error: %w", err)
 	}
-	if err := r.db.set(key, val); err != nil {
+	err = r.db.updateTxn(func(txn *badgerdb.Txn) error {
+		item, err := txn.Get(key)
+		if err != nil {
+			return ErrTaskNotFound
+		}
+
+		oldVal, err := item.ValueCopy(nil)
+		if err == nil {
+			var old task.Task
+			if err := json.Unmarshal(oldVal, &old); err == nil {
+				if err := r.deindexTaskTxn(txn, old); err != nil {
+					return err
+				}
+			}
+		}
+
+		if err := txn.Set(key, val); err != nil {
+			return err
+		}
+
+		return r.indexTaskTxn(txn, t)
+	})
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUpdate, err)
 	}
 
 	return nil
 }
 
-func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
+func (r *taskRepo) List(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	if len(filter) == 0 {
+		return r.listAll(ctx, offset, limit)
+	}
+
+	return r.listByMetadata(ctx, filter, offset, limit)
+}
+
+func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
+	return r.listBy(ctx, func(t task.Task) bool {
+		return t.WorkflowID == workflowID
+	})
+}
+
+func (r *taskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
+	return r.listBy(ctx, func(t task.Task) bool {
+		return t.JobID == jobID
+	})
+}
+
+func (r *taskRepo) Delete(ctx context.Context, id string) error {
+	key := []byte("task:" + id)
+	err := r.db.updateTxn(func(txn *badgerdb.Txn) error {
+		item, err := txn.Get(key)
+		if errors.Is(err, badgerdb.ErrKeyNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		val, err := item.ValueCopy(nil)
+		if err != nil {
+			return txn.Delete(key)
+		}
+
+		var t task.Task
+		if err := json.Unmarshal(val, &t); err == nil {
+			if err := r.deindexTaskTxn(txn, t); err != nil {
+				return err
+			}
+		}
+
+		return txn.Delete(key)
+	})
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDelete, err)
+	}
+
+	return nil
+}
+
+func (r *taskRepo) indexTaskTxn(txn *badgerdb.Txn, t task.Task) error {
+	for k, v := range t.Metadata {
+		s := metaValueString(v)
+		if err := txn.Set(metaIdxKey(k, s, t.ID), []byte{}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *taskRepo) deindexTaskTxn(txn *badgerdb.Txn, t task.Task) error {
+	for k, v := range t.Metadata {
+		s := metaValueString(v)
+		if err := txn.Delete(metaIdxKey(k, s, t.ID)); err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func metaValueString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(v)
+}
+
+func (r *taskRepo) listAll(_ context.Context, offset, limit uint64) ([]task.Task, uint64, error) {
 	prefix := []byte("task:")
 	total, err := r.db.countWithPrefix(prefix)
 	if err != nil {
@@ -79,22 +197,72 @@ func (r *taskRepo) List(ctx context.Context, offset, limit uint64) ([]task.Task,
 	return tasks, total, nil
 }
 
-func (r *taskRepo) ListByWorkflowID(ctx context.Context, workflowID string) ([]task.Task, error) {
-	return r.listBy(ctx, func(t task.Task) bool {
-		return t.WorkflowID == workflowID
+func (r *taskRepo) listByMetadata(ctx context.Context, filter task.Metadata, offset, limit uint64) ([]task.Task, uint64, error) {
+	matchIDs, err := r.filterIDsByMetadata(filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(matchIDs) == 0 {
+		return []task.Task{}, 0, nil
+	}
+
+	tasks := make([]task.Task, 0, len(matchIDs))
+	for id := range matchIDs {
+		t, err := r.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		tasks = append(tasks, t)
+	}
+	slices.SortFunc(tasks, func(a, b task.Task) int {
+		return cmp.Compare(a.ID, b.ID)
 	})
+
+	total := uint64(len(tasks))
+	if offset >= total {
+		return []task.Task{}, total, nil
+	}
+
+	return tasks[offset:min(offset+limit, total)], total, nil
 }
 
-func (r *taskRepo) ListByJobID(ctx context.Context, jobID string) ([]task.Task, error) {
-	return r.listBy(ctx, func(t task.Task) bool {
-		return t.JobID == jobID
+func (r *taskRepo) filterIDsByMetadata(filter task.Metadata) (map[string]struct{}, error) {
+	var matchIDs map[string]struct{}
+	err := r.db.viewTxn(func(txn *badgerdb.Txn) error {
+		opts := badgerdb.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		for k, vAny := range filter {
+			v := metaValueString(vAny)
+			prefix := []byte("meta-idx\x00" + k + "\x00" + v + "\x00")
+			it := txn.NewIterator(opts)
+			ids := make(map[string]struct{})
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				key := it.Item().KeyCopy(nil)
+				ids[string(key[len(prefix):])] = struct{}{}
+			}
+			it.Close()
+
+			if matchIDs == nil {
+				matchIDs = ids
+			} else {
+				for id := range matchIDs {
+					if _, ok := ids[id]; !ok {
+						delete(matchIDs, id)
+					}
+				}
+			}
+			if len(matchIDs) == 0 {
+				return nil
+			}
+		}
+
+		return nil
 	})
-}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDBQuery, err)
+	}
 
-func (r *taskRepo) Delete(ctx context.Context, id string) error {
-	key := []byte("task:" + id)
-
-	return r.db.delete(key)
+	return matchIDs, nil
 }
 
 func (r *taskRepo) listBy(ctx context.Context, match func(task.Task) bool) ([]task.Task, error) {

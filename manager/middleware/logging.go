@@ -168,12 +168,12 @@ func (lm *loggingMiddleware) GetTask(ctx context.Context, id string) (resp task.
 	return lm.svc.GetTask(ctx, id)
 }
 
-func (lm *loggingMiddleware) ListTasks(ctx context.Context, offset, limit uint64) (resp task.TaskPage, err error) {
+func (lm *loggingMiddleware) ListTasks(ctx context.Context, pm manager.PageMetadata) (resp task.TaskPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),
-			slog.Uint64("offset", offset),
-			slog.Uint64("limit", limit),
+			slog.Uint64("offset", pm.Offset),
+			slog.Uint64("limit", pm.Limit),
 		}
 		if err != nil {
 			args = append(args, slog.Any("error", err))
@@ -184,7 +184,7 @@ func (lm *loggingMiddleware) ListTasks(ctx context.Context, offset, limit uint64
 		lm.logger.Info("List tasks completed successfully", args...)
 	}(time.Now())
 
-	return lm.svc.ListTasks(ctx, offset, limit)
+	return lm.svc.ListTasks(ctx, pm)
 }
 
 func (lm *loggingMiddleware) UpdateTask(ctx context.Context, t task.Task) (resp task.Task, err error) {

@@ -116,7 +116,7 @@ fn headers_response(request: IncomingRequest, response_out: ResponseOutparam) {
 
     let out_headers = Fields::new();
     out_headers
-        .set(&"content-type".to_string(), &[b"text/plain".to_vec()])
+        .set("content-type", &[b"text/plain".to_vec()])
         .unwrap();
     let response = OutgoingResponse::new(out_headers);
     response.set_status_code(200).unwrap();
@@ -152,9 +152,8 @@ fn read_body(request: IncomingRequest) -> Vec<u8> {
             Ok(chunk) => data.extend_from_slice(&chunk),
             Err(_) => break,
         }
-        match stream.read(0) {
-            Err(_) => break,
-            Ok(_) => {}
+        if stream.read(0).is_err() {
+            break;
         }
     }
     data

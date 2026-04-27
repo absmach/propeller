@@ -109,7 +109,7 @@ func (cs *cronScheduler) listAllTasks(ctx context.Context) ([]task.Task, error) 
 	var offset uint64
 
 	for {
-		tasks, total, err := cs.tasksDB.List(ctx, offset, pageSize)
+		tasks, total, err := cs.tasksDB.List(ctx, nil, offset, pageSize)
 		if err != nil {
 			return nil, err
 		}
