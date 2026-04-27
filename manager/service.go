@@ -1740,6 +1740,8 @@ type startPayload struct {
 	MonitoringProfile *proplet.MonitoringProfile `json:"monitoring_profile,omitempty"`
 	PropletID         string                     `json:"proplet_id,omitempty"`
 	ParentResults     map[string]any             `json:"parent_results,omitempty"`
+	// Metadata is intentionally excluded: it is a manager-side filtering field
+	// and is not needed by the proplet runtime.
 }
 
 func (svc *service) publishStart(ctx context.Context, t task.Task, propletID string) error {

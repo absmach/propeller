@@ -126,7 +126,7 @@ type listTasksReq struct {
 	metadata task.Metadata
 }
 
-func (r *listTasksReq) validate() error {
+func (r listTasksReq) validate() error {
 	if r.limit > api.MaxLimitSize || r.limit < 1 {
 		return apiutil.ErrLimitSize
 	}

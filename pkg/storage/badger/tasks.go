@@ -1,10 +1,12 @@
 package badger
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/absmach/propeller/pkg/task"
 	badgerdb "github.com/dgraph-io/badger/v4"
@@ -212,6 +214,9 @@ func (r *taskRepo) listByMetadata(ctx context.Context, filter task.Metadata, off
 		}
 		tasks = append(tasks, t)
 	}
+	slices.SortFunc(tasks, func(a, b task.Task) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
 
 	total := uint64(len(tasks))
 	if offset >= total {
