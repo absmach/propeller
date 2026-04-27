@@ -98,7 +98,7 @@ func TestShutdownSignalsStopBeforeInterrupt(t *testing.T) {
 	pubsub.On("Unsubscribe", mock.Anything, mock.Anything).Return(nil).Maybe()
 	pubsub.On("Disconnect", mock.Anything).Return(nil).Maybe()
 
-	svc, _ := manager.NewService(repos, scheduler.NewRoundRobin(), pubsub, "test-domain", "test-channel", slog.Default())
+	svc, _ := manager.NewService(repos, scheduler.NewRoundRobin(), pubsub, "test-domain", "test-channel", slog.Default(), nil)
 
 	created, err := svc.CreateTask(ctx, task.Task{
 		Name:      "running-task",

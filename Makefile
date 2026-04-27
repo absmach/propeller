@@ -201,8 +201,18 @@ hal-test:
 	cp examples/hal-test/target/wasm32-wasip1/release/hal-test.wasm build/hal-test.wasm
 
 attestation-test:
-	cd examples/attestation-test && cargo build --target wasm32-wasip2 --release
-	cp examples/attestation-test/target/wasm32-wasip2/release/attestation_test.wasm build/attestation-test.wasm
+	cd examples/attestation-test && cargo build --release
+	cp examples/attestation-test/target/wasm32-wasip1/release/attestation-test.wasm build/attestation-test.wasm
+
+plugin-auth:
+	mkdir -p $(BUILD_DIR)/plugins
+	cd examples/plugin-auth && cargo build --target wasm32-wasip1 --release
+	cp examples/plugin-auth/target/wasm32-wasip1/release/plugin_auth.wasm $(BUILD_DIR)/plugins/plugin-auth.wasm
+
+proplet-plugin-example:
+	mkdir -p $(BUILD_DIR)/proplet-plugins
+	cd examples/proplet-plugin-example && cargo build --target wasm32-wasip2 --release
+	cp examples/proplet-plugin-example/target/wasm32-wasip2/release/proplet_plugin_example.wasm $(BUILD_DIR)/proplet-plugins/proplet-plugin-example.wasm
 
 help:
 	@echo "Usage: make <target>"

@@ -1,0 +1,54 @@
+package propeller:proplet-plugin@0.1.0;
+
+/// Lifecycle hooks called by the proplet during task execution.
+interface lifecycle {
+    /// Information about the task being executed.
+    record task-info {
+        id: string,
+        name: string,
+        image-url: string,
+        cli-args: list<string>,
+        /// Environment variables as key-value pairs.
+        env: list<tuple<string, string>>,
+        daemon: bool,
+        encrypted: bool,
+    }
+
+    /// Result of an authorize call.
+    record authorize-response {
+        /// Whether the task is allowed to proceed.
+        allow: bool,
+        /// Human-readable denial reason (populated when allow = false).
+        reason: option<string>,
+    }
+
+    /// Additional data a plugin injects before task execution.
+    record enrich-response {
+        /// Extra environment variables merged into the task environment.
+        env: list<tuple<string, string>>,
+    }
+
+    /// Outcome of a completed task.
+    record task-result {
+        task-id: string,
+        success: bool,
+        output: option<string>,
+        error: option<string>,
+    }
+
+    /// Called before executing a task. Return allow=false to reject it.
+    authorize: func(task: task-info) -> authorize-response;
+
+    /// Called before executing a task. Return env vars to inject.
+    enrich: func(task: task-info) -> enrich-response;
+
+    /// Called immediately before the WASM runtime starts the task.
+    on-task-start: func(task: task-info);
+
+    /// Called after the task finishes (success or failure).
+    on-task-complete: func(outcome: task-result);
+}
+
+world proplet-plugin {
+    export lifecycle;
+}

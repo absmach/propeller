@@ -44,7 +44,7 @@ func newService(t *testing.T) manager.Service {
 	pubsub.On("Disconnect", mock.Anything).Return(nil).Maybe()
 	logger := slog.Default()
 
-	svc, _ := manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", logger)
+	svc, _ := manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", logger, nil)
 
 	return svc
 }
