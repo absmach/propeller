@@ -146,7 +146,7 @@ fn add_capabilities(linker: &mut Linker<WasiP1Ctx>, _provider: Arc<HalProvider>)
         NS,
         "list-capabilities",
         move |mut caller: Caller<'_, WasiP1Ctx>, out_ptr: i32, out_len_ptr: i32| -> i32 {
-            let caps_provider = DefaultCapabilitiesProvider::new();
+            let caps_provider = DefaultCapabilitiesProvider::default();
             let list = match caps_provider.list_capabilities() {
                 Ok(l) => l,
                 Err(e) => {
@@ -173,7 +173,7 @@ fn add_capabilities(linker: &mut Linker<WasiP1Ctx>, _provider: Arc<HalProvider>)
         "has-capability",
         move |mut caller: Caller<'_, WasiP1Ctx>, name_ptr: i32, name_len: i32| -> i32 {
             let name = read_str(&mut caller, name_ptr, name_len);
-            let caps_provider = DefaultCapabilitiesProvider::new();
+            let caps_provider = DefaultCapabilitiesProvider::default();
             match caps_provider.has_capability(&name) {
                 Ok(has) => has as i32,
                 Err(e) => {
@@ -203,7 +203,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
          -> i32 {
             let data = read_mem(&mut caller, data_ptr, data_len);
             let algo = read_str(&mut caller, algo_ptr, algo_len);
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.hash(&data, &algo) {
                 Ok(bytes) => write_mem(&mut caller, out_ptr, out_len_ptr, &bytes),
                 Err(e) => {
@@ -230,7 +230,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
             let data = read_mem(&mut caller, data_ptr, data_len);
             let key = read_mem(&mut caller, key_ptr, key_len);
             let algo = read_str(&mut caller, algo_ptr, algo_len);
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.encrypt(&data, &key, &algo) {
                 Ok(bytes) => write_mem(&mut caller, out_ptr, out_len_ptr, &bytes),
                 Err(e) => {
@@ -257,7 +257,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
             let data = read_mem(&mut caller, data_ptr, data_len);
             let key = read_mem(&mut caller, key_ptr, key_len);
             let algo = read_str(&mut caller, algo_ptr, algo_len);
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.decrypt(&data, &key, &algo) {
                 Ok(bytes) => write_mem(&mut caller, out_ptr, out_len_ptr, &bytes),
                 Err(e) => {
@@ -272,7 +272,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "generate-keypair",
         |mut caller: Caller<'_, WasiP1Ctx>, out_ptr: i32, out_len_ptr: i32| -> i32 {
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.generate_keypair() {
                 Ok((pub_key, priv_key)) => {
                     let json = format!(
@@ -303,7 +303,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
          -> i32 {
             let data = read_mem(&mut caller, data_ptr, data_len);
             let key = read_mem(&mut caller, key_ptr, key_len);
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.sign(&data, &key) {
                 Ok(sig) => write_mem(&mut caller, out_ptr, out_len_ptr, &sig),
                 Err(e) => {
@@ -328,7 +328,7 @@ fn add_crypto(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
             let data = read_mem(&mut caller, data_ptr, data_len);
             let sig = read_mem(&mut caller, sig_ptr, sig_len);
             let key = read_mem(&mut caller, key_ptr, key_len);
-            let crypto = DefaultCryptoProvider::new();
+            let crypto = DefaultCryptoProvider::default();
             match crypto.verify(&data, &sig, &key) {
                 Ok(valid) => valid as i32,
                 Err(e) => {
@@ -729,7 +729,7 @@ fn add_clock(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "system-time",
         |mut caller: Caller<'_, WasiP1Ctx>, out_secs_ptr: i32, out_ns_ptr: i32| -> i32 {
-            let clock = DefaultClockProvider::new();
+            let clock = DefaultClockProvider::default();
             match clock.system_time() {
                 Ok((secs, ns)) => {
                     let memory = match caller.get_export("memory") {
@@ -755,7 +755,7 @@ fn add_clock(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "monotonic-time",
         |mut caller: Caller<'_, WasiP1Ctx>, out_secs_ptr: i32, out_ns_ptr: i32| -> i32 {
-            let clock = DefaultClockProvider::new();
+            let clock = DefaultClockProvider::default();
             match clock.monotonic_time() {
                 Ok((secs, ns)) => {
                     let memory = match caller.get_export("memory") {
@@ -781,7 +781,7 @@ fn add_clock(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "resolution",
         |mut caller: Caller<'_, WasiP1Ctx>, out_ptr: i32| -> i32 {
-            let clock = DefaultClockProvider::new();
+            let clock = DefaultClockProvider::default();
             match clock.resolution() {
                 Ok(ns) => {
                     let memory = match caller.get_export("memory") {
@@ -804,7 +804,7 @@ fn add_clock(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "sleep",
         |_: Caller<'_, WasiP1Ctx>, duration_ns: i64| -> i32 {
-            let clock = DefaultClockProvider::new();
+            let clock = DefaultClockProvider::default();
             match clock.sleep(duration_ns as u64) {
                 Ok(()) => 0,
                 Err(e) => {
@@ -825,7 +825,7 @@ fn add_random(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "get-random-bytes",
         |mut caller: Caller<'_, WasiP1Ctx>, length: i32, out_ptr: i32, out_len_ptr: i32| -> i32 {
-            let rng = DefaultRandomProvider::new();
+            let rng = DefaultRandomProvider::default();
             match rng.get_random_bytes(length as u32) {
                 Ok(bytes) => write_mem(&mut caller, out_ptr, out_len_ptr, &bytes),
                 Err(e) => {
@@ -840,7 +840,7 @@ fn add_random(linker: &mut Linker<WasiP1Ctx>) -> Result<()> {
         NS,
         "get-secure-random",
         |mut caller: Caller<'_, WasiP1Ctx>, length: i32, out_ptr: i32, out_len_ptr: i32| -> i32 {
-            let rng = DefaultRandomProvider::new();
+            let rng = DefaultRandomProvider::default();
             match rng.get_secure_random(length as u32) {
                 Ok(bytes) => write_mem(&mut caller, out_ptr, out_len_ptr, &bytes),
                 Err(e) => {
