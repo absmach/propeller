@@ -49,7 +49,7 @@ kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch
     "background_check",
     "rust-crypto",
 ], default-features = false }
-oci-client = { version = "0.15", default-features = false, features = [
+oci-client = { version = "0.16", default-features = false, features = [
     "rustls-tls",
 ] }
 oci-spec = { version = "0.9.0" }
