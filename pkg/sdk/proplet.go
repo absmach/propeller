@@ -13,6 +13,10 @@ import (
 
 const propletsEndpoint = "/proplets"
 
+// Proplet is the SDK-facing shape of a proplet. It intentionally differs from
+// proplet.Proplet: it exposes CreatedAt (surfaced by the list endpoint) and
+// omits AliveHistory and Metadata, which are internal fields not needed by SDK
+// callers. Keep in sync with the manager list response when fields change.
 type Proplet struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -21,6 +25,8 @@ type Proplet struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// PropletPage mirrors the manager list response. Uses the SDK Proplet type
+// rather than proplet.PropletPage to match the fields declared above.
 type PropletPage struct {
 	Offset   uint64    `json:"offset"`
 	Limit    uint64    `json:"limit"`

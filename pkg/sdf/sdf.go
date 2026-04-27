@@ -56,5 +56,3 @@ type ThingAfford struct {
 	SdfEvent    map[string]EventAfford    `json:"sdfEvent,omitempty"`
 	SdfData     map[string]DataAfford     `json:"sdfData,omitempty"`
 }
-
-type ObjectAfford = ThingAfford

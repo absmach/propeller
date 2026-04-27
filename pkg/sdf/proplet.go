@@ -2,6 +2,8 @@ package sdf
 
 import "github.com/absmach/propeller/pkg/proplet"
 
+// schemaVersion is the version of this proplet SDF schema definition, not the SDF spec version.
+// Increment it when the shape of the generated document changes in a breaking way.
 const schemaVersion = "1.0"
 
 func PropletDocument(p proplet.Proplet) Document {

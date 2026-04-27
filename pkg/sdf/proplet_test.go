@@ -82,71 +82,37 @@ func TestPropletDocument(t *testing.T) {
 func TestPropletDocumentTaskResultStateEnum(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		desc       string
-		proplet    proplet.Proplet
-		wantStates []string
-	}{
-		{
-			desc:       "task result state enum contains all expected values",
-			proplet:    proplet.Proplet{ID: "abc-123", Name: "my-proplet"},
-			wantStates: []string{"Completed", "Failed", "Skipped", "Interrupted"},
-		},
+	doc := sdf.PropletDocument(proplet.Proplet{ID: "abc-123", Name: "my-proplet"})
+	thing := doc.SdfThing["Proplet"]
+
+	result, ok := thing.SdfData["TaskResult"]
+	assert.True(t, ok, "expected sdfData['TaskResult'] to exist")
+
+	stateAfford, ok := result.Properties["state"]
+	assert.True(t, ok, "expected TaskResult.properties.state to exist")
+
+	enumSet := make(map[string]bool)
+	for _, v := range stateAfford.Enum {
+		s, ok := v.(string)
+		assert.True(t, ok, "expected state enum value to be string, got %T", v)
+		enumSet[s] = true
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
-
-			doc := sdf.PropletDocument(tc.proplet)
-			thing := doc.SdfThing["Proplet"]
-
-			result, ok := thing.SdfData["TaskResult"]
-			assert.True(t, ok, "expected sdfData['TaskResult'] to exist")
-
-			stateAfford, ok := result.Properties["state"]
-			assert.True(t, ok, "expected TaskResult.properties.state to exist")
-
-			enumSet := make(map[string]bool)
-			for _, v := range stateAfford.Enum {
-				s, ok := v.(string)
-				assert.True(t, ok, "expected state enum value to be string, got %T", v)
-				enumSet[s] = true
-			}
-
-			for _, s := range tc.wantStates {
-				assert.True(t, enumSet[s], "missing state enum value %q", s)
-			}
-		})
+	for _, s := range []string{"Completed", "Failed", "Skipped", "Interrupted"} {
+		assert.True(t, enumSet[s], "missing state enum value %q", s)
 	}
 }
 
 func TestPropletDocumentMinimumPointerNotAliased(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		desc    string
-		proplet proplet.Proplet
-	}{
-		{
-			desc:    "minimum pointers are not aliased across fields",
-			proplet: proplet.Proplet{ID: "x", Name: "n"},
-		},
-	}
+	doc := sdf.PropletDocument(proplet.Proplet{ID: "x", Name: "n"})
+	thing := doc.SdfThing["Proplet"]
 
-	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			t.Parallel()
+	taskCount := thing.SdfProperty["task_count"]
+	heartbeat := thing.SdfData["HeartbeatPayload"]
 
-			doc := sdf.PropletDocument(tc.proplet)
-			thing := doc.SdfThing["Proplet"]
-
-			taskCount := thing.SdfProperty["task_count"]
-			heartbeat := thing.SdfData["HeartbeatPayload"]
-
-			assert.NotNil(t, taskCount.Minimum)
-			assert.NotNil(t, heartbeat.Properties["task_count"].Minimum)
-			assert.NotSame(t, taskCount.Minimum, heartbeat.Properties["task_count"].Minimum, "Minimum pointers must not be aliased")
-		})
-	}
+	assert.NotNil(t, taskCount.Minimum)
+	assert.NotNil(t, heartbeat.Properties["task_count"].Minimum)
+	assert.NotSame(t, taskCount.Minimum, heartbeat.Properties["task_count"].Minimum, "Minimum pointers must not be aliased")
 }
