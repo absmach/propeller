@@ -61,7 +61,7 @@ futures-util = { version = "0.3" }
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", default-features = false, features = [
     "amd-sev",
 ] }
-wasm-wave = "0.246.2"
+wasm-wave = "0.248.0"
 
 [dev-dependencies]
 wiremock = "0.6"
