@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/absmach/propeller/pkg/dag"
+	"github.com/absmach/propeller/pkg/plugin"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
 )
@@ -15,6 +17,7 @@ type WorkflowCoordinator struct {
 	taskRepo storage.TaskRepository
 	service  Service
 	logger   *slog.Logger
+	mu       sync.RWMutex
 }
 
 func NewWorkflowCoordinator(taskRepo storage.TaskRepository, service Service, logger *slog.Logger) *WorkflowCoordinator {
@@ -23,6 +26,15 @@ func NewWorkflowCoordinator(taskRepo storage.TaskRepository, service Service, lo
 		service:  service,
 		logger:   logger,
 	}
+}
+
+// SetService replaces the Service reference used to start workflow tasks.
+// Call this after all middleware wrapping is complete so workflow-triggered
+// StartTask calls flow through the full plugin middleware chain.
+func (wc *WorkflowCoordinator) SetService(svc Service) {
+	wc.mu.Lock()
+	wc.service = svc
+	wc.mu.Unlock()
 }
 
 func (wc *WorkflowCoordinator) EvaluateConditionalExecution(ctx context.Context, t task.Task, parentStates map[string]task.State) bool {
@@ -113,7 +125,11 @@ func (wc *WorkflowCoordinator) CheckAndStartReadyTasks(ctx context.Context, work
 			continue
 		}
 
-		if err := wc.service.StartTask(ctx, t.ID); err != nil {
+		wc.mu.RLock()
+		svc := wc.service
+		wc.mu.RUnlock()
+		sysCtx := plugin.ContextWithSystem(ctx)
+		if err := svc.StartTask(sysCtx, t.ID); err != nil {
 			wc.logger.ErrorContext(ctx, "failed to start ready task", "task_id", t.ID, "error", err)
 
 			continue
@@ -125,7 +141,10 @@ func (wc *WorkflowCoordinator) CheckAndStartReadyTasks(ctx context.Context, work
 }
 
 func (wc *WorkflowCoordinator) OnTaskCompletion(ctx context.Context, taskID string) error {
-	t, err := wc.service.GetTask(ctx, taskID)
+	wc.mu.RLock()
+	svc := wc.service
+	wc.mu.RUnlock()
+	t, err := svc.GetTask(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to get completed task: %w", err)
 	}

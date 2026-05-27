@@ -19,11 +19,12 @@ use wasmtime::component::ResourceTable;
 use wasmtime::*;
 use wasmtime_wasi::p2::bindings::sync::Command;
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
-use wasmtime_wasi_http::bindings::http::types::Scheme;
-use wasmtime_wasi_http::bindings::ProxyPre;
-use wasmtime_wasi_http::body::HyperOutgoingBody;
 use wasmtime_wasi_http::io::TokioIo;
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
+use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
+use wasmtime_wasi_http::p2::bindings::ProxyPre;
+use wasmtime_wasi_http::p2::body::HyperOutgoingBody;
+use wasmtime_wasi_http::p2::WasiHttpView;
+use wasmtime_wasi_http::WasiHttpCtx;
 
 fn is_wasm_component(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[0..4] == [0x00, 0x61, 0x73, 0x6d] && bytes[4] == 0x0d
@@ -51,11 +52,12 @@ impl WasiView for StoreData {
 }
 
 impl WasiHttpView for StoreData {
-    fn ctx(&mut self) -> &mut WasiHttpCtx {
-        &mut self.http
-    }
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+    fn http(&mut self) -> wasmtime_wasi_http::p2::WasiHttpCtxView<'_> {
+        wasmtime_wasi_http::p2::WasiHttpCtxView {
+            ctx: &mut self.http,
+            table: &mut self.table,
+            hooks: Default::default(),
+        }
     }
 }
 
@@ -265,7 +267,7 @@ impl WasmtimeRuntime {
         let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
         let _ = wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
-        let _ = wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)
+        let _ = wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker)
             .map_err(|e| format!("Failed to add wasi:http to component linker: {e}"));
 
         let task_id = config.id.clone();
@@ -487,7 +489,7 @@ impl WasmtimeRuntime {
         let mut linker: component::Linker<StoreData> = component::Linker::new(&self.async_engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)
             .map_err(|e| anyhow::anyhow!("Failed to add WASI P2 async to proxy linker: {e}"))?;
-        wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
+        wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)
             .map_err(|e| anyhow::anyhow!("Failed to add wasi:http async to proxy linker: {e}"))?;
 
         let pre = Arc::new(
@@ -866,10 +868,12 @@ async fn handle_proxy_request(
     let (sender, receiver) = oneshot::channel();
     let incoming = store
         .data_mut()
+        .http()
         .new_incoming_request(Scheme::Http, req)
         .map_err(|e| anyhow::anyhow!("Failed to create incoming request: {e}"))?;
     let outparam = store
         .data_mut()
+        .http()
         .new_response_outparam(sender)
         .map_err(|e| anyhow::anyhow!("Failed to create response outparam: {e}"))?;
 

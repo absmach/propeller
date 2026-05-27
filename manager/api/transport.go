@@ -13,6 +13,7 @@ import (
 	apiutil "github.com/absmach/magistrala/api/http/util"
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/api"
+	"github.com/absmach/propeller/pkg/plugin"
 	"github.com/go-chi/chi/v5"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -27,6 +28,13 @@ const (
 
 func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) http.Handler {
 	mux := chi.NewRouter()
+	mux.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxFileSize)
+			next.ServeHTTP(w, r)
+		})
+	})
+	mux.Use(authContextMiddleware)
 
 	opts := []kithttp.ServerOption{
 		kithttp.ServerErrorEncoder(apiutil.LoggingErrorEncoder(logger, api.EncodeError)),
@@ -391,6 +399,29 @@ func decodeWorkflowReq(_ context.Context, r *http.Request) (any, error) {
 	}
 
 	return req, nil
+}
+
+// authContextMiddleware populates AuthContext from request headers.
+//
+// SECURITY: X-User-Id is accepted as-is from the client and is NOT authenticated.
+// The manager MUST sit behind a trusted reverse proxy that validates the caller and
+// sets (or strips and re-sets) X-User-Id. Deploying the manager without such a proxy
+// allows any client to impersonate any user identity, bypassing plugin authorization.
+// Plugin logic that enforces ownership must only be used in deployments with a
+// validating authenticating proxy in front.
+func authContextMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get("X-User-Id")
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if userID != "" || token != "" {
+			ctx := plugin.ContextWithAuth(r.Context(), plugin.AuthContext{
+				UserID: userID,
+				Token:  token,
+			})
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func decodeJobReq(_ context.Context, r *http.Request) (any, error) {

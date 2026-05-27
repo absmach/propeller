@@ -5,6 +5,8 @@ use crate::mqtt::{build_topic, MqttMessage, PubSub};
 use crate::observability::{
     self, ERROR_CHUNK, ERROR_DECODE, ERROR_RUNTIME, TOPIC_CONTROL, TOPIC_REGISTRY, TOPIC_RESULTS,
 };
+use crate::plugin::registry::PluginRegistry;
+use crate::plugin::{TaskInfo as PluginTaskInfo, TaskResult as PluginTaskResult};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::types::*;
 use anyhow::{Context, Result};
@@ -63,10 +65,16 @@ pub struct PropletService {
     monitor: Arc<SystemMonitor>,
     metrics_collector: Arc<Mutex<MetricsCollector>>,
     http_client: HttpClient,
+    plugin_registry: Option<Arc<PluginRegistry>>,
 }
 
 impl PropletService {
-    pub fn new(config: PropletConfig, pubsub: PubSub, runtime: Arc<dyn Runtime>) -> Self {
+    pub fn new(
+        config: PropletConfig,
+        pubsub: PubSub,
+        runtime: Arc<dyn Runtime>,
+        plugin_registry: Option<Arc<PluginRegistry>>,
+    ) -> Self {
         let proplet = Proplet::new(config.client_id.clone(), "proplet".to_string());
         let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
         let metrics_collector = Arc::new(Mutex::new(MetricsCollector::new()));
@@ -89,6 +97,7 @@ impl PropletService {
             monitor,
             metrics_collector,
             http_client,
+            plugin_registry,
         };
 
         service.start_chunk_expiry_task();
@@ -101,6 +110,7 @@ impl PropletService {
         pubsub: PubSub,
         runtime: Arc<dyn Runtime>,
         tee_runtime: Arc<dyn Runtime>,
+        plugin_registry: Option<Arc<PluginRegistry>>,
     ) -> Self {
         let proplet = Proplet::new(config.client_id.clone(), "proplet".to_string());
         let monitor = Arc::new(SystemMonitor::new(MonitoringProfile::default()));
@@ -124,6 +134,7 @@ impl PropletService {
             monitor,
             metrics_collector,
             http_client,
+            plugin_registry,
         };
 
         service.start_chunk_expiry_task();
@@ -449,6 +460,36 @@ impl PropletService {
 
         info!("Received start command for task: {}", req.id);
 
+        let plugin_task_info = PluginTaskInfo {
+            id: req.id.clone(),
+            name: req.name.clone(),
+            image_url: req.image_url.clone(),
+            cli_args: req.cli_args.clone(),
+            env: req
+                .env
+                .as_ref()
+                .map(|e| e.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                .unwrap_or_default(),
+            daemon: req.daemon,
+            encrypted: req.encrypted,
+        };
+
+        if let Some(ref registry) = self.plugin_registry {
+            if let Some(reason) = registry.authorize(&plugin_task_info)? {
+                error!("Plugin denied task {}: {}", req.id, reason);
+                self.publish_result(&req.id, Vec::new(), Some(reason.clone()))
+                    .await?;
+                return Err(anyhow::anyhow!("task denied by plugin: {}", reason));
+            }
+        }
+
+        let plugin_env_additions: Vec<(String, String)> =
+            if let Some(ref registry) = self.plugin_registry {
+                registry.enrich(&plugin_task_info)?
+            } else {
+                Vec::new()
+            };
+
         let runtime = if req.encrypted {
             if let Some(ref tee_runtime) = self.tee_runtime {
                 tee_runtime.clone()
@@ -553,6 +594,7 @@ impl PropletService {
         let proplet_id = self.config.client_id.clone();
         let task_id = req.id.clone();
         let task_name = req.name.clone();
+        let plugin_registry = self.plugin_registry.clone();
         let mut env = req.env.unwrap_or_default();
         if !env.is_empty() {
             info!(
@@ -569,13 +611,19 @@ impl PropletService {
                 task_id
             );
         }
+        for (k, v) in plugin_env_additions {
+            env.insert(k, v);
+        }
+
         let daemon = req.daemon;
+        let encrypted = req.encrypted;
+        let req_image_url = req.image_url.clone();
         let cli_args = req.cli_args.clone();
         let inputs = req.inputs.clone();
         let http_client = self.http_client.clone();
 
-        let image_url = if req.encrypted && !req.image_url.is_empty() {
-            Some(req.image_url.clone())
+        let image_url = if encrypted && !req_image_url.is_empty() {
+            Some(req_image_url.clone())
         } else {
             None
         };
@@ -770,6 +818,19 @@ impl PropletService {
             // Update config.env with the latest env (including MODEL_DATA and DATASET_DATA)
             config.env = env.clone();
 
+            if let Some(ref registry) = plugin_registry {
+                let plugin_task = PluginTaskInfo {
+                    id: task_id.clone(),
+                    name: task_name.clone(),
+                    image_url: req_image_url.clone(),
+                    cli_args: config.cli_args.clone(),
+                    env: env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    daemon,
+                    encrypted,
+                };
+                PluginRegistry::notify_task_start(Arc::clone(registry), plugin_task);
+            }
+
             let execution_start = std::time::Instant::now();
             let result = runtime.start_app(ctx, config).await;
             let execution_duration = execution_start.elapsed().as_secs_f64();
@@ -798,6 +859,20 @@ impl PropletService {
                     (String::new(), Some(e.to_string()))
                 }
             };
+
+            if let Some(ref registry) = plugin_registry {
+                let plugin_result = PluginTaskResult {
+                    task_id: task_id.clone(),
+                    success: error.is_none(),
+                    output: if result_str.is_empty() {
+                        None
+                    } else {
+                        Some(result_str.clone())
+                    },
+                    error: error.clone(),
+                };
+                PluginRegistry::notify_task_complete(Arc::clone(registry), plugin_result);
+            }
 
             if let Some(round_id) = env.get("ROUND_ID") {
                 // MANAGER_COORDINATOR_URL is required for FML tasks (when ROUND_ID is present)

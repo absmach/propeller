@@ -143,7 +143,7 @@ func TestListProplets(t *testing.T) {
 			defer ts.Close()
 
 			if tc.wantStatus != http.StatusBadRequest {
-				svc.On("ListProplets", mock.Anything, uint64(0), mock.AnythingOfType("uint64")).Return(tc.svcPage, tc.svcErr)
+				svc.On("ListProplets", mock.Anything, uint64(0), mock.AnythingOfType("uint64"), mock.AnythingOfType("string")).Return(tc.svcPage, tc.svcErr)
 			}
 
 			res, err := http.Get(ts.URL + "/proplets/" + tc.query)

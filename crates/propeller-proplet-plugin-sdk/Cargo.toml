@@ -1,0 +1,17 @@
+[package]
+name = "propeller-proplet-plugin-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "SDK for writing Propeller proplet plugins compiled to WASM components"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wit-bindgen = "0.36"
+
+[profile.release]
+opt-level = "s"
+strip = "symbols"
+lto = true

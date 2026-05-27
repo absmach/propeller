@@ -5,6 +5,7 @@ mod metrics;
 mod monitoring;
 mod mqtt;
 mod observability;
+mod plugin;
 mod runtime;
 mod service;
 mod task_handler;
@@ -13,6 +14,7 @@ mod types;
 
 use crate::config::PropletConfig;
 use crate::mqtt::{process_mqtt_events, MqttConfig, PubSub};
+use crate::plugin::registry::PluginRegistry;
 use crate::runtime::host::HostRuntime;
 use crate::runtime::tee_runtime::TeeWasmRuntime;
 use crate::runtime::wasmtime_runtime::WasmtimeRuntime;
@@ -28,7 +30,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, Level};
+use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
 /// HTTP handler for metrics and health endpoints
@@ -165,6 +167,23 @@ async fn main() -> Result<()> {
         )?)
     };
 
+    let plugin_registry = if let Some(ref dir) = config.plugin_dir {
+        match PluginRegistry::load_directory(dir) {
+            Ok(registry) => {
+                if !registry.is_empty() {
+                    info!("Proplet plugin registry loaded from '{}'", dir);
+                }
+                Some(Arc::new(registry))
+            }
+            Err(e) => {
+                warn!("Failed to load proplet plugin directory '{}': {}", dir, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let service = if config.tee_enabled {
         match TeeWasmRuntime::new(&config).await {
             Ok(tee_runtime) => {
@@ -174,6 +193,7 @@ async fn main() -> Result<()> {
                     pubsub,
                     runtime,
                     Arc::new(tee_runtime),
+                    plugin_registry,
                 ))
             }
             Err(e) => {
@@ -185,7 +205,12 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        Arc::new(PropletService::new(config.clone(), pubsub, runtime))
+        Arc::new(PropletService::new(
+            config.clone(),
+            pubsub,
+            runtime,
+            plugin_registry,
+        ))
     };
 
     // Start metrics HTTP server

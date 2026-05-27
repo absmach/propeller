@@ -1,0 +1,16 @@
+[package]
+name = "proplet-plugin-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+propeller-proplet-plugin-sdk = { path = "../../crates/propeller-proplet-plugin-sdk" }
+
+[profile.release]
+opt-level = "s"
+strip = "symbols"
+lto = true

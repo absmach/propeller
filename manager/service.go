@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	stdmaps "maps"
 	"net/http"
 	"os"
 	"slices"
@@ -22,6 +23,7 @@ import (
 	"github.com/absmach/propeller/pkg/maps"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/observability"
+	"github.com/absmach/propeller/pkg/plugin"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/sdf"
@@ -61,6 +63,7 @@ type service struct {
 	flCoordinatorURL string
 	httpClient       *http.Client
 	coordinator      *WorkflowCoordinator
+	plugins          plugin.Registry
 	shuttingDown     atomic.Bool
 	wg               sync.WaitGroup
 }
@@ -68,8 +71,8 @@ type service struct {
 func NewService(
 	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
-	domainID, channelID, coordinatorURL string, logger *slog.Logger,
-) (Service, CronScheduler) {
+	domainID, channelID, coordinatorURL string, logger *slog.Logger, plugins plugin.Registry,
+) (Service, CronScheduler, *WorkflowCoordinator) {
 	var httpClient *http.Client
 	if coordinatorURL != "" {
 		httpClient = &http.Client{
@@ -92,13 +95,15 @@ func NewService(
 		logger:           logger,
 		flCoordinatorURL: coordinatorURL,
 		httpClient:       httpClient,
+		plugins:          plugins,
 	}
-	svc.coordinator = NewWorkflowCoordinator(repos.Tasks, svc, logger)
+	coordinator := NewWorkflowCoordinator(repos.Tasks, svc, logger)
+	svc.coordinator = coordinator
 
 	cronSched := NewCronScheduler(repos.Tasks, svc, logger)
 	svc.cronScheduler = cronSched
 
-	return svc, cronSched
+	return svc, cronSched, coordinator
 }
 
 func (svc *service) GetProplet(ctx context.Context, propletID string) (proplet.Proplet, error) {
@@ -727,10 +732,15 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		return svc.markTaskRunning(ctx, &t)
 	}
 
+	constraints, err := svc.runOnBeforePropletSelect(ctx, t)
+	if err != nil {
+		return err
+	}
+
 	var p proplet.Proplet
 	switch t.PropletID {
 	case "":
-		p, err = svc.SelectProplet(ctx, t)
+		p, err = svc.selectPropletWithConstraints(ctx, t, constraints)
 		if err != nil {
 			return err
 		}
@@ -742,6 +752,10 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		if !p.Alive {
 			return fmt.Errorf("specified proplet %s is not alive", t.PropletID)
 		}
+	}
+
+	if err := svc.runOnBeforeDispatch(ctx, &t, p); err != nil {
+		return err
 	}
 
 	if err := svc.pinTaskToProplet(ctx, taskID, p.ID); err != nil {
@@ -1361,6 +1375,8 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		observability.ObserveWasmExecution(t.Name, duration)
 	}
 
+	svc.notifyTaskComplete(ctx, t)
+
 	if t.JobID == "" {
 		if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
 			svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
@@ -1910,6 +1926,146 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 	topic := svc.baseTopic + "/control/manager/start"
 
 	return svc.pubsub.Publish(ctx, topic, payload)
+}
+
+func (svc *service) runOnBeforePropletSelect(ctx context.Context, t task.Task) (plugin.PropletSelectResponse, error) {
+	merged := plugin.PropletSelectResponse{Allow: true}
+	if svc.plugins == nil {
+		return merged, nil
+	}
+	req := plugin.PropletSelectRequest{Context: plugin.AuthFromContext(ctx), Task: plugin.NewTaskInfo(t)}
+
+	for _, p := range svc.plugins.List() {
+		resp, err := p.OnBeforePropletSelect(ctx, req)
+		if err != nil {
+			svc.logger.ErrorContext(ctx, "plugin on_before_proplet_select failed", "plugin", p.Name(), "error", err)
+
+			return plugin.PropletSelectResponse{}, fmt.Errorf("plugin %s on_before_proplet_select: %w", p.Name(), err)
+		}
+		if !resp.Allow {
+			reason := resp.Reason
+			if reason == "" {
+				reason = "proplet selection blocked by plugin"
+			}
+
+			return plugin.PropletSelectResponse{}, errors.New(reason)
+		}
+		for _, tag := range resp.RequiredTags {
+			if !slices.Contains(merged.RequiredTags, tag) {
+				merged.RequiredTags = append(merged.RequiredTags, tag)
+			}
+		}
+		if resp.MinMemoryBytes != nil {
+			if merged.MinMemoryBytes == nil || *resp.MinMemoryBytes > *merged.MinMemoryBytes {
+				merged.MinMemoryBytes = resp.MinMemoryBytes
+			}
+		}
+	}
+
+	return merged, nil
+}
+
+func (svc *service) selectPropletWithConstraints(ctx context.Context, t task.Task, constraints plugin.PropletSelectResponse) (proplet.Proplet, error) {
+	proplets, err := svc.listAllActiveProplets(ctx)
+	if err != nil {
+		return proplet.Proplet{}, err
+	}
+
+	candidates := make([]proplet.Proplet, 0, len(proplets))
+	for i := range proplets {
+		p := proplets[i]
+		if !propletMatchesConstraints(p, constraints) {
+			continue
+		}
+		candidates = append(candidates, p)
+	}
+
+	if len(candidates) == 0 {
+		hasConstraints := len(constraints.RequiredTags) > 0 || constraints.MinMemoryBytes != nil
+		if hasConstraints {
+			return proplet.Proplet{}, errors.New("no proplet satisfies plugin-required constraints")
+		}
+
+		return proplet.Proplet{}, errors.New("no active proplets available")
+	}
+
+	return svc.scheduler.SelectProplet(t, candidates)
+}
+
+func propletMatchesConstraints(p proplet.Proplet, c plugin.PropletSelectResponse) bool {
+	if c.MinMemoryBytes != nil && p.Metadata.TotalMemoryBytes < *c.MinMemoryBytes {
+		return false
+	}
+
+	for _, tag := range c.RequiredTags {
+		if !slices.Contains(p.Metadata.Tags, tag) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (svc *service) runOnBeforeDispatch(ctx context.Context, t *task.Task, p proplet.Proplet) error {
+	if svc.plugins == nil {
+		return nil
+	}
+	req := plugin.DispatchRequest{
+		Context: plugin.AuthFromContext(ctx),
+		Task:    plugin.NewTaskInfo(*t),
+		Proplet: plugin.PropletInfo{
+			ID:               p.ID,
+			Name:             p.Name,
+			Tags:             p.Metadata.Tags,
+			TotalMemoryBytes: p.Metadata.TotalMemoryBytes,
+			Location:         p.Metadata.Location,
+		},
+	}
+
+	for _, pl := range svc.plugins.List() {
+		resp, err := pl.OnBeforeDispatch(ctx, req)
+		if err != nil {
+			svc.logger.ErrorContext(ctx, "plugin on_before_dispatch failed", "plugin", pl.Name(), "error", err)
+
+			return fmt.Errorf("plugin %s on_before_dispatch: %w", pl.Name(), err)
+		}
+		if !resp.Allow {
+			reason := resp.Reason
+			if reason == "" {
+				reason = "dispatch blocked by plugin"
+			}
+
+			return errors.New(reason)
+		}
+		if len(resp.ExtraEnv) > 0 {
+			if t.Env == nil {
+				t.Env = make(map[string]string, len(resp.ExtraEnv))
+			}
+			stdmaps.Copy(t.Env, resp.ExtraEnv)
+		}
+	}
+
+	return nil
+}
+
+func (svc *service) notifyTaskComplete(ctx context.Context, t task.Task) {
+	if svc.plugins == nil {
+		return
+	}
+	detached := context.WithoutCancel(ctx)
+	evt := plugin.TaskEvent{
+		Task:    plugin.NewTaskInfo(t),
+		Success: t.State == task.Completed,
+		Error:   t.Error,
+	}
+
+	for _, p := range svc.plugins.List() {
+		svc.wg.Go(func() {
+			if err := p.OnTaskComplete(detached, evt); err != nil {
+				svc.logger.WarnContext(detached, "plugin on_task_complete failed", "plugin", p.Name(), "error", err)
+			}
+		})
+	}
 }
 
 func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {

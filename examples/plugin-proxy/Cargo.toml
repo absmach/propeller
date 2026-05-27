@@ -1,0 +1,16 @@
+[package]
+name = "plugin-proxy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+propeller-plugin-sdk = { path = "../../crates/propeller-plugin-sdk" }
+
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true

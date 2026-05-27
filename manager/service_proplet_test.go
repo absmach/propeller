@@ -29,7 +29,7 @@ func newServiceWithRepos(t *testing.T) (manager.Service, *storage.Repositories) 
 	pubsub.On("Unsubscribe", mock.Anything, mock.Anything).Return(nil).Maybe()
 	pubsub.On("Disconnect", mock.Anything).Return(nil).Maybe()
 	logger := slog.Default()
-	svc, _ := manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", "", logger)
+	svc, _, _ := manager.NewService(repos, sched, pubsub, "test-domain", "test-channel", "", logger, nil)
 
 	return svc, repos
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/absmach/propeller/manager/api"
 	"github.com/absmach/propeller/manager/middleware"
 	"github.com/absmach/propeller/pkg/mqtt"
+	"github.com/absmach/propeller/pkg/plugin"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/caarlos0/env/v11"
@@ -50,6 +51,7 @@ type config struct {
 	Server         server.Config
 	OTELURL        url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio     float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
+	PluginDir      string  `env:"MANAGER_PLUGIN_DIR"`
 }
 
 func main() {
@@ -145,7 +147,20 @@ func main() {
 		}()
 	}
 
-	svc, cronScheduler := manager.NewService(
+	pluginRegistry, err := plugin.LoadDirectory(ctx, cfg.PluginDir, logger)
+	if err != nil {
+		logger.Error("failed to load plugins", slog.String("error", err.Error()))
+		exitCode = 1
+
+		return
+	}
+	defer func() {
+		if err := pluginRegistry.Close(context.Background()); err != nil {
+			logger.Error("plugin registry close error", slog.Any("error", err))
+		}
+	}()
+
+	svc, cronScheduler, workflowCoordinator := manager.NewService(
 		repos,
 		scheduler.NewRoundRobin(),
 		mqttPubSub,
@@ -153,11 +168,18 @@ func main() {
 		cfg.ChannelID,
 		cfg.CoordinatorURL,
 		logger,
+		pluginRegistry,
 	)
+	svc = middleware.Plugin(pluginRegistry, logger, svc)
 	svc = middleware.Logging(logger, svc)
 	svc = middleware.Tracing(tracer, svc)
 	counter, latency := prometheus.MakeMetrics(svcName, "api")
 	svc = middleware.Metrics(counter, latency, svc)
+	// Wire the fully-wrapped service back into cron and workflow coordinator so
+	// that cron- and workflow-triggered StartTask calls flow through the full
+	// middleware chain (plugin authorize, logging, tracing, metrics).
+	cronScheduler.SetService(svc)
+	workflowCoordinator.SetService(svc)
 
 	if err := svc.Subscribe(ctx); err != nil {
 		logger.Error("failed to subscribe to manager channel", slog.String("error", err.Error()))
