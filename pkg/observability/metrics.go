@@ -20,7 +20,7 @@ var (
 	TasksCreatedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "tasks_created_total",
 			Help:      "Total number of tasks created",
 		},
@@ -31,7 +31,7 @@ var (
 	TasksStartedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "tasks_started_total",
 			Help:      "Total number of tasks started",
 		},
@@ -41,7 +41,7 @@ var (
 	TasksCompletedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "tasks_completed_total",
 			Help:      "Total number of tasks completed",
 		},
@@ -52,7 +52,7 @@ var (
 	ActiveTasks = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "active_tasks",
 			Help:      "Number of currently active tasks",
 		},
@@ -62,7 +62,7 @@ var (
 	PropletRegistrations = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "proplet_registrations_total",
 			Help:      "Total number of proplet registrations",
 		},
@@ -72,7 +72,7 @@ var (
 	PropletDeregistrations = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "proplet_deregistrations_total",
 			Help:      "Total number of proplet deregistrations",
 		},
@@ -82,7 +82,7 @@ var (
 	JobsCreatedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "jobs_created_total",
 			Help:      "Total number of jobs created",
 		},
@@ -92,7 +92,7 @@ var (
 	JobsCompletedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "jobs_completed_total",
 			Help:      "Total number of jobs completed",
 		},
@@ -103,7 +103,7 @@ var (
 	WorkflowsCreatedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "workflows_created_total",
 			Help:      "Total number of workflows created",
 		},
@@ -113,7 +113,7 @@ var (
 	WasmExecutionDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "wasm_execution_duration_seconds",
 			Help:      "WASM task execution duration in seconds",
 			Buckets:   prometheus.ExponentialBuckets(0.1, 2, 12), // 0.1s to ~400s
@@ -125,7 +125,7 @@ var (
 	ErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "errors_total",
 			Help:      "Total number of errors by type",
 		},
@@ -136,7 +136,7 @@ var (
 	MQTTMessagesReceived = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "mqtt_messages_received_total",
 			Help:      "Total number of MQTT messages received",
 		},
@@ -147,7 +147,7 @@ var (
 	MQTTMessagesPublished = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "mqtt_messages_published_total",
 			Help:      "Total number of MQTT messages published",
 		},
@@ -158,7 +158,7 @@ var (
 	FLRoundsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "fl_rounds_total",
 			Help:      "Total number of federated learning rounds",
 		},
@@ -168,7 +168,7 @@ var (
 	FLUpdatesReceived = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "fl_updates_received_total",
 			Help:      "Total number of federated learning updates received",
 		},
@@ -178,7 +178,7 @@ var (
 	ConnectedProplets = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: "manager",
+			Subsystem: ComponentManager,
 			Name:      "connected_proplets",
 			Help:      "Number of currently connected proplets",
 		},
@@ -191,7 +191,7 @@ var (
 	ProxyContainerFetchesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "container_fetches_total",
 			Help:      "Total number of container fetch requests",
 		},
@@ -201,7 +201,7 @@ var (
 	ProxyContainerFetchErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "container_fetch_errors_total",
 			Help:      "Total number of container fetch errors",
 		},
@@ -211,7 +211,7 @@ var (
 	ProxyChunksSentTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "chunks_sent_total",
 			Help:      "Total number of WASM chunks sent via MQTT",
 		},
@@ -221,7 +221,7 @@ var (
 	ProxyActiveFetches = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "active_fetches",
 			Help:      "Number of active container fetch operations",
 		},
@@ -231,7 +231,7 @@ var (
 	ProxyFetchDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "fetch_duration_seconds",
 			Help:      "Container fetch duration in seconds",
 			Buckets:   prometheus.ExponentialBuckets(0.5, 2, 10), // 0.5s to ~500s
@@ -242,7 +242,7 @@ var (
 	ProxyBytesTransferred = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: "proxy",
+			Subsystem: ComponentProxy,
 			Name:      "bytes_transferred_total",
 			Help:      "Total bytes transferred for WASM modules",
 		},

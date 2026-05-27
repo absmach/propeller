@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/absmach/magistrala/pkg/jaeger"
 	"github.com/absmach/propeller"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/proxy"
-	"github.com/absmach/magistrala/pkg/jaeger"
 	"github.com/caarlos0/env/v11"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"

@@ -230,6 +230,8 @@ async fn main() -> Result<()> {
             tracing::error!("Failed to disconnect gracefully: {}", e);
         }
 
+        observability::shutdown_tracing();
+
         info!("Graceful shutdown complete");
         std::process::exit(0);
     });
