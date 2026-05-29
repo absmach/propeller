@@ -72,27 +72,24 @@ CLI arguments and inputs are passed through the task definition:
 
 ## Hardware Abstraction Layer (HAL)
 
-The embedded Wasmtime runtime can expose the [ELASTIC TEE HAL](https://github.com/elasticproject-eu/wasmhal)
-(platform, attestation, crypto, clock, random, ...) to workloads. Enabled by
+The embedded Wasmtime runtime exposes the [ELASTIC TEE HAL](https://github.com/elasticproject-eu/wasmhal)
+(platform, attestation, crypto, clock, random) to workloads. Enabled by
 default; disable with `PROPLET_HAL_ENABLED=false`.
 
-HAL is available to both module formats:
+**HAL is available to P2 components only** (`wasm32-wasip2`, component model).
+Typed WIT bindings are generated from `wit/hal/hal.wit`
+(package `elastic:hal@0.1.0`) and wired in `src/hal_component.rs`: guests
+`import` the HAL interfaces and the host provides them on the component linker.
+See the `hal-component-test` example.
 
-- **P1 core modules** (`wasm32-wasip1`) — raw C-ABI imports under the
-  `elastic:tee-hal/*` namespaces, wired in `src/hal_linker.rs`. See the
-  `hal-test` example and the standalone `hal-runner`.
-- **P2 components** (`wasm32-wasip2`, component model) — typed WIT bindings
-  generated from `wit/hal/hal.wit` (package `elastic:hal@0.1.0`) and wired in
-  `src/hal_component.rs`. Guests `import` the HAL interfaces; the host provides
-  them on the component linker. See the `hal-component-test` example.
+P1 core modules (`wasm32-wasip1`) still execute, but receive WASI only — no
+HAL.
 
-P2 v1 covers the provider-backed interfaces (`platform`, `attestation`,
-`crypto`, `clock`, `random`). The stub-only interfaces (`sockets`, `gpu`,
-`resources`, `events`, `communication`, `storage`) and the async HTTP-proxy
-path remain P1-only for now.
-
-Both paths bridge to the same `elastic_tee_hal` providers, so they return real
-values on TEE hardware (AMD SEV / Intel TDX) and safe defaults elsewhere.
+The HAL bridges to the `elastic_tee_hal` providers, returning real values on
+TEE hardware (AMD SEV / Intel TDX) and safe defaults elsewhere. v1 covers the
+provider-backed interfaces (`platform`, `attestation`, `crypto`, `clock`,
+`random`); the stub-only interfaces (`sockets`, `gpu`, `resources`, `events`,
+`communication`, `storage`) and the async HTTP-proxy path are not yet wired.
 
 ## Run inside a TEE
 

@@ -1,7 +1,6 @@
 mod config;
 mod hal;
 mod hal_component;
-mod hal_linker;
 mod metrics;
 mod monitoring;
 mod mqtt;

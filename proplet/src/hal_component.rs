@@ -1,11 +1,11 @@
 //! WASI P2 (component-model) HAL bindings.
 //!
-//! Host-side counterpart to the P1 `hal_linker`. Generates typed host bindings
-//! from `wit/hal/hal.wit` (world `hal-imports`) with
+//! The sole HAL integration: generates typed host bindings from
+//! `wit/hal/hal.wit` (world `hal-imports`) with
 //! `wasmtime::component::bindgen!` against wasmtime 44, and bridges the
-//! generated `Host` traits to the same `elastic_tee_hal` providers the P1 path
-//! uses. Wired into the component runtime paths in `runtime::wasmtime_runtime`
-//! when `hal_enabled` is set.
+//! generated `Host` traits to the `elastic_tee_hal` providers. Wired into the
+//! component runtime paths in `runtime::wasmtime_runtime` when `hal_enabled` is
+//! set. P1 core modules receive WASI but no HAL.
 //!
 //! v1 scope: platform, attestation, crypto, clock, random — the interfaces with
 //! a real provider backing. Stub-only interfaces (sockets/gpu/resources/events/

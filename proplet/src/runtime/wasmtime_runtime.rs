@@ -1,10 +1,8 @@
 use super::{Runtime, RuntimeContext, StartConfig};
 use crate::hal::PropletHal;
 use crate::hal_component;
-use crate::hal_linker;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use elastic_tee_hal::interfaces::HalProvider;
 use hyper::server::conn::http1;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::collections::HashMap;
@@ -209,11 +207,8 @@ impl WasmtimeRuntime {
         let _ = wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx| ctx)
             .map_err(|e| format!("Failed to add WASI to linker: {e}"));
 
-        if self.hal_enabled {
-            let provider = Arc::new(HalProvider::with_defaults());
-            hal_linker::add_to_linker(&mut linker, provider)
-                .context("Failed to add ELASTIC TEE HAL interfaces to linker")?;
-        }
+        // HAL is exposed to P2 components only (see hal_component); P1 core
+        // modules get WASI but no HAL.
 
         let instance = match linker.instantiate(&mut store, &module) {
             Ok(instance) => instance,

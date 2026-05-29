@@ -37,7 +37,7 @@ updates:
       - "examples/plugin-proxy"
       - "examples/proplet-plugin-example"
       - "examples/wasi-nn"
-      - "examples/hal-runner"
+      - "examples/hal-component-test"
     schedule:
       interval: "monthly"
       day: "monday"

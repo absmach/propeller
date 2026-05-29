@@ -1,8 +1,0 @@
-[package]
-name = "hal-test"
-version = "0.4.0"
-edition = "2021"
-
-[[bin]]
-name = "hal-test"
-path = "src/main.rs"
