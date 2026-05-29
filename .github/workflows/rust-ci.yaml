@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "proplet/**"
+      - "examples/hal-test/**"
       - ".github/**"
 
   pull_request:
@@ -13,6 +14,7 @@ on:
       - main
     paths:
       - "proplet/**"
+      - "examples/hal-test/**"
       - ".github/**"
 
   workflow_dispatch:
@@ -40,6 +42,13 @@ jobs:
 
       - name: Run linter
         run: cargo clippy -- -D warnings
+
+      - name: Add wasm32-wasip2 target
+        run: rustup target add wasm32-wasip2
+
+      - name: Build hal-test P2 guest (for HAL e2e test)
+        working-directory: ./examples/hal-test
+        run: cargo build --target wasm32-wasip2 --release
 
       - name: Run tests
         run: cargo test --verbose

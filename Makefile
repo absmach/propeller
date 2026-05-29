@@ -133,8 +133,8 @@ push_proplet_wasinn:
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) docker_proplet_wasinn push_proplet_wasinn mocks start-magistrala stop-magistrala start-propeller stop-propeller start-all stop-all
-all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) addition-wat http-client http-server filesystem
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) hal-test attestation-test hal-runner docker_proplet_wasinn push_proplet_wasinn mocks start-magistrala stop-magistrala start-propeller stop-propeller start-all stop-all
+all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) addition-wat http-client http-server filesystem hal-test attestation-test hal-runner
 
 clean:
 	rm -rf build
