@@ -2,6 +2,8 @@
 
 Standalone wasmtime-based runner for WASM modules compiled against `elastic:tee-hal/*` imports. Uses the [ELASTIC TEE HAL](https://github.com/elasticproject-eu/wasmhal) default providers to serve all 11 HAL interfaces — no propeller or TEE hardware required.
 
+> This runner targets **P1 core modules** (`wasm32-wasip1`) with raw C-ABI imports. For **P2 component-model** guests that consume HAL via typed WIT bindings, see the `hal-component-test` example, which runs directly through proplet's embedded runtime.
+
 ## Quick start
 
 ```bash
