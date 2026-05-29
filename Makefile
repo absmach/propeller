@@ -199,8 +199,9 @@ filesystem:
 	cp examples/filesystem/target/wasm32-wasip2/release/filesystem.wasm $(BUILD_DIR)/filesystem.wasm
 
 attestation-test:
+	mkdir -p $(BUILD_DIR)
 	cd examples/attestation-test && cargo build --target wasm32-wasip2 --release
-	cp examples/attestation-test/target/wasm32-wasip2/release/attestation_test.wasm build/attestation-test.wasm
+	cp examples/attestation-test/target/wasm32-wasip2/release/attestation_test.wasm $(BUILD_DIR)/attestation-test.wasm
 
 hal-test:
 	mkdir -p $(BUILD_DIR)
