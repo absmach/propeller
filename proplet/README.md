@@ -80,7 +80,8 @@ default; disable with `PROPLET_HAL_ENABLED=false`.
 Typed WIT bindings are generated from `wit/hal/hal.wit`
 (package `elastic:hal@0.1.0`) and wired in `src/hal_component.rs`: guests
 `import` the HAL interfaces and the host provides them on the component linker.
-See the `hal-component-test` example.
+See the `hal-test` and `attestation-test` examples (and the standalone
+`hal-runner` for running HAL components outside proplet).
 
 P1 core modules (`wasm32-wasip1`) still execute, but receive WASI only — no
 HAL.

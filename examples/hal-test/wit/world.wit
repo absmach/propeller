@@ -1,0 +1,17 @@
+// P2 (component model) HAL smoke test. Imports the ELASTIC TEE HAL interfaces
+// and exports `run-hal-test`. Proplet runs it via the
+// `start_app_component_export` path (function_name = "run-hal-test") with
+// PROPLET_HAL_ENABLED=true; the standalone hal-runner can run it too.
+//
+// wit/deps/hal.wit must stay byte-compatible with proplet/wit/hal/hal.wit.
+
+package propeller:hal-test;
+
+world hal-test {
+  import elastic:hal/platform@0.1.0;
+  import elastic:hal/crypto@0.1.0;
+  import elastic:hal/clock@0.1.0;
+  import elastic:hal/random@0.1.0;
+
+  export run-hal-test: func() -> string;
+}

@@ -924,15 +924,15 @@ mod tests {
         assert!(runtime.is_ok());
     }
 
-    // End-to-end: load the P2 component guest from examples/hal-component-test,
-    // run it through the component-export path with HAL enabled, and assert it
-    // got real values back from the host HAL bindings. Skips if the guest has
-    // not been built (cargo build --target wasm32-wasip2 --release in that dir).
+    // End-to-end: load the P2 component guest from examples/hal-test, run it
+    // through the component-export path with HAL enabled, and assert it got
+    // real values back from the host HAL bindings. Skips if the guest has not
+    // been built (cargo build --target wasm32-wasip2 --release in that dir).
     #[tokio::test]
     async fn test_hal_component_e2e() {
         let wasm_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../examples/hal-component-test/target/wasm32-wasip2/release/hal_component_test.wasm"
+            "/../examples/hal-test/target/wasm32-wasip2/release/hal_test.wasm"
         );
         let wasm_binary = match std::fs::read(wasm_path) {
             Ok(b) => b,
@@ -969,10 +969,13 @@ mod tests {
             "unexpected HAL output: {result}"
         );
         assert!(
-            result.contains("random16="),
+            result.contains("random(32):"),
             "missing random output: {result}"
         );
-        assert!(result.contains("time:"), "missing clock output: {result}");
+        assert!(
+            result.contains("system-time:"),
+            "missing clock output: {result}"
+        );
     }
 
     #[test]

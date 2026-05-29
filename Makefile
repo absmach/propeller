@@ -202,6 +202,14 @@ attestation-test:
 	cd examples/attestation-test && cargo build --target wasm32-wasip2 --release
 	cp examples/attestation-test/target/wasm32-wasip2/release/attestation_test.wasm build/attestation-test.wasm
 
+hal-test:
+	mkdir -p $(BUILD_DIR)
+	cd examples/hal-test && cargo build --target wasm32-wasip2 --release
+	cp examples/hal-test/target/wasm32-wasip2/release/hal_test.wasm $(BUILD_DIR)/hal-test.wasm
+
+hal-runner:
+	cd examples/hal-runner && cargo build --release
+
 plugin-auth:
 	mkdir -p $(BUILD_DIR)/plugins
 	cd examples/plugin-auth && cargo build --target wasm32-wasip1 --release

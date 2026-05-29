@@ -30,7 +30,10 @@ impl Guest for Component {
 
         match attestation::attestation(&report_data) {
             Ok(evidence) => {
-                out.push_str(&format!("attestation: ok (evidence len={})\n", evidence.len()));
+                out.push_str(&format!(
+                    "attestation: ok (evidence len={})\n",
+                    evidence.len()
+                ));
                 out.push_str(&format!("evidence: {}\n", hex(&evidence)));
             }
             Err(e) => out.push_str(&format!("attestation: failed ({e})\n")),
