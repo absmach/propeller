@@ -1,0 +1,107 @@
+// ELASTIC TEE HAL — host interfaces exposed to WASI P2 (component model) guests.
+//
+// Vendored and trimmed from elasticproject-eu/wasmhal
+// (hal-runtime/wit/hal.wit, package elastic:hal@0.1.0). Only the interfaces
+// backed by a real HAL provider are kept for v1; the stub-only interfaces
+// (sockets, gpu, resources, events, communication, storage) are intentionally
+// omitted and tracked as follow-up. The host-side bindings are generated in
+// proplet/src/hal_component.rs via wasmtime::component::bindgen! against
+// wasmtime 44. Interface signatures are kept byte-compatible with upstream so
+// guests can be built against either.
+
+package elastic:hal@0.1.0;
+
+// ============================================================================
+// Platform Interface (platform info + capability discovery)
+// ============================================================================
+interface platform {
+  record platform-info {
+    platform-type: string,
+    version: string,
+  }
+
+  record capability-info {
+    feature-name: string,
+    supported: bool,
+    version: string,
+  }
+
+  get-platform-info: func() -> platform-info;
+  list-capabilities: func() -> list<capability-info>;
+  has-capability: func(feature-name: string) -> bool;
+}
+
+// ============================================================================
+// Attestation Interface
+// ============================================================================
+interface attestation {
+  attestation: func(report-data: list<u8>) -> result<list<u8>, string>;
+}
+
+// ============================================================================
+// Crypto Interface
+// ============================================================================
+interface crypto {
+  enum hash-algorithm {
+    sha256,
+    sha512,
+    blake3,
+  }
+
+  enum cipher-algorithm {
+    aes256-gcm,
+    chacha20-poly1305,
+  }
+
+  record key-pair {
+    public-key: list<u8>,
+    private-key: list<u8>,
+  }
+
+  hash: func(data: list<u8>, algorithm: hash-algorithm) -> result<list<u8>, string>;
+  encrypt: func(data: list<u8>, key: list<u8>, algorithm: cipher-algorithm) -> result<list<u8>, string>;
+  decrypt: func(data: list<u8>, key: list<u8>, algorithm: cipher-algorithm) -> result<list<u8>, string>;
+  generate-keypair: func() -> result<key-pair, string>;
+  sign: func(data: list<u8>, private-key: list<u8>) -> result<list<u8>, string>;
+  verify: func(data: list<u8>, signature: list<u8>, public-key: list<u8>) -> result<bool, string>;
+}
+
+// ============================================================================
+// Clock Interface
+// ============================================================================
+interface clock {
+  record system-time {
+    seconds: u64,
+    nanoseconds: u32,
+  }
+
+  record monotonic-time {
+    elapsed-seconds: u64,
+    elapsed-nanoseconds: u32,
+  }
+
+  get-system-time: func() -> result<system-time, string>;
+  get-monotonic-time: func() -> result<monotonic-time, string>;
+  resolution: func() -> result<u64, string>;
+  sleep: func(duration-ns: u64) -> result<_, string>;
+}
+
+// ============================================================================
+// Random Interface
+// ============================================================================
+interface random {
+  get-random-bytes: func(length: u32) -> result<list<u8>, string>;
+  get-secure-random: func(length: u32) -> result<list<u8>, string>;
+}
+
+// ============================================================================
+// World: guests import HAL interfaces. No export is mandated so the guest may
+// still be a wasi:cli command or expose its own custom function.
+// ============================================================================
+world hal-imports {
+  import platform;
+  import attestation;
+  import crypto;
+  import clock;
+  import random;
+}

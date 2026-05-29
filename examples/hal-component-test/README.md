@@ -1,7 +1,7 @@
 # hal-component-test
 
 A WASI P2 (component model) guest that consumes the [ELASTIC TEE HAL](https://github.com/elasticproject-eu/wasmhal)
-through typed WIT bindings. The P2 counterpart of the P1 `hal-test` example.
+through typed WIT bindings.
 
 It imports the `elastic:hal@0.1.0` interfaces and exports a single
 `run-hal-test: func() -> string`. Proplet runs it via the
