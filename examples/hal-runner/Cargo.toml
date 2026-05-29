@@ -11,7 +11,7 @@ path = "src/main.rs"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-wasmtime = { version = "44.0.0", features = ["async"] }
-wasmtime-wasi = "44.0.0"
+wasmtime = { version = "45.0.0", features = ["async"] }
+wasmtime-wasi = "45.0.0"
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal" }
 hex = "0.4"
