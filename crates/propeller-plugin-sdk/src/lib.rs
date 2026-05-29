@@ -53,7 +53,10 @@ pub struct AuthorizeResponse {
 
 impl Default for AuthorizeResponse {
     fn default() -> Self {
-        Self { allow: true, reason: None }
+        Self {
+            allow: true,
+            reason: None,
+        }
     }
 }
 
@@ -119,7 +122,12 @@ pub struct PropletSelectResponse {
 
 impl Default for PropletSelectResponse {
     fn default() -> Self {
-        Self { allow: true, reason: None, required_tags: Vec::new(), min_memory_bytes: None }
+        Self {
+            allow: true,
+            reason: None,
+            required_tags: Vec::new(),
+            min_memory_bytes: None,
+        }
     }
 }
 
@@ -141,7 +149,11 @@ pub struct DispatchResponse {
 
 impl Default for DispatchResponse {
     fn default() -> Self {
-        Self { allow: true, reason: None, extra_env: HashMap::new() }
+        Self {
+            allow: true,
+            reason: None,
+            extra_env: HashMap::new(),
+        }
     }
 }
 

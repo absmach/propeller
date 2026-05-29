@@ -962,7 +962,10 @@ mod tests {
             mode: None,
         };
 
-        let out = runtime.start_app(ctx, config).await.expect("start_app failed");
+        let out = runtime
+            .start_app(ctx, config)
+            .await
+            .expect("start_app failed");
         let result = String::from_utf8_lossy(&out);
 
         // sha256("hello") — proves crypto host binding ran end-to-end.
@@ -970,7 +973,10 @@ mod tests {
             result.contains("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
             "unexpected HAL output: {result}"
         );
-        assert!(result.contains("random16="), "missing random output: {result}");
+        assert!(
+            result.contains("random16="),
+            "missing random output: {result}"
+        );
         assert!(result.contains("time:"), "missing clock output: {result}");
     }
 

@@ -16,8 +16,7 @@ use elastic_tee_hal::interfaces::{
     CapabilitiesInterface, ClockInterface, CryptoInterface, RandomInterface,
 };
 use elastic_tee_hal::providers::{
-    DefaultCapabilitiesProvider, DefaultClockProvider, DefaultCryptoProvider,
-    DefaultRandomProvider,
+    DefaultCapabilitiesProvider, DefaultClockProvider, DefaultCryptoProvider, DefaultRandomProvider,
 };
 use tracing::warn;
 
@@ -72,11 +71,13 @@ impl platform::Host for StoreData {
         match DefaultCapabilitiesProvider::default().list_capabilities() {
             Ok(list) => list
                 .into_iter()
-                .map(|(feature_name, supported, version)| platform::CapabilityInfo {
-                    feature_name,
-                    supported,
-                    version,
-                })
+                .map(
+                    |(feature_name, supported, version)| platform::CapabilityInfo {
+                        feature_name,
+                        supported,
+                        version,
+                    },
+                )
                 .collect(),
             Err(e) => {
                 warn!("HAL platform/list-capabilities error: {}", e);
@@ -108,11 +109,7 @@ impl attestation::Host for StoreData {
 // Crypto
 // ============================================================================
 impl crypto::Host for StoreData {
-    fn hash(
-        &mut self,
-        data: Vec<u8>,
-        algorithm: crypto::HashAlgorithm,
-    ) -> Result<Vec<u8>, String> {
+    fn hash(&mut self, data: Vec<u8>, algorithm: crypto::HashAlgorithm) -> Result<Vec<u8>, String> {
         DefaultCryptoProvider::default().hash(&data, hash_algo_str(algorithm))
     }
 
@@ -171,12 +168,12 @@ impl clock::Host for StoreData {
     }
 
     fn get_monotonic_time(&mut self) -> Result<clock::MonotonicTime, String> {
-        DefaultClockProvider::default()
-            .monotonic_time()
-            .map(|(elapsed_seconds, elapsed_nanoseconds)| clock::MonotonicTime {
+        DefaultClockProvider::default().monotonic_time().map(
+            |(elapsed_seconds, elapsed_nanoseconds)| clock::MonotonicTime {
                 elapsed_seconds,
                 elapsed_nanoseconds,
-            })
+            },
+        )
     }
 
     fn resolution(&mut self) -> Result<u64, String> {
