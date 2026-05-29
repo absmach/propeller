@@ -1,0 +1,10 @@
+[package]
+name = "hal-component-test"
+version = "0.4.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.43.0"

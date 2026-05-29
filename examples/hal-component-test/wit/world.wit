@@ -1,0 +1,19 @@
+// P2 (component model) guest that imports the ELASTIC TEE HAL interfaces and
+// exports a single `run-hal-test` function. Proplet invokes it through the
+// `start_app_component_export` path (function_name = "run-hal-test"), which
+// registers the HAL host bindings on the component linker when
+// PROPLET_HAL_ENABLED=true.
+//
+// The elastic:hal@0.1.0 package in wit/deps/hal.wit must stay byte-compatible
+// with proplet/wit/hal/hal.wit so guest imports match the host exports.
+
+package propeller:hal-component-test;
+
+world hal-test {
+  import elastic:hal/platform@0.1.0;
+  import elastic:hal/crypto@0.1.0;
+  import elastic:hal/clock@0.1.0;
+  import elastic:hal/random@0.1.0;
+
+  export run-hal-test: func() -> string;
+}

@@ -59,8 +59,12 @@ fn read_str(caller: &mut Caller<'_, WasiP1Ctx>, ptr: i32, len: i32) -> String {
     String::from_utf8_lossy(&read_mem(caller, ptr, len)).into_owned()
 }
 
-// TODO: replace with elastic_tee_hal::wasmtime_bindings::add_to_linker(linker)
-//       once wasmhal ships that module.
+// P1 (core module) HAL wiring. The P2 (component model) counterpart lives in
+// `crate::hal_component`, which generates typed host bindings from
+// `wit/hal/hal.wit`. Upstream `elastic_tee_hal` does not yet export a
+// `wasmtime_bindings` module (its `wit_bindgen::generate!` is commented out and
+// the component host impl lives in the separate, unpublished `hal-runtime`
+// crate targeting wasmtime 25), so this hand-rolled P1 linker remains in place.
 pub fn add_to_linker(linker: &mut Linker<WasiP1Ctx>, provider: Arc<HalProvider>) -> Result<()> {
     add_platform(linker, provider.clone())?;
     add_capabilities(linker, provider.clone())?;
