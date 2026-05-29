@@ -209,7 +209,9 @@ hal-test:
 	cp examples/hal-test/target/wasm32-wasip2/release/hal_test.wasm $(BUILD_DIR)/hal-test.wasm
 
 hal-runner:
+	mkdir -p $(BUILD_DIR)
 	cd examples/hal-runner && cargo build --release
+	cp examples/hal-runner/target/release/hal-runner $(BUILD_DIR)/hal-runner
 
 plugin-auth:
 	mkdir -p $(BUILD_DIR)/plugins

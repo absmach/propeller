@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use elastic_tee_hal::interfaces::HalProvider;
+use elastic_tee_hal::interfaces::{
+    CapabilitiesInterface, ClockInterface, CryptoInterface, HalProvider, RandomInterface,
+};
 use std::sync::Arc;
 use tracing::warn;
 
@@ -28,6 +30,22 @@ impl PropletHal {
                 None
             }
         }
+    }
+
+    pub fn capabilities(&self) -> Option<&dyn CapabilitiesInterface> {
+        self.provider.capabilities.as_deref()
+    }
+
+    pub fn crypto(&self) -> Option<&dyn CryptoInterface> {
+        self.provider.crypto.as_deref()
+    }
+
+    pub fn random(&self) -> Option<&dyn RandomInterface> {
+        self.provider.random.as_deref()
+    }
+
+    pub fn clock(&self) -> Option<&dyn ClockInterface> {
+        self.provider.clock.as_deref()
     }
 
     pub fn sha256(&self, data: &[u8]) -> Result<Vec<u8>> {

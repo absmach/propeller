@@ -40,7 +40,9 @@ pub struct StoreData {
     wasi: WasiCtx,
     http: WasiHttpCtx,
     table: ResourceTable,
-    pub(crate) hal: Arc<PropletHal>,
+    /// `Some` on paths that registered HAL bindings on the linker; `None` on
+    /// the async proxy path, which does not expose HAL in v1.
+    pub(crate) hal: Option<Arc<PropletHal>>,
 }
 
 impl WasiView for StoreData {
@@ -69,6 +71,8 @@ pub struct WasmtimeRuntime {
     proxy_ports: Arc<Mutex<HashMap<u16, String>>>,
     proxy_cancellers: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
     hal_enabled: bool,
+    /// Shared HAL provider instance, cloned (Arc) into each component store.
+    hal: Arc<PropletHal>,
     http_enabled: bool,
     preopened_dirs: Vec<String>,
     proxy_port: u16,
@@ -100,6 +104,7 @@ impl WasmtimeRuntime {
             proxy_ports: Arc::new(Mutex::new(HashMap::new())),
             proxy_cancellers: Arc::new(Mutex::new(HashMap::new())),
             hal_enabled,
+            hal: PropletHal::new(),
             http_enabled,
             preopened_dirs,
             proxy_port,
@@ -258,7 +263,7 @@ impl WasmtimeRuntime {
             wasi,
             http: WasiHttpCtx::new(),
             table: ResourceTable::new(),
-            hal: PropletHal::new(),
+            hal: self.hal_enabled.then(|| self.hal.clone()),
         };
 
         let mut store = Store::new(&self.engine, store_data);
@@ -360,7 +365,7 @@ impl WasmtimeRuntime {
             wasi,
             http: WasiHttpCtx::new(),
             table: ResourceTable::new(),
-            hal: PropletHal::new(),
+            hal: self.hal_enabled.then(|| self.hal.clone()),
         };
 
         let mut store = Store::new(&self.engine, store_data);
@@ -870,8 +875,8 @@ async fn handle_proxy_request(
         http: WasiHttpCtx::new(),
         table: ResourceTable::new(),
         // HAL is not registered on the async proxy linker in v1 (bindgen is
-        // sync); the field is populated to satisfy the struct.
-        hal: PropletHal::new(),
+        // sync); leave the field empty so we don't carry an unused provider.
+        hal: None,
     };
 
     let mut store = Store::new(pre.engine(), store_data);
@@ -926,8 +931,10 @@ mod tests {
 
     // End-to-end: load the P2 component guest from examples/hal-test, run it
     // through the component-export path with HAL enabled, and assert it got
-    // real values back from the host HAL bindings. Skips if the guest has not
-    // been built (cargo build --target wasm32-wasip2 --release in that dir).
+    // real values back from the host HAL bindings. Skips locally if the guest
+    // has not been built; when PROPLET_E2E=1 (set in CI after the guest is
+    // built), a missing wasm panics instead so the silent-skip can't mask a
+    // broken CI step.
     #[tokio::test]
     async fn test_hal_component_e2e() {
         let wasm_path = concat!(
@@ -936,7 +943,10 @@ mod tests {
         );
         let wasm_binary = match std::fs::read(wasm_path) {
             Ok(b) => b,
-            Err(_) => {
+            Err(e) => {
+                if std::env::var_os("PROPLET_E2E").is_some() {
+                    panic!("PROPLET_E2E=1 but hal-test guest missing at {wasm_path}: {e}");
+                }
                 eprintln!("skipping test_hal_component_e2e: guest not built at {wasm_path}");
                 return;
             }

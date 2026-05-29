@@ -101,9 +101,11 @@ impl platform::Host for HostState {
 
 impl attestation::Host for HostState {
     fn attestation(&mut self, report_data: Vec<u8>) -> Result<Vec<u8>, String> {
+        // No silent stub: callers must be able to tell that no real evidence
+        // was produced.
         match self.provider.platform.as_ref() {
             Some(p) => p.attestation(&report_data),
-            None => Ok(b"{}".to_vec()),
+            None => Err("no TEE platform available for attestation".to_string()),
         }
     }
 }
