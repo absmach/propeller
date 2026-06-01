@@ -17,6 +17,11 @@ pub struct StartConfig {
     pub args: Vec<String>,
     #[allow(dead_code)]
     pub mode: Option<String>,
+    /// Per-task filesystem base for the ELASTIC TEE HAL `storage` interface.
+    /// Each task gets its own root so concurrent workloads can't collide on
+    /// `container_<n>/` directories. When `None`, the runtime derives a
+    /// default of `/tmp/proplet/hal-storage/<task-id>`.
+    pub hal_storage_path: Option<String>,
 }
 
 #[async_trait]

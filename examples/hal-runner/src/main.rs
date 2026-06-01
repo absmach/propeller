@@ -29,15 +29,25 @@ use wasmtime::component::{Component, Linker, ResourceTable, Val};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
+// Single bindgen over the modular world — each interface lives in its own
+// `elastic:<name>@0.1.0` package, matching upstream `wit-modular/` and the BRT
+// EUCNC component.
 wasmtime::component::bindgen!({
-    world: "hal-imports",
+    world: "elastic:hal-modular/elastic-modular-imports",
     path: "wit",
 });
 
-use elastic::hal::{
-    attestation, clock, communication, crypto, events, gpu, platform, random, resources, sockets,
-    storage,
-};
+use elastic::attestation::attestation;
+use elastic::clock::clock;
+use elastic::communication::communication;
+use elastic::crypto::crypto;
+use elastic::events::events;
+use elastic::gpu::gpu;
+use elastic::platform::platform;
+use elastic::random::random;
+use elastic::resources::resources;
+use elastic::sockets::sockets;
+use elastic::storage::storage;
 
 // ============================================================================
 // Socket bridge — same shape as proplet's. The WIT split create/bind/listen
@@ -179,7 +189,9 @@ impl HostState {
             events: Arc::new(EventInterface::new()),
             communication: Arc::new(CommunicationInterface::new()),
             storage: OnceLock::new(),
-            storage_base: std::env::temp_dir().join("hal-runner-storage"),
+            storage_base: std::env::var_os("HAL_STORAGE_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::temp_dir().join("hal-runner-storage")),
             crypto_ctxs: Mutex::new(Vec::new()),
             next_crypto_ctx: AtomicU64::new(1),
         }
@@ -890,13 +902,21 @@ impl storage::Host for HostState {
     }
 }
 
+
 // ============================================================================
 // CLI
 // ============================================================================
 struct Cli {
     wasm_file: PathBuf,
+    /// One of:
+    ///   * bare name           → top-level export
+    ///   * `instance#func`     → sub-instance export
     function: String,
     envs: Vec<(String, String)>,
+    /// `Some` when the user passed `--start-server <host>:<port>`. The
+    /// resolved export is invoked with `(host: string, port: u16)` to match
+    /// the BRT EUCNC `server-api/start-server` shape.
+    start_server: Option<(String, u16)>,
 }
 
 fn parse_cli() -> Result<Cli> {
@@ -907,13 +927,21 @@ fn parse_cli() -> Result<Cli> {
         eprintln!("Runs a WASI P2 component that imports the elastic:hal interfaces,");
         eprintln!("serving them with the ELASTIC TEE HAL providers (platform, attestation,");
         eprintln!("crypto, clock, random, sockets, gpu, resources, events, communication,");
-        eprintln!("storage).");
+        eprintln!("storage). Both `elastic:hal/*` and the modular `elastic:sockets`/");
+        eprintln!("`elastic:storage` etc. packagings are served against the same providers.");
         eprintln!();
         eprintln!("Options:");
-        eprintln!("  -f, --function <name>   Exported function to call (default: run-hal-test)");
+        eprintln!("  -f, --function <name>     Exported function to call.");
+        eprintln!("                            Use `instance#func` for sub-instance exports,");
+        eprintln!("                            e.g. `elastic:foo/server-api@0.1.0#start-server`.");
+        eprintln!("                            Default: run-hal-test");
+        eprintln!("      --start-server H:P    Invoke the resolved export with (host, port).");
         eprintln!(
-            "  -e, --env <KEY=VALUE>   Pass environment variable to the component (repeatable)"
+            "  -e, --env <KEY=VALUE>     Pass environment variable to the component (repeatable)"
         );
+        eprintln!();
+        eprintln!("Env:");
+        eprintln!("  HAL_STORAGE_PATH          Storage base dir (default: $TMPDIR/hal-runner-storage)");
         eprintln!();
         eprintln!("Examples:");
         eprintln!(
@@ -921,15 +949,20 @@ fn parse_cli() -> Result<Cli> {
             args[0]
         );
         eprintln!(
-            "  {} ../attestation-test/target/wasm32-wasip2/release/attestation_test.wasm -f run-attestation",
+            "  HAL_STORAGE_PATH=$PWD/hal-storage {} ./brt_eucnc_front.wasm \\",
             args[0]
         );
+        eprintln!(
+            "    -f 'elastic:brt-eucnc-front-service/server-api@0.1.0#start-server' \\"
+        );
+        eprintln!("    --start-server 0.0.0.0:8080");
         std::process::exit(1);
     }
 
     let wasm_file = PathBuf::from(&args[1]);
     let mut function = "run-hal-test".to_string();
     let mut envs: Vec<(String, String)> = Vec::new();
+    let mut start_server: Option<(String, u16)> = None;
 
     let mut i = 2;
     while i < args.len() {
@@ -940,6 +973,20 @@ fn parse_cli() -> Result<Cli> {
                     .get(i)
                     .cloned()
                     .context("--function requires a name argument")?;
+            }
+            "--start-server" => {
+                i += 1;
+                let hp = args
+                    .get(i)
+                    .cloned()
+                    .context("--start-server requires a HOST:PORT argument")?;
+                let (host, port) = hp
+                    .rsplit_once(':')
+                    .with_context(|| format!("--start-server '{hp}' is not in HOST:PORT format"))?;
+                let port: u16 = port
+                    .parse()
+                    .with_context(|| format!("--start-server port '{port}' is not a valid u16"))?;
+                start_server = Some((host.to_string(), port));
             }
             "--env" | "-e" => {
                 i += 1;
@@ -961,7 +1008,21 @@ fn parse_cli() -> Result<Cli> {
         wasm_file,
         function,
         envs,
+        start_server,
     })
+}
+
+fn resolve_export(
+    instance: &wasmtime::component::Instance,
+    store: &mut Store<HostState>,
+    function: &str,
+) -> Option<wasmtime::component::Func> {
+    if let Some((instance_name, func_name)) = function.split_once('#') {
+        let inst_idx = instance.get_export_index(&mut *store, None, instance_name)?;
+        let func_idx = instance.get_export_index(&mut *store, Some(&inst_idx), func_name)?;
+        return instance.get_func(&mut *store, func_idx);
+    }
+    instance.get_func(&mut *store, function)
 }
 
 fn main() -> Result<()> {
@@ -987,7 +1048,7 @@ fn main() -> Result<()> {
     let mut linker: Linker<HostState> = Linker::new(&engine);
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
         .map_err(|e| anyhow::anyhow!("Failed to add WASI P2 to linker: {e}"))?;
-    HalImports::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |s| s)
+    ElasticModularImports::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |s| s)
         .map_err(|e| anyhow::anyhow!("Failed to add ELASTIC TEE HAL to linker: {e}"))?;
 
     // Owned tokio runtime: the host bindings drive upstream's async APIs via
@@ -1005,13 +1066,23 @@ fn main() -> Result<()> {
         .instantiate(&mut store, &component)
         .map_err(|e| anyhow::anyhow!("Failed to instantiate component: {e}"))?;
 
-    let func = instance
-        .get_func(&mut store, &cli.function)
+    let func = resolve_export(&instance, &mut store, &cli.function)
         .with_context(|| format!("Export '{}' not found in component", cli.function))?;
 
-    // The HAL example exports each return a single string summary.
-    let mut results = vec![Val::Bool(false)];
-    func.call(&mut store, &[], &mut results)
+    let (wasm_args, mut results): (Vec<Val>, Vec<Val>) = if let Some((host, port)) =
+        cli.start_server.clone()
+    {
+        // BRT-style: start-server(host: string, port: u16) -> result<_, string>
+        (
+            vec![Val::String(host), Val::U16(port)],
+            vec![Val::Bool(false)],
+        )
+    } else {
+        // HAL example exports each return a single string summary.
+        (vec![], vec![Val::Bool(false)])
+    };
+
+    func.call(&mut store, &wasm_args, &mut results)
         .map_err(|e| anyhow::anyhow!("Failed to call export '{}': {e}", cli.function))?;
 
     if let Some(Val::String(s)) = results.first() {

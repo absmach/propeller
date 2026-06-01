@@ -74,6 +74,7 @@ impl TaskHandler {
             env: task_env,
             args: Vec::new(),
             mode: Some("train".to_string()),
+            hal_storage_path: None,
         };
 
         (backend, start_config)

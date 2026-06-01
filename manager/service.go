@@ -1825,6 +1825,7 @@ type startPayload struct {
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
 	MonitoringProfile *proplet.MonitoringProfile `json:"monitoring_profile,omitempty"`
 	PropletID         string                     `json:"proplet_id,omitempty"`
+	HalStoragePath    *string                    `json:"hal_storage_path,omitempty"`
 	ParentResults     map[string]any             `json:"parent_results,omitempty"`
 	// Metadata is intentionally excluded: it is a manager-side filtering field
 	// and is not needed by the proplet runtime.
@@ -1846,6 +1847,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		KBSResourcePath:   t.KBSResourcePath,
 		MonitoringProfile: t.MonitoringProfile,
 		PropletID:         propletID,
+		HalStoragePath:    t.HalStoragePath,
 	}
 
 	if len(t.DependsOn) > 0 {

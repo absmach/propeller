@@ -68,6 +68,8 @@ pub struct StartRequest {
     pub proplet_id: Option<String>,
     #[serde(default)]
     pub broadcast: bool,
+    #[serde(default)]
+    pub hal_storage_path: Option<String>,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -315,6 +317,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert!(req.validate().is_ok());
@@ -338,6 +341,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert!(req.validate().is_ok());
@@ -361,6 +365,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();
@@ -386,6 +391,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();
@@ -411,6 +417,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();
@@ -439,6 +446,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert!(req.validate().is_ok());
@@ -462,6 +470,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();
@@ -490,6 +499,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();
@@ -748,6 +758,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
@@ -814,6 +825,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -844,6 +856,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert!(req.validate().is_ok());
@@ -867,6 +880,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         assert!(req.validate().is_ok());
@@ -890,6 +904,7 @@ mod tests {
             mode: None,
             proplet_id: None,
             broadcast: false,
+            hal_storage_path: None,
         };
 
         let result = req.validate();

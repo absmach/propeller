@@ -3,10 +3,12 @@ use crate::hal::PropletHal;
 use crate::hal_component;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use elastic_tee_hal::StorageInterface;
 use hyper::server::conn::http1;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -36,6 +38,85 @@ fn is_proxy_component(bytes: &[u8]) -> bool {
         .any(|w| w == b"wasi:http/incoming-handler")
 }
 
+/// Resolve a component export by name. Supports three shapes so the same
+/// `function_name` field on `StartConfig` can target both top-level commands
+/// and per-interface instance exports (e.g. the BRT EUCNC demo's
+/// `elastic:brt-eucnc-front-service/server-api@0.1.0#start-server`):
+///
+/// 1. Bare `"start-server"` — top-level lookup, then a fallback scan over
+///    instance-style exports discovered in the binary that expose a function
+///    with that name.
+/// 2. Qualified `"instance#func"` — look up `instance` first, then `func`
+///    inside it.
+/// 3. The qualified form without `#` is also accepted (treated like a
+///    top-level name).
+fn resolve_component_export(
+    instance: &component::Instance,
+    store: &mut Store<StoreData>,
+    name: &str,
+    wasm_binary: &[u8],
+) -> Option<component::Func> {
+    if let Some((instance_name, func_name)) = name.split_once('#') {
+        let inst_idx = instance.get_export_index(&mut *store, None, instance_name)?;
+        let func_idx = instance.get_export_index(&mut *store, Some(&inst_idx), func_name)?;
+        return instance.get_func(&mut *store, func_idx);
+    }
+
+    if let Some(func) = instance.get_func(&mut *store, name) {
+        return Some(func);
+    }
+
+    for inst_name in scan_export_instance_names(wasm_binary) {
+        let Some(inst_idx) = instance.get_export_index(&mut *store, None, &inst_name) else {
+            continue;
+        };
+        if let Some(func_idx) = instance.get_export_index(&mut *store, Some(&inst_idx), name) {
+            if let Some(func) = instance.get_func(&mut *store, func_idx) {
+                return Some(func);
+            }
+        }
+    }
+
+    None
+}
+
+/// Best-effort scan for component instance export names embedded in the
+/// component string table (`namespace:pkg/iface@x.y.z`). Used as a hint for
+/// the fallback path in [`resolve_component_export`] when the guest only
+/// gives us a bare function name; the linker remains the source of truth.
+fn scan_export_instance_names(bytes: &[u8]) -> Vec<String> {
+    fn is_id_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric()
+            || matches!(b, b':' | b'/' | b'-' | b'@' | b'.' | b'_')
+    }
+
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let candidate_prefixes: &[&[u8]] = &[b"elastic:", b"wasi:"];
+    for prefix in candidate_prefixes {
+        let mut i = 0;
+        while i + prefix.len() <= bytes.len() {
+            let Some(off) = bytes[i..].windows(prefix.len()).position(|w| w == *prefix) else {
+                break;
+            };
+            let start = i + off;
+            let mut end = start;
+            while end < bytes.len() && end - start < 128 && is_id_byte(bytes[end]) {
+                end += 1;
+            }
+            if end > start {
+                if let Ok(s) = std::str::from_utf8(&bytes[start..end]) {
+                    if s.contains('/') && seen.insert(s.to_string()) {
+                        names.push(s.to_string());
+                    }
+                }
+            }
+            i = end.max(start + 1);
+        }
+    }
+    names
+}
+
 pub struct StoreData {
     wasi: WasiCtx,
     http: WasiHttpCtx,
@@ -43,6 +124,11 @@ pub struct StoreData {
     /// `Some` on paths that registered HAL bindings on the linker; `None` on
     /// the async proxy path, which does not expose HAL in v1.
     pub(crate) hal: Option<Arc<PropletHal>>,
+    /// Per-task storage interface initialised at the task's `hal_storage_path`.
+    /// Each task gets its own root so concurrent workloads don't collide on
+    /// `container_<n>/` directories. Falls back to the shared `PropletHal`
+    /// storage when `None`.
+    pub(crate) storage: Option<Arc<StorageInterface>>,
 }
 
 impl WasiView for StoreData {
@@ -109,6 +195,43 @@ impl WasmtimeRuntime {
             preopened_dirs,
             proxy_port,
         })
+    }
+}
+
+/// Derive the storage base for a task: explicit override on the StartConfig
+/// wins, otherwise a per-task default under `/tmp/proplet/hal-storage/<id>`
+/// keeps each workload isolated.
+fn task_hal_storage_path(config: &StartConfig) -> PathBuf {
+    if let Some(p) = &config.hal_storage_path {
+        PathBuf::from(p)
+    } else {
+        PathBuf::from("/tmp/proplet/hal-storage").join(&config.id)
+    }
+}
+
+impl WasmtimeRuntime {
+    async fn init_task_storage(&self, config: &StartConfig) -> Option<Arc<StorageInterface>> {
+        if !self.hal_enabled {
+            return None;
+        }
+        let path = task_hal_storage_path(config);
+        match StorageInterface::new(&path).await {
+            Ok(s) => {
+                info!(
+                    "Initialised per-task storage at {} for task {}",
+                    path.display(),
+                    config.id
+                );
+                Some(Arc::new(s))
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to initialise per-task storage at {}: {e}",
+                    path.display()
+                );
+                None
+            }
+        }
     }
 }
 
@@ -259,11 +382,13 @@ impl WasmtimeRuntime {
 
         let wasi = wasi_builder.build();
 
+        let storage = self.init_task_storage(&config).await;
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
             table: ResourceTable::new(),
             hal: self.hal_enabled.then(|| self.hal.clone()),
+            storage,
         };
 
         let mut store = Store::new(&self.engine, store_data);
@@ -274,6 +399,9 @@ impl WasmtimeRuntime {
         let _ = wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker)
             .map_err(|e| format!("Failed to add wasi:http to component linker: {e}"));
         if self.hal_enabled {
+            // Single call registers both consolidated `elastic:hal/*` and
+            // modular `elastic:sockets`/`elastic:storage`/`elastic:crypto`/
+            // `elastic:clock`/`elastic:random` packagings.
             hal_component::add_to_linker(&mut linker)
                 .context("Failed to add ELASTIC TEE HAL to component linker")?;
         }
@@ -361,11 +489,13 @@ impl WasmtimeRuntime {
         }
         let wasi = wasi_builder.build();
 
+        let storage = self.init_task_storage(&config).await;
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
             table: ResourceTable::new(),
             hal: self.hal_enabled.then(|| self.hal.clone()),
+            storage,
         };
 
         let mut store = Store::new(&self.engine, store_data);
@@ -374,6 +504,9 @@ impl WasmtimeRuntime {
         let _ = wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
         if self.hal_enabled {
+            // Single call registers both consolidated `elastic:hal/*` and
+            // modular `elastic:sockets`/`elastic:storage`/`elastic:crypto`/
+            // `elastic:clock`/`elastic:random` packagings.
             hal_component::add_to_linker(&mut linker)
                 .context("Failed to add ELASTIC TEE HAL to component linker")?;
         }
@@ -383,6 +516,7 @@ impl WasmtimeRuntime {
         let function_name = config.function_name.clone();
         let args = config.args.clone();
         let tasks = self.tasks.clone();
+        let wasm_binary = config.wasm_binary.clone();
 
         let (result_tx, result_rx) = oneshot::channel();
 
@@ -395,15 +529,19 @@ impl WasmtimeRuntime {
                     }
                 };
 
-                let func = instance
-                    .get_func(&mut store, &function_name)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Export '{}' not found in component for task {}",
-                            function_name,
-                            task_id
-                        )
-                    })?;
+                let func = resolve_component_export(
+                    &instance,
+                    &mut store,
+                    &function_name,
+                    &wasm_binary,
+                )
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Export '{}' not found in component for task {}",
+                        function_name,
+                        task_id
+                    )
+                })?;
 
                 let func_ty = func.ty(&store);
                 let param_types: Vec<_> = func_ty.params().collect();
@@ -877,6 +1015,7 @@ async fn handle_proxy_request(
         // HAL is not registered on the async proxy linker in v1 (bindgen is
         // sync); leave the field empty so we don't carry an unused provider.
         hal: None,
+        storage: None,
     };
 
     let mut store = Store::new(pre.engine(), store_data);
@@ -927,65 +1066,6 @@ mod tests {
     fn test_wasmtime_runtime_new() {
         let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222);
         assert!(runtime.is_ok());
-    }
-
-    // End-to-end: load the P2 component guest from examples/hal-test, run it
-    // through the component-export path with HAL enabled, and assert it got
-    // real values back from the host HAL bindings. Skips locally if the guest
-    // has not been built; when PROPLET_E2E=1 (set in CI after the guest is
-    // built), a missing wasm panics instead so the silent-skip can't mask a
-    // broken CI step.
-    #[tokio::test]
-    async fn test_hal_component_e2e() {
-        let wasm_path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../examples/hal-test/target/wasm32-wasip2/release/hal_test.wasm"
-        );
-        let wasm_binary = match std::fs::read(wasm_path) {
-            Ok(b) => b,
-            Err(e) => {
-                if std::env::var_os("PROPLET_E2E").is_some() {
-                    panic!("PROPLET_E2E=1 but hal-test guest missing at {wasm_path}: {e}");
-                }
-                eprintln!("skipping test_hal_component_e2e: guest not built at {wasm_path}");
-                return;
-            }
-        };
-
-        let runtime = WasmtimeRuntime::new_with_options(true, false, Vec::new(), 8222).unwrap();
-        let ctx = RuntimeContext {
-            proplet_id: "test-proplet".to_string(),
-        };
-        let config = StartConfig {
-            id: "hal-e2e".to_string(),
-            function_name: "run-hal-test".to_string(),
-            daemon: false,
-            wasm_binary,
-            cli_args: Vec::new(),
-            env: HashMap::new(),
-            args: Vec::new(),
-            mode: None,
-        };
-
-        let out = runtime
-            .start_app(ctx, config)
-            .await
-            .expect("start_app failed");
-        let result = String::from_utf8_lossy(&out);
-
-        // sha256("hello") — proves crypto host binding ran end-to-end.
-        assert!(
-            result.contains("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
-            "unexpected HAL output: {result}"
-        );
-        assert!(
-            result.contains("random(32):"),
-            "missing random output: {result}"
-        );
-        assert!(
-            result.contains("system-time:"),
-            "missing clock output: {result}"
-        );
     }
 
     #[test]

@@ -649,6 +649,7 @@ impl PropletService {
                 env: env.clone(), // Initial clone, will be updated after fetches
                 args: inputs,
                 mode: req.mode.clone(),
+                hal_storage_path: req.hal_storage_path.clone(),
             };
 
             if export_metrics {

@@ -140,6 +140,24 @@ impl PropletHal {
         Arc::new(Self::default())
     }
 
+    /// Construct with an explicit storage base path. Callers (e.g.
+    /// `WasmtimeRuntime`) pass the value from `PropletConfig.hal_storage_path`
+    /// so the storage location is part of the proplet's typed configuration
+    /// rather than a free-floating process env var.
+    pub fn with_storage_path(storage_base: PathBuf) -> Arc<Self> {
+        Arc::new(Self {
+            provider: HalProvider::with_defaults(),
+            sockets: Arc::new(SocketInterface::new()),
+            gpu: Arc::new(GpuInterface::new()),
+            resources: ResourceInterface::new().ok().map(Arc::new),
+            events: Arc::new(EventInterface::new()),
+            communication: Arc::new(CommunicationInterface::new()),
+            storage: OnceLock::new(),
+            storage_base,
+            socket_bridge: SocketBridge::new(),
+        })
+    }
+
     pub fn has_tee(&self) -> bool {
         self.provider.platform.is_some()
     }
@@ -270,8 +288,10 @@ impl PropletHal {
 
 impl Default for PropletHal {
     fn default() -> Self {
-        // Defaults that don't require I/O or async happen here; storage is
-        // deferred to first call site.
+        // Use a stable, non-temp default so storage data survives between
+        // runs without relying on the process env. Callers that need a
+        // different path should use `with_storage_path` (the configured
+        // entry-point used by `WasmtimeRuntime`).
         Self {
             provider: HalProvider::with_defaults(),
             sockets: Arc::new(SocketInterface::new()),
@@ -280,7 +300,7 @@ impl Default for PropletHal {
             events: Arc::new(EventInterface::new()),
             communication: Arc::new(CommunicationInterface::new()),
             storage: OnceLock::new(),
-            storage_base: std::env::temp_dir().join("proplet-hal-storage"),
+            storage_base: PathBuf::from("/tmp/proplet/hal-storage"),
             socket_bridge: SocketBridge::new(),
         }
     }

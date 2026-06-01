@@ -189,6 +189,7 @@ type Task struct {
 	Broadcast         bool                       `json:"broadcast,omitempty"`
 	Priority          int                        `json:"priority,omitempty"`
 	Metadata          Metadata                   `json:"metadata,omitempty"`
+	HalStoragePath    *string                    `json:"hal_storage_path,omitempty"`
 }
 
 type TaskPage struct {
