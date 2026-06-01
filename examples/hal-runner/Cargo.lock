@@ -1087,6 +1087,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "elastic-tee-hal",
+ "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "wasmtime",

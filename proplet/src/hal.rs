@@ -2,19 +2,142 @@ use anyhow::{anyhow, Result};
 use elastic_tee_hal::interfaces::{
     CapabilitiesInterface, ClockInterface, CryptoInterface, HalProvider, RandomInterface,
 };
-use std::sync::Arc;
+use elastic_tee_hal::{
+    CommunicationInterface, EventInterface, GpuInterface, ResourceInterface, SocketInterface,
+    StorageInterface,
+};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tracing::warn;
+
+/// State for the WIT `sockets` interface bridge. Upstream
+/// `elastic_tee_hal::SocketInterface` requires the bind address up front in
+/// `create_tcp_socket` / `create_udp_socket`, but the WIT shape exposes
+/// `create-socket(protocol)` separately from `bind` / `listen` / `connect`. We
+/// hand out synthetic handles (high-bit range so they cannot collide with
+/// upstream's atomic counter) until enough info is gathered to call upstream,
+/// then remember the mapping.
+const SYNTHETIC_SOCKET_BASE: u64 = 1 << 62;
+
+#[derive(Clone)]
+pub enum SocketSlot {
+    Pending {
+        protocol: SocketProtocol,
+        bind_addr: Option<String>,
+    },
+    Active {
+        real_handle: u64,
+    },
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum SocketProtocol {
+    Tcp,
+    Udp,
+    Tls,
+    Dtls,
+}
+
+pub struct SocketBridge {
+    next: AtomicU64,
+    pub(crate) state: Mutex<HashMap<u64, SocketSlot>>,
+}
+
+impl SocketBridge {
+    fn new() -> Self {
+        Self {
+            next: AtomicU64::new(SYNTHETIC_SOCKET_BASE),
+            state: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn alloc(&self, protocol: SocketProtocol) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        self.state.lock().unwrap().insert(
+            id,
+            SocketSlot::Pending {
+                protocol,
+                bind_addr: None,
+            },
+        );
+        id
+    }
+
+    pub fn set_bind_addr(&self, id: u64, addr: String) -> Result<(), String> {
+        let mut state = self.state.lock().unwrap();
+        match state.get_mut(&id) {
+            Some(SocketSlot::Pending { bind_addr, .. }) => {
+                *bind_addr = Some(addr);
+                Ok(())
+            }
+            Some(SocketSlot::Active { .. }) => {
+                Err("socket already activated; cannot bind".to_string())
+            }
+            None => Err("unknown socket handle".to_string()),
+        }
+    }
+
+    pub fn take_pending(&self, id: u64) -> Result<(SocketProtocol, Option<String>), String> {
+        let state = self.state.lock().unwrap();
+        match state.get(&id) {
+            Some(SocketSlot::Pending {
+                protocol,
+                bind_addr,
+            }) => Ok((*protocol, bind_addr.clone())),
+            Some(SocketSlot::Active { .. }) => Err("socket already activated".to_string()),
+            None => Err("unknown socket handle".to_string()),
+        }
+    }
+
+    pub fn activate(&self, id: u64, real_handle: u64) {
+        self.state
+            .lock()
+            .unwrap()
+            .insert(id, SocketSlot::Active { real_handle });
+    }
+
+    pub fn resolve(&self, id: u64) -> Result<u64, String> {
+        // Real upstream handles (< SYNTHETIC_SOCKET_BASE) are passed through
+        // directly so handles returned by `accept` keep working without an
+        // extra round-trip through the bridge.
+        if id < SYNTHETIC_SOCKET_BASE {
+            return Ok(id);
+        }
+        match self.state.lock().unwrap().get(&id) {
+            Some(SocketSlot::Active { real_handle }) => Ok(*real_handle),
+            Some(SocketSlot::Pending { .. }) => Err("socket not yet bound/connected".to_string()),
+            None => Err("unknown socket handle".to_string()),
+        }
+    }
+
+    pub fn remove(&self, id: u64) {
+        if id >= SYNTHETIC_SOCKET_BASE {
+            self.state.lock().unwrap().remove(&id);
+        }
+    }
+}
 
 pub struct PropletHal {
     provider: HalProvider,
+    sockets: Arc<SocketInterface>,
+    gpu: Arc<GpuInterface>,
+    resources: Option<Arc<ResourceInterface>>,
+    events: Arc<EventInterface>,
+    communication: Arc<CommunicationInterface>,
+    /// Lazily initialised: `StorageInterface::new` is async, so the first
+    /// access (inside spawn_blocking with a tokio handle available) drives it
+    /// to completion via `Handle::block_on`.
+    storage: OnceLock<Option<Arc<StorageInterface>>>,
+    storage_base: PathBuf,
+    socket_bridge: SocketBridge,
 }
 
 #[allow(dead_code)]
 impl PropletHal {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            provider: HalProvider::with_defaults(),
-        })
+        Arc::new(Self::default())
     }
 
     pub fn has_tee(&self) -> bool {
@@ -46,6 +169,55 @@ impl PropletHal {
 
     pub fn clock(&self) -> Option<&dyn ClockInterface> {
         self.provider.clock.as_deref()
+    }
+
+    pub fn sockets(&self) -> Arc<SocketInterface> {
+        self.sockets.clone()
+    }
+
+    pub fn socket_bridge(&self) -> &SocketBridge {
+        &self.socket_bridge
+    }
+
+    pub fn gpu(&self) -> Arc<GpuInterface> {
+        self.gpu.clone()
+    }
+
+    pub fn resources(&self) -> Option<Arc<ResourceInterface>> {
+        self.resources.clone()
+    }
+
+    pub fn events(&self) -> Arc<EventInterface> {
+        self.events.clone()
+    }
+
+    pub fn communication(&self) -> Arc<CommunicationInterface> {
+        self.communication.clone()
+    }
+
+    /// Returns the shared storage interface, initialising it on first use.
+    /// Must be called from inside a Tokio runtime (any of the proplet host
+    /// binding entry points satisfy this — they run under `spawn_blocking`).
+    pub fn storage(&self) -> Option<Arc<StorageInterface>> {
+        self.storage
+            .get_or_init(|| {
+                let base = self.storage_base.clone();
+                let handle = match tokio::runtime::Handle::try_current() {
+                    Ok(h) => h,
+                    Err(_) => {
+                        warn!("HAL storage init outside Tokio runtime; storage unavailable");
+                        return None;
+                    }
+                };
+                match handle.block_on(StorageInterface::new(&base)) {
+                    Ok(s) => Some(Arc::new(s)),
+                    Err(e) => {
+                        warn!("HAL storage init failed at {}: {}", base.display(), e);
+                        None
+                    }
+                }
+            })
+            .clone()
     }
 
     pub fn sha256(&self, data: &[u8]) -> Result<Vec<u8>> {
@@ -98,8 +270,18 @@ impl PropletHal {
 
 impl Default for PropletHal {
     fn default() -> Self {
+        // Defaults that don't require I/O or async happen here; storage is
+        // deferred to first call site.
         Self {
             provider: HalProvider::with_defaults(),
+            sockets: Arc::new(SocketInterface::new()),
+            gpu: Arc::new(GpuInterface::new()),
+            resources: ResourceInterface::new().ok().map(Arc::new),
+            events: Arc::new(EventInterface::new()),
+            communication: Arc::new(CommunicationInterface::new()),
+            storage: OnceLock::new(),
+            storage_base: std::env::temp_dir().join("proplet-hal-storage"),
+            socket_bridge: SocketBridge::new(),
         }
     }
 }
@@ -143,5 +325,15 @@ mod tests {
     fn test_attest_no_panic() {
         let hal = PropletHal::new();
         let _ = hal.try_attest(b"test-nonce");
+    }
+
+    #[test]
+    fn test_new_providers_present() {
+        let hal = PropletHal::new();
+        let _ = hal.sockets();
+        let _ = hal.gpu();
+        let _ = hal.events();
+        let _ = hal.communication();
+        assert!(hal.resources().is_some());
     }
 }

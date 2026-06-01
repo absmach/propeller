@@ -1,13 +1,13 @@
 // ELASTIC TEE HAL — host interfaces exposed to WASI P2 (component model) guests.
 //
-// Vendored and trimmed from elasticproject-eu/wasmhal
-// (hal-runtime/wit/hal.wit, package elastic:hal@0.1.0). Only the interfaces
-// backed by a real HAL provider are kept for v1; the stub-only interfaces
-// (sockets, gpu, resources, events, communication, storage) are intentionally
-// omitted and tracked as follow-up. The host-side bindings are generated in
-// proplet/src/hal_component.rs via wasmtime::component::bindgen! against
-// wasmtime 44. Interface signatures are kept byte-compatible with upstream so
-// guests can be built against either.
+// Vendored from elasticproject-eu/wasmhal (wit-modular/, package family
+// `elastic:*@0.1.0`). All 11 interfaces — platform, attestation, crypto, clock,
+// random, sockets, gpu, resources, events, communication, storage — are present
+// here so guests built against either the upstream `complete.wit` world or this
+// vendored copy resolve to byte-compatible signatures. The host-side bindings
+// live in `proplet/src/hal_component.rs` (generated via
+// `wasmtime::component::bindgen!` against wasmtime 44) and bridge to providers
+// on `StoreData.hal` — see `proplet/src/hal.rs`.
 
 package elastic:hal@0.1.0;
 
@@ -42,6 +42,8 @@ interface attestation {
 // Crypto Interface
 // ============================================================================
 interface crypto {
+  type crypto-context-handle = u64;
+
   enum hash-algorithm {
     sha256,
     sha512,
@@ -64,6 +66,8 @@ interface crypto {
   generate-keypair: func() -> result<key-pair, string>;
   sign: func(data: list<u8>, private-key: list<u8>) -> result<list<u8>, string>;
   verify: func(data: list<u8>, signature: list<u8>, public-key: list<u8>) -> result<bool, string>;
+  create-context: func() -> result<crypto-context-handle, string>;
+  destroy-context: func(handle: crypto-context-handle) -> result<_, string>;
 }
 
 // ============================================================================
@@ -90,8 +94,183 @@ interface clock {
 // Random Interface
 // ============================================================================
 interface random {
+  enum entropy-source {
+    hardware,
+    platform,
+    userspace,
+  }
+
+  record entropy-info {
+    source: entropy-source,
+    quality: u32,
+    available-bytes: u64,
+  }
+
   get-random-bytes: func(length: u32) -> result<list<u8>, string>;
   get-secure-random: func(length: u32) -> result<list<u8>, string>;
+  get-entropy-info: func() -> result<entropy-info, string>;
+  reseed: func(additional-entropy: list<u8>) -> result<_, string>;
+}
+
+// ============================================================================
+// Sockets Interface (TCP/UDP, TLS/DTLS surface from upstream)
+// ============================================================================
+interface sockets {
+  type socket-handle = u64;
+
+  enum protocol {
+    tcp,
+    udp,
+    tls,
+    dtls,
+  }
+
+  record address {
+    ip: string,
+    port: u16,
+  }
+
+  create-socket: func(protocol: protocol) -> result<socket-handle, string>;
+  bind: func(socket: socket-handle, addr: address) -> result<_, string>;
+  listen: func(socket: socket-handle, backlog: u32) -> result<_, string>;
+  connect: func(socket: socket-handle, addr: address) -> result<_, string>;
+  accept: func(socket: socket-handle) -> result<socket-handle, string>;
+  send: func(socket: socket-handle, data: list<u8>) -> result<u32, string>;
+  receive: func(socket: socket-handle, max-len: u32) -> result<list<u8>, string>;
+  close: func(socket: socket-handle) -> result<_, string>;
+}
+
+// ============================================================================
+// GPU Interface (compute pipelines)
+// ============================================================================
+interface gpu {
+  type gpu-adapter-handle = u64;
+  type gpu-device-handle = u64;
+  type gpu-buffer-handle = u64;
+  type gpu-pipeline-handle = u64;
+
+  enum buffer-usage {
+    storage,
+    uniform,
+    vertex,
+    index,
+  }
+
+  record adapter-info {
+    name: string,
+    vendor: string,
+    device-type: string,
+  }
+
+  record buffer-descriptor {
+    size: u64,
+    usage: buffer-usage,
+  }
+
+  list-adapters: func() -> result<list<gpu-adapter-handle>, string>;
+  get-adapter-info: func(handle: gpu-adapter-handle) -> result<adapter-info, string>;
+  create-device: func(adapter: gpu-adapter-handle) -> result<gpu-device-handle, string>;
+  create-buffer: func(device: gpu-device-handle, descriptor: buffer-descriptor) -> result<gpu-buffer-handle, string>;
+  write-buffer: func(buffer: gpu-buffer-handle, offset: u64, data: list<u8>) -> result<_, string>;
+  read-buffer: func(buffer: gpu-buffer-handle, offset: u64, size: u64) -> result<list<u8>, string>;
+  create-compute-pipeline: func(device: gpu-device-handle, shader-code: list<u8>) -> result<gpu-pipeline-handle, string>;
+  dispatch: func(device: gpu-device-handle, pipeline: gpu-pipeline-handle, x: u32, y: u32, z: u32) -> result<_, string>;
+}
+
+// ============================================================================
+// Resources Interface (dynamic allocation + tracking)
+// ============================================================================
+interface resources {
+  type allocation-id = string;
+
+  enum resource-type {
+    memory,
+    cpu,
+    storage,
+    network,
+  }
+
+  record allocation-request {
+    resource-type: resource-type,
+    amount: u64,
+    priority: u32,
+  }
+
+  record allocation-response {
+    allocation-id: allocation-id,
+    granted-amount: u64,
+  }
+
+  allocate: func(request: allocation-request) -> result<allocation-response, string>;
+  deallocate: func(id: allocation-id) -> result<_, string>;
+  query-available: func(resource-type: resource-type) -> result<u64, string>;
+}
+
+// ============================================================================
+// Events Interface (priority-based inter-workload events)
+// ============================================================================
+interface events {
+  type event-subscription-handle = u64;
+
+  enum event-type {
+    platform,
+    crypto,
+    storage,
+    network,
+    gpu,
+  }
+
+  record event-data {
+    event-type: event-type,
+    timestamp: u64,
+    payload: list<u8>,
+  }
+
+  subscribe: func(event-type: event-type) -> result<event-subscription-handle, string>;
+  unsubscribe: func(handle: event-subscription-handle) -> result<_, string>;
+  poll-events: func(handle: event-subscription-handle) -> result<list<event-data>, string>;
+}
+
+// ============================================================================
+// Communication Interface (secure Wasm-to-Wasm messaging)
+// ============================================================================
+interface communication {
+  type workload-id = string;
+  type message-handle = u64;
+
+  record message {
+    sender: workload-id,
+    recipient: workload-id,
+    payload: list<u8>,
+    encrypted: bool,
+  }
+
+  send-message: func(recipient: workload-id, data: list<u8>, encrypt: bool) -> result<message-handle, string>;
+  receive-message: func() -> result<option<message>, string>;
+  list-workloads: func() -> result<list<workload-id>, string>;
+}
+
+// ============================================================================
+// Storage Interface (encrypted container object store)
+// ============================================================================
+interface storage {
+  type container-handle = u64;
+  type object-handle = u64;
+
+  record object-metadata {
+    size: u64,
+    created-at: u64,
+    content-type: string,
+  }
+
+  create-container: func(name: string) -> result<container-handle, string>;
+  open-container: func(name: string) -> result<container-handle, string>;
+  delete-container: func(handle: container-handle) -> result<_, string>;
+  store-object: func(container: container-handle, key: string, data: list<u8>) -> result<object-handle, string>;
+  retrieve-object: func(container: container-handle, key: string) -> result<list<u8>, string>;
+  delete-object: func(container: container-handle, key: string) -> result<_, string>;
+  list-objects: func(container: container-handle) -> result<list<string>, string>;
+  get-metadata: func(container: container-handle, key: string) -> result<object-metadata, string>;
 }
 
 // ============================================================================
@@ -104,4 +283,10 @@ world hal-imports {
   import crypto;
   import clock;
   import random;
+  import sockets;
+  import gpu;
+  import resources;
+  import events;
+  import communication;
+  import storage;
 }
