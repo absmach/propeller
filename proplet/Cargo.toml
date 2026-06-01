@@ -9,25 +9,25 @@ rumqttc = "0.25.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.0.6"
-wasmtime = { version = "44.0.0", features = [
+wasmtime = { version = "45.0.0", features = [
     "component-model",
     "async",
     "wave",
 ] }
-wasmtime-wasi = "44.0.0"
-wasmtime-wasi-http = "44.0.0"
-hyper = { version = "1.9", features = ["full"] }
+wasmtime-wasi = "45.0.0"
+wasmtime-wasi-http = "45.0.0"
+hyper = { version = "1.10", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
 thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-config = "0.15.22"
+config = "0.15.23"
 async-trait = "0.1"
 base64 = "0.22.1"
 url = "2.5"
-sysinfo = "0.38.4"
+sysinfo = "0.39.3"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
 socket2 = { version = "0.6", features = ["all"] }
@@ -52,7 +52,7 @@ kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch
 oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "83092a67ebcaeed832eae090895a1c178d867344", default-features = false, features = [
     "rustls-tls",
 ] }
-oci-spec = { version = "0.9.0" }
+oci-spec = { version = "0.10.0" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
 hex = { version = "0.4" }
 futures-util = { version = "0.3" }
@@ -61,11 +61,11 @@ futures-util = { version = "0.3" }
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "c3174f90ef4df71601683d36fa3f1f5f71b6bf4d", default-features = false, features = [
     "amd-sev",
 ] }
-wasm-wave = "0.246.2"
+wasm-wave = "0.248.0"
 
 [dev-dependencies]
 wiremock = "0.6"
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 
 [features]
 default = []
