@@ -58,7 +58,7 @@ hex = { version = "0.4" }
 futures-util = { version = "0.3" }
 
 # ELASTIC TEE HAL — hardware abstraction layer for TEE workloads
-elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "4ddeb1efe27c341d4711b2789eb33761043e0c4e", default-features = false, features = [
+elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "c3174f90ef4df71601683d36fa3f1f5f71b6bf4d", default-features = false, features = [
     "amd-sev",
 ] }
 wasm-wave = "0.246.2"

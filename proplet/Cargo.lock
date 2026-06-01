@@ -1681,10 +1681,11 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 [[package]]
 name = "elastic-tee-hal"
 version = "0.1.0"
-source = "git+https://github.com/elasticproject-eu/wasmhal?rev=4ddeb1efe27c341d4711b2789eb33761043e0c4e#4ddeb1efe27c341d4711b2789eb33761043e0c4e"
+source = "git+https://github.com/elasticproject-eu/wasmhal?rev=c3174f90ef4df71601683d36fa3f1f5f71b6bf4d#c3174f90ef4df71601683d36fa3f1f5f71b6bf4d"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "base64 0.22.1",
  "bincode",
  "chacha20poly1305",
  "ed25519-dalek",
@@ -1695,6 +1696,7 @@ dependencies = [
  "hmac",
  "libc",
  "log",
+ "reqwest 0.12.28",
  "ring",
  "rustls",
  "serde",

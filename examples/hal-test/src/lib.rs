@@ -1,6 +1,9 @@
 wit_bindgen::generate!({ world: "hal-test", generate_all });
 
-use elastic::hal::{clock, crypto, platform, random};
+use elastic::clock::clock;
+use elastic::crypto::crypto;
+use elastic::platform::platform;
+use elastic::random::random;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
