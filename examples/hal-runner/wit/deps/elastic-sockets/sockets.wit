@@ -1,0 +1,26 @@
+package elastic:sockets@0.1.0;
+
+interface sockets {
+  type socket-handle = u64;
+
+  enum protocol {
+    tcp,
+    udp,
+    tls,
+    dtls,
+  }
+
+  record address {
+    ip: string,
+    port: u16,
+  }
+
+  create-socket: func(protocol: protocol) -> result<socket-handle, string>;
+  bind: func(socket: socket-handle, addr: address) -> result<_, string>;
+  listen: func(socket: socket-handle, backlog: u32) -> result<_, string>;
+  connect: func(socket: socket-handle, addr: address) -> result<_, string>;
+  accept: func(socket: socket-handle) -> result<socket-handle, string>;
+  send: func(socket: socket-handle, data: list<u8>) -> result<u32, string>;
+  receive: func(socket: socket-handle, max-len: u32) -> result<list<u8>, string>;
+  close: func(socket: socket-handle) -> result<_, string>;
+}

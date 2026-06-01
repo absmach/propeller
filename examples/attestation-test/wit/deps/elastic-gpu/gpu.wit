@@ -1,0 +1,35 @@
+package elastic:gpu@0.1.0;
+
+interface gpu {
+  type gpu-adapter-handle = u64;
+  type gpu-device-handle = u64;
+  type gpu-buffer-handle = u64;
+  type gpu-pipeline-handle = u64;
+
+  enum buffer-usage {
+    storage,
+    uniform,
+    vertex,
+    index,
+  }
+
+  record adapter-info {
+    name: string,
+    vendor: string,
+    device-type: string,
+  }
+
+  record buffer-descriptor {
+    size: u64,
+    usage: buffer-usage,
+  }
+
+  list-adapters: func() -> result<list<gpu-adapter-handle>, string>;
+  get-adapter-info: func(handle: gpu-adapter-handle) -> result<adapter-info, string>;
+  create-device: func(adapter: gpu-adapter-handle) -> result<gpu-device-handle, string>;
+  create-buffer: func(device: gpu-device-handle, descriptor: buffer-descriptor) -> result<gpu-buffer-handle, string>;
+  write-buffer: func(buffer: gpu-buffer-handle, offset: u64, data: list<u8>) -> result<_, string>;
+  read-buffer: func(buffer: gpu-buffer-handle, offset: u64, size: u64) -> result<list<u8>, string>;
+  create-compute-pipeline: func(device: gpu-device-handle, shader-code: list<u8>) -> result<gpu-pipeline-handle, string>;
+  dispatch: func(device: gpu-device-handle, pipeline: gpu-pipeline-handle, x: u32, y: u32, z: u32) -> result<_, string>;
+}

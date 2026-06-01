@@ -1,0 +1,30 @@
+package elastic:crypto@0.1.0;
+
+interface crypto {
+  type crypto-context-handle = u64;
+
+  enum hash-algorithm {
+    sha256,
+    sha512,
+    blake3,
+  }
+
+  enum cipher-algorithm {
+    aes256-gcm,
+    chacha20-poly1305,
+  }
+
+  record key-pair {
+    public-key: list<u8>,
+    private-key: list<u8>,
+  }
+
+  hash: func(data: list<u8>, algorithm: hash-algorithm) -> result<list<u8>, string>;
+  encrypt: func(data: list<u8>, key: list<u8>, algorithm: cipher-algorithm) -> result<list<u8>, string>;
+  decrypt: func(data: list<u8>, key: list<u8>, algorithm: cipher-algorithm) -> result<list<u8>, string>;
+  generate-keypair: func() -> result<key-pair, string>;
+  sign: func(data: list<u8>, private-key: list<u8>) -> result<list<u8>, string>;
+  verify: func(data: list<u8>, signature: list<u8>, public-key: list<u8>) -> result<bool, string>;
+  create-context: func() -> result<crypto-context-handle, string>;
+  destroy-context: func(handle: crypto-context-handle) -> result<_, string>;
+}

@@ -1,0 +1,21 @@
+// ELASTIC TEE HAL — aggregating world for the modular interfaces in this
+// directory. One file per interface package keeps cargo-component happy and
+// mirrors upstream `wit-modular/` exactly. Bound by
+// `proplet/src/hal_component.rs` via a single
+// `wasmtime::component::bindgen!` pass.
+
+package elastic:hal-modular@0.1.0;
+
+world elastic-modular-imports {
+  import elastic:platform/platform@0.1.0;
+  import elastic:attestation/attestation@0.1.0;
+  import elastic:crypto/crypto@0.1.0;
+  import elastic:clock/clock@0.1.0;
+  import elastic:random/random@0.1.0;
+  import elastic:sockets/sockets@0.1.0;
+  import elastic:gpu/gpu@0.1.0;
+  import elastic:resources/resources@0.1.0;
+  import elastic:events/events@0.1.0;
+  import elastic:communication/communication@0.1.0;
+  import elastic:storage/storage@0.1.0;
+}

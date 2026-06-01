@@ -1,0 +1,17 @@
+package elastic:communication@0.1.0;
+
+interface communication {
+  type workload-id = string;
+  type message-handle = u64;
+
+  record message {
+    sender: workload-id,
+    recipient: workload-id,
+    payload: list<u8>,
+    encrypted: bool,
+  }
+
+  send-message: func(recipient: workload-id, data: list<u8>, encrypt: bool) -> result<message-handle, string>;
+  receive-message: func() -> result<option<message>, string>;
+  list-workloads: func() -> result<list<workload-id>, string>;
+}

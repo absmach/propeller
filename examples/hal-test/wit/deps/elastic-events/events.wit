@@ -1,0 +1,23 @@
+package elastic:events@0.1.0;
+
+interface events {
+  type event-subscription-handle = u64;
+
+  enum event-type {
+    platform,
+    crypto,
+    storage,
+    network,
+    gpu,
+  }
+
+  record event-data {
+    event-type: event-type,
+    timestamp: u64,
+    payload: list<u8>,
+  }
+
+  subscribe: func(event-type: event-type) -> result<event-subscription-handle, string>;
+  unsubscribe: func(handle: event-subscription-handle) -> result<_, string>;
+  poll-events: func(handle: event-subscription-handle) -> result<list<event-data>, string>;
+}

@@ -1,0 +1,18 @@
+package elastic:platform@0.1.0;
+
+interface platform {
+  record platform-info {
+    platform-type: string,
+    version: string,
+  }
+
+  record capability-info {
+    feature-name: string,
+    supported: bool,
+    version: string,
+  }
+
+  get-platform-info: func() -> platform-info;
+  list-capabilities: func() -> list<capability-info>;
+  has-capability: func(feature-name: string) -> bool;
+}

@@ -1,0 +1,27 @@
+package elastic:resources@0.1.0;
+
+interface resources {
+  type allocation-id = string;
+
+  enum resource-type {
+    memory,
+    cpu,
+    storage,
+    network,
+  }
+
+  record allocation-request {
+    resource-type: resource-type,
+    amount: u64,
+    priority: u32,
+  }
+
+  record allocation-response {
+    allocation-id: allocation-id,
+    granted-amount: u64,
+  }
+
+  allocate: func(request: allocation-request) -> result<allocation-response, string>;
+  deallocate: func(id: allocation-id) -> result<_, string>;
+  query-available: func(resource-type: resource-type) -> result<u64, string>;
+}

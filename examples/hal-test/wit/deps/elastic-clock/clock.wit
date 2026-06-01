@@ -1,0 +1,18 @@
+package elastic:clock@0.1.0;
+
+interface clock {
+  record system-time {
+    seconds: u64,
+    nanoseconds: u32,
+  }
+
+  record monotonic-time {
+    elapsed-seconds: u64,
+    elapsed-nanoseconds: u32,
+  }
+
+  get-system-time: func() -> result<system-time, string>;
+  get-monotonic-time: func() -> result<monotonic-time, string>;
+  resolution: func() -> result<u64, string>;
+  sleep: func(duration-ns: u64) -> result<_, string>;
+}

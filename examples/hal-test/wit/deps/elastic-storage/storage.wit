@@ -1,0 +1,21 @@
+package elastic:storage@0.1.0;
+
+interface storage {
+  type container-handle = u64;
+  type object-handle = u64;
+
+  record object-metadata {
+    size: u64,
+    created-at: u64,
+    content-type: string,
+  }
+
+  create-container: func(name: string) -> result<container-handle, string>;
+  open-container: func(name: string) -> result<container-handle, string>;
+  delete-container: func(handle: container-handle) -> result<_, string>;
+  store-object: func(container: container-handle, key: string, data: list<u8>) -> result<object-handle, string>;
+  retrieve-object: func(container: container-handle, key: string) -> result<list<u8>, string>;
+  delete-object: func(container: container-handle, key: string) -> result<_, string>;
+  list-objects: func(container: container-handle) -> result<list<string>, string>;
+  get-metadata: func(container: container-handle, key: string) -> result<object-metadata, string>;
+}

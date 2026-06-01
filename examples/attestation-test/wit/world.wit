@@ -3,14 +3,15 @@
 // `start_app_component_export` path (function_name = "run-attestation") with
 // PROPLET_HAL_ENABLED=true.
 //
-// wit/deps/hal.wit must stay byte-compatible with proplet/wit/hal/hal.wit.
+// wit/deps/hal.wit mirrors proplet/wit/hal/hal.wit (modular packaging — one
+// package per interface). Byte-compatible with upstream `wit-modular/`.
 
 package propeller:attestation-test;
 
 world attestation-test {
-  import elastic:hal/platform@0.1.0;
-  import elastic:hal/attestation@0.1.0;
-  import elastic:hal/random@0.1.0;
+  import elastic:platform/platform@0.1.0;
+  import elastic:attestation/attestation@0.1.0;
+  import elastic:random/random@0.1.0;
 
   export run-attestation: func() -> string;
 }
