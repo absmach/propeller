@@ -86,8 +86,7 @@ fn resolve_component_export(
 /// gives us a bare function name; the linker remains the source of truth.
 fn scan_export_instance_names(bytes: &[u8]) -> Vec<String> {
     fn is_id_byte(b: u8) -> bool {
-        b.is_ascii_alphanumeric()
-            || matches!(b, b':' | b'/' | b'-' | b'@' | b'.' | b'_')
+        b.is_ascii_alphanumeric() || matches!(b, b':' | b'/' | b'-' | b'@' | b'.' | b'_')
     }
 
     let mut names = Vec::new();
@@ -529,19 +528,15 @@ impl WasmtimeRuntime {
                     }
                 };
 
-                let func = resolve_component_export(
-                    &instance,
-                    &mut store,
-                    &function_name,
-                    &wasm_binary,
-                )
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Export '{}' not found in component for task {}",
-                        function_name,
-                        task_id
-                    )
-                })?;
+                let func =
+                    resolve_component_export(&instance, &mut store, &function_name, &wasm_binary)
+                        .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Export '{}' not found in component for task {}",
+                            function_name,
+                            task_id
+                        )
+                    })?;
 
                 let func_ty = func.ty(&store);
                 let param_types: Vec<_> = func_ty.params().collect();
