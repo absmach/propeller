@@ -45,11 +45,11 @@ jobs:
       - name: Run linter
         run: cargo clippy -- -D warnings
 
-      - name: Check HAL WIT copies are identical
+      - name: Check HAL WIT dep copies are identical
         working-directory: .
         run: |
-          diff -u proplet/wit/hal/hal.wit examples/hal-test/wit/deps/hal.wit
-          diff -u proplet/wit/hal/hal.wit examples/attestation-test/wit/deps/hal.wit
+          diff -r proplet/wit/hal/deps examples/hal-test/wit/deps
+          diff -r proplet/wit/hal/deps examples/attestation-test/wit/deps
 
       - name: Add wasm32-wasip2 target
         run: rustup target add wasm32-wasip2
