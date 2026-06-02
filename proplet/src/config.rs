@@ -45,6 +45,7 @@ pub struct PropletConfig {
     pub pull_concurrent_limit: usize,
     pub hal_enabled: bool,
     pub http_enabled: bool,
+    pub usb_enabled: bool,
     pub preopened_dirs: Vec<String>,
     pub http_proxy_port: u16,
     pub description: Option<String>,
@@ -81,6 +82,7 @@ impl Default for PropletConfig {
             pull_concurrent_limit: 4,
             hal_enabled: true,
             http_enabled: false,
+            usb_enabled: false,
             preopened_dirs: Vec::new(),
             http_proxy_port: 8222,
             description: None,
@@ -309,6 +311,10 @@ impl PropletConfig {
 
             if let Ok(val) = env::var("PROPLET_HTTP_ENABLED") {
                 config.http_enabled = val.to_lowercase() == "true" || val == "1";
+            }
+
+            if let Ok(val) = env::var("PROPLET_USB_ENABLED") {
+                config.usb_enabled = val.to_lowercase() == "true" || val == "1";
             }
 
             if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT") {

@@ -19,7 +19,7 @@ use tracing::{error, info, warn};
 use wasm_wave;
 use wasmtime::component::ResourceTable;
 use wasmtime::*;
-use wasmtime_wasi::p2::bindings::sync::Command;
+use wasmtime_wasi::p2::bindings::Command;
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::io::TokioIo;
 use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
@@ -27,6 +27,7 @@ use wasmtime_wasi_http::p2::bindings::ProxyPre;
 use wasmtime_wasi_http::p2::body::HyperOutgoingBody;
 use wasmtime_wasi_http::p2::WasiHttpView;
 use wasmtime_wasi_http::WasiHttpCtx;
+use wasmtime_wasi_usb::{WasiUsbCtx, WasiUsbCtxView, WasiUsbView};
 
 fn is_wasm_component(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[0..4] == [0x00, 0x61, 0x73, 0x6d] && bytes[4] == 0x0d
@@ -119,6 +120,7 @@ fn scan_export_instance_names(bytes: &[u8]) -> Vec<String> {
 pub struct StoreData {
     wasi: WasiCtx,
     http: WasiHttpCtx,
+    usb: WasiUsbCtx,
     table: ResourceTable,
     /// `Some` on paths that registered HAL bindings on the linker; `None` on
     /// the async proxy path, which does not expose HAL in v1.
@@ -149,9 +151,17 @@ impl WasiHttpView for StoreData {
     }
 }
 
+impl WasiUsbView for StoreData {
+    fn usb(&mut self) -> WasiUsbCtxView<'_> {
+        WasiUsbCtxView {
+            ctx: &mut self.usb,
+            table: &mut self.table,
+        }
+    }
+}
+
 pub struct WasmtimeRuntime {
     engine: Engine,
-    async_engine: Engine,
     tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     proxy_ports: Arc<Mutex<HashMap<u16, String>>>,
     proxy_cancellers: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
@@ -159,6 +169,7 @@ pub struct WasmtimeRuntime {
     /// Shared HAL provider instance, cloned (Arc) into each component store.
     hal: Arc<PropletHal>,
     http_enabled: bool,
+    usb_enabled: bool,
     preopened_dirs: Vec<String>,
     proxy_port: u16,
 }
@@ -167,30 +178,27 @@ impl WasmtimeRuntime {
     pub fn new_with_options(
         hal_enabled: bool,
         http_enabled: bool,
+        usb_enabled: bool,
         preopened_dirs: Vec<String>,
         proxy_port: u16,
     ) -> Result<Self> {
-        let mut sync_config = Config::new();
-        sync_config.wasm_reference_types(true);
-        sync_config.wasm_bulk_memory(true);
-        sync_config.wasm_simd(true);
-        sync_config.wasm_component_model(true);
+        let mut config = Config::new();
+        config.wasm_reference_types(true);
+        config.wasm_bulk_memory(true);
+        config.wasm_simd(true);
+        config.wasm_component_model(true);
 
-        let mut async_config = Config::new();
-        async_config.wasm_component_model(true);
-
-        let engine = Engine::new(&sync_config)?;
-        let async_engine = Engine::new(&async_config)?;
+        let engine = Engine::new(&config)?;
 
         Ok(Self {
             engine,
-            async_engine,
             tasks: Arc::new(Mutex::new(HashMap::new())),
             proxy_ports: Arc::new(Mutex::new(HashMap::new())),
             proxy_cancellers: Arc::new(Mutex::new(HashMap::new())),
             hal_enabled,
             hal: PropletHal::new(),
             http_enabled,
+            usb_enabled,
             preopened_dirs,
             proxy_port,
         })
@@ -385,6 +393,7 @@ impl WasmtimeRuntime {
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
+            usb: WasiUsbCtx::new(false),
             table: ResourceTable::new(),
             hal: self.hal_enabled.then(|| self.hal.clone()),
             storage,
@@ -393,9 +402,9 @@ impl WasmtimeRuntime {
         let mut store = Store::new(&self.engine, store_data);
 
         let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
-        let _ = wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+        let _ = wasmtime_wasi::p2::add_to_linker_async(&mut linker)
             .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
-        let _ = wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker)
+        let _ = wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)
             .map_err(|e| format!("Failed to add wasi:http to component linker: {e}"));
         if self.hal_enabled {
             // Single call registers both consolidated `elastic:hal/*` and
@@ -405,6 +414,11 @@ impl WasmtimeRuntime {
                 .context("Failed to add ELASTIC TEE HAL to component linker")?;
         }
 
+        if self.usb_enabled {
+            let _ = wasmtime_wasi_usb::add_to_linker(&mut linker)
+                .map_err(|e| format!("Failed to add ELASTIC wasi:usb to component linker: {e}"));
+        }
+
         let task_id = config.id.clone();
         let task_id_for_cleanup = task_id.clone();
         let tasks = self.tasks.clone();
@@ -412,19 +426,25 @@ impl WasmtimeRuntime {
         let (result_tx, result_rx) = oneshot::channel();
 
         let handle = tokio::task::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let command = match Command::instantiate(&mut store, &component, &linker) {
-                    Ok(command) => command,
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "Failed to instantiate WASM command component: {e}"
-                        ))
-                    }
-                };
+            let result = async {
+                let command =
+                    match Command::instantiate_async(&mut store, &component, &linker).await {
+                        Ok(command) => command,
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Failed to instantiate WASM command component: {e}"
+                            ))
+                        }
+                    };
 
-                let program_result = command.wasi_cli_run().call_run(&mut store).map_err(|e| {
-                    anyhow::anyhow!("Failed to call wasi:cli/run on component: {e}")
-                })?;
+                let program_result =
+                    command
+                        .wasi_cli_run()
+                        .call_run(&mut store)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to call wasi:cli/run on component: {e}")
+                        })?;
 
                 match program_result {
                     Ok(()) => {
@@ -436,18 +456,12 @@ impl WasmtimeRuntime {
                         task_id
                     )),
                 }
-            })
+            }
             .await;
 
             tasks.lock().await.remove(&task_id_for_cleanup);
 
-            let final_result = match result {
-                Ok(Ok(data)) => Ok(data),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(anyhow::anyhow!("Task join error: {e}")),
-            };
-
-            let _ = result_tx.send(final_result);
+            let _ = result_tx.send(result);
         });
 
         {
@@ -492,6 +506,7 @@ impl WasmtimeRuntime {
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
+            usb: WasiUsbCtx::new(false),
             table: ResourceTable::new(),
             hal: self.hal_enabled.then(|| self.hal.clone()),
             storage,
@@ -500,7 +515,7 @@ impl WasmtimeRuntime {
         let mut store = Store::new(&self.engine, store_data);
 
         let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
-        let _ = wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+        let _ = wasmtime_wasi::p2::add_to_linker_async(&mut linker)
             .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
         if self.hal_enabled {
             // Single call registers both consolidated `elastic:hal/*` and
@@ -508,6 +523,11 @@ impl WasmtimeRuntime {
             // `elastic:clock`/`elastic:random` packagings.
             hal_component::add_to_linker(&mut linker)
                 .context("Failed to add ELASTIC TEE HAL to component linker")?;
+        }
+
+        if self.usb_enabled {
+            let _ = wasmtime_wasi_usb::add_to_linker(&mut linker)
+                .map_err(|e| format!("Failed to add ELASTIC wasi:usb to component linker: {e}"));
         }
 
         let task_id = config.id.clone();
@@ -520,8 +540,8 @@ impl WasmtimeRuntime {
         let (result_tx, result_rx) = oneshot::channel();
 
         let handle = tokio::task::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                let instance = match linker.instantiate(&mut store, &component) {
+            let result = async {
+                let instance = match linker.instantiate_async(&mut store, &component).await {
                     Ok(i) => i,
                     Err(e) => {
                         return Err(anyhow::anyhow!("Failed to instantiate WASM component: {e}"))
@@ -569,7 +589,8 @@ impl WasmtimeRuntime {
                     .map(|_| component::Val::Bool(false))
                     .collect();
 
-                func.call(&mut store, &wasm_args, &mut results)
+                func.call_async(&mut store, &wasm_args, &mut results)
+                    .await
                     .map_err(|e| {
                         anyhow::anyhow!("Failed to call export '{}': {e}", function_name)
                     })?;
@@ -585,18 +606,12 @@ impl WasmtimeRuntime {
                 );
 
                 Ok(result_string.into_bytes())
-            })
+            }
             .await;
 
             tasks.lock().await.remove(&task_id_for_cleanup);
 
-            let final_result = match result {
-                Ok(Ok(data)) => Ok(data),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(anyhow::anyhow!("Task join error: {e}")),
-            };
-
-            let _ = result_tx.send(final_result);
+            let _ = result_tx.send(result);
         });
 
         {
@@ -629,14 +644,19 @@ impl WasmtimeRuntime {
             config.id
         );
 
-        let component = component::Component::from_binary(&self.async_engine, &config.wasm_binary)
+        let component = component::Component::from_binary(&self.engine, &config.wasm_binary)
             .map_err(|e| anyhow::anyhow!("Failed to compile WASM proxy component: {e}"))?;
 
-        let mut linker: component::Linker<StoreData> = component::Linker::new(&self.async_engine);
+        let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)
             .map_err(|e| anyhow::anyhow!("Failed to add WASI P2 async to proxy linker: {e}"))?;
         wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)
             .map_err(|e| anyhow::anyhow!("Failed to add wasi:http async to proxy linker: {e}"))?;
+
+        if self.usb_enabled {
+            let _ = wasmtime_wasi_usb::add_to_linker(&mut linker)
+                .map_err(|e| format!("Failed to add ELASTIC wasi:usb to component linker: {e}"));
+        }
 
         let pre = Arc::new(
             ProxyPre::new(linker.instantiate_pre(&component)?)
@@ -1006,6 +1026,7 @@ async fn handle_proxy_request(
     let store_data = StoreData {
         wasi: wasi_builder.build(),
         http: WasiHttpCtx::new(),
+        usb: WasiUsbCtx::new(false),
         table: ResourceTable::new(),
         // HAL is not registered on the async proxy linker in v1 (bindgen is
         // sync); leave the field empty so we don't carry an unused provider.
@@ -1059,32 +1080,35 @@ mod tests {
 
     #[test]
     fn test_wasmtime_runtime_new() {
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222);
+        let runtime = WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222);
         assert!(runtime.is_ok());
     }
 
     #[test]
     fn test_wasmtime_runtime_new_with_http() {
-        let runtime = WasmtimeRuntime::new_with_options(false, true, Vec::new(), 8222);
+        let runtime = WasmtimeRuntime::new_with_options(false, true, false, Vec::new(), 8222);
         assert!(runtime.is_ok());
     }
 
     #[test]
     fn test_wasmtime_runtime_engine_configuration() {
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222).unwrap();
         assert!(runtime.tasks.try_lock().is_ok());
     }
 
     #[test]
     fn test_wasmtime_runtime_tasks_empty_on_creation() {
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222).unwrap();
         let tasks = runtime.tasks.try_lock().unwrap();
         assert_eq!(tasks.len(), 0);
     }
 
     #[tokio::test]
     async fn test_wasmtime_runtime_compile_invalid_wasm() {
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222).unwrap();
         let invalid_wasm = vec![0xFF, 0xFF, 0xFF, 0xFF];
         let result = Module::from_binary(&runtime.engine, &invalid_wasm);
         assert!(result.is_err());
@@ -1092,7 +1116,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_wasmtime_runtime_compile_empty_wasm() {
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222).unwrap();
         let empty_wasm = vec![];
         let result = Module::from_binary(&runtime.engine, &empty_wasm);
         assert!(result.is_err());

@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
         Arc::new(WasmtimeRuntime::new_with_options(
             config.hal_enabled,
             config.http_enabled,
+            config.usb_enabled,
             config.preopened_dirs.clone(),
             config.http_proxy_port,
         )?)
