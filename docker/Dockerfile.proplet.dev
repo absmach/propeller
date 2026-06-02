@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.title="Propeller Proplet Dev (Rust)"
 LABEL org.opencontainers.image.description="Development image for Propeller edge runtime"
 
-ARG WASMTIME_VERSION=42.0.1
+ARG WASMTIME_VERSION=44.0.0
 ARG WASMTIME_SHA256=dd5253f3cb521bb094f9951c3d2c45c746b31e5723b07ce56f162ec9bab44d59
 
 RUN apt-get update && \

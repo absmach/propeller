@@ -47,7 +47,7 @@ LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.title="Propeller Proplet (Rust)"
 LABEL org.opencontainers.image.description="Propeller edge runtime for WebAssembly modules"
 
-ARG WASMTIME_VERSION=42.0.1
+ARG WASMTIME_VERSION=44.0.0
 ARG WASMTIME_SHA256_AMD64=dd5253f3cb521bb094f9951c3d2c45c746b31e5723b07ce56f162ec9bab44d59
 ARG WASMTIME_SHA256_ARM64=fa9b7e09f49f75c17acf2c018a4286cdbeffb4c1f3ee9e72c48b6a42c1deceda
 ARG WASMTIME_SHA256_RISCV64=04fd303b53315650a6cb7230d5a606c4d72187bee439a7ba269c5b2dade8712a
