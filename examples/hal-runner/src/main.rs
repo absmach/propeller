@@ -28,6 +28,8 @@ use tokio::runtime::Runtime;
 use wasmtime::component::{Component, Linker, ResourceTable, Val};
 use wasmtime::{Config, Engine, Store};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
+use wasmtime_wasi_http::p2::WasiHttpView;
+use wasmtime_wasi_http::WasiHttpCtx;
 
 // Single bindgen over the modular world — each interface lives in its own
 // `elastic:<name>@0.1.0` package, matching upstream `wit-modular/` and the BRT
@@ -155,6 +157,7 @@ impl SocketBridge {
 // ============================================================================
 struct HostState {
     wasi: WasiCtx,
+    http: WasiHttpCtx,
     table: ResourceTable,
     provider: HalProvider,
     runtime: Arc<Runtime>,
@@ -179,6 +182,7 @@ impl HostState {
         }
         Self {
             wasi: wasi_builder.build(),
+            http: WasiHttpCtx::new(),
             table: ResourceTable::new(),
             provider: HalProvider::with_defaults(),
             runtime,
@@ -224,6 +228,16 @@ impl WasiView for HostState {
         WasiCtxView {
             ctx: &mut self.wasi,
             table: &mut self.table,
+        }
+    }
+}
+
+impl WasiHttpView for HostState {
+    fn http(&mut self) -> wasmtime_wasi_http::p2::WasiHttpCtxView<'_> {
+        wasmtime_wasi_http::p2::WasiHttpCtxView {
+            ctx: &mut self.http,
+            table: &mut self.table,
+            hooks: Default::default(),
         }
     }
 }
@@ -1048,6 +1062,8 @@ fn main() -> Result<()> {
     let mut linker: Linker<HostState> = Linker::new(&engine);
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
         .map_err(|e| anyhow::anyhow!("Failed to add WASI P2 to linker: {e}"))?;
+    wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker)
+        .map_err(|e| anyhow::anyhow!("Failed to add wasi:http to linker: {e}"))?;
     ElasticModularImports::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |s| s)
         .map_err(|e| anyhow::anyhow!("Failed to add ELASTIC TEE HAL to linker: {e}"))?;
 

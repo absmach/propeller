@@ -787,6 +787,8 @@ impl WasmtimeRuntime {
         let mut linker: component::Linker<StoreData> = component::Linker::new(&self.engine);
         let _ = wasmtime_wasi::p2::add_to_linker_async(&mut linker)
             .map_err(|e| format!("Failed to add WASI P2 to component linker: {e}"));
+        let _ = wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker)
+            .map_err(|e| format!("Failed to add wasi:http to component linker: {e}"));
         if self.hal_enabled {
             // Single call registers both consolidated `elastic:hal/*` and
             // modular `elastic:sockets`/`elastic:storage`/`elastic:crypto`/
@@ -1351,6 +1353,7 @@ async fn handle_proxy_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_wasmtime_runtime_new() {
@@ -1401,5 +1404,44 @@ mod tests {
         let empty_wasm = vec![];
         let result = Module::from_binary(&runtime.engine, &empty_wasm);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_custom_export_with_wasi_http() {
+        let wasm_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/http-greet-component/target/wasm32-wasip2/release/http_greet_component.wasm"
+        );
+        let wasm_binary = match std::fs::read(wasm_path) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!(
+                    "Skipping: WASM binary not found at {wasm_path}: {e}. \
+                     Build it with: make http-greet-component"
+                );
+                return;
+            }
+        };
+
+        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let ctx = RuntimeContext {
+            proplet_id: "test".to_string(),
+        };
+        let config = StartConfig {
+            id: uuid::Uuid::new_v4().to_string(),
+            function_name: "my-function".to_string(),
+            daemon: false,
+            wasm_binary,
+            cli_args: Vec::new(),
+            env: HashMap::new(),
+            args: Vec::new(),
+            mode: None,
+            hal_storage_path: None,
+        };
+
+        let result = runtime.start_app(ctx, config).await;
+        assert!(result.is_ok(), "Custom export with wasi:http should succeed: {:?}", result.err());
+        let output = result.unwrap();
+        assert!(!output.is_empty());
     }
 }
