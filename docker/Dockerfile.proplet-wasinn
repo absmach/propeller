@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.title="Propeller Proplet with wasi-nn"
 LABEL org.opencontainers.image.description="Propeller edge runtime with wasi-nn/OpenVINO support"
 
 ARG WASMTIME_VERSION=44.0.0
-ARG WASMTIME_SHA256=dd5253f3cb521bb094f9951c3d2c45c746b31e5723b07ce56f162ec9bab44d59
+ARG WASMTIME_SHA256=52eba06fe9f4364aa6164a4a3eafb2ca692ba9a756cbe8137b5574871f8cbfc8
 ARG OPENVINO_VERSION=2025.4.0.20398.8fdad55727d
 
 RUN apt-get update && \
