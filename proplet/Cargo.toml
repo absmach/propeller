@@ -64,7 +64,7 @@ elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = 
 wasm-wave = "0.246.2"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
-wasmtime-wasi-usb = { git = "https://github.com/idlab-discover/wasmtime-wasi-usb", rev = "bc7c92d" }
+wasmtime-wasi-usb = "44.0.0"
 
 [dev-dependencies]
 wiremock = "0.6"

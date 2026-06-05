@@ -6887,7 +6887,8 @@ dependencies = [
 [[package]]
 name = "wasmtime-wasi-usb"
 version = "44.0.0"
-source = "git+https://github.com/idlab-discover/wasmtime-wasi-usb?rev=bc7c92d#bc7c92d6910e3a1682f97cb176d9386aaf20bf29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4b6dd4101cfd477e1f689fa61931549e6e0c7a8248e6b0255d354aa74d7640"
 dependencies = [
  "libc",
  "libusb1-sys",
