@@ -151,15 +151,23 @@ write_files:
       PROPLET_ENABLE_MONITORING=true
       PROPLET_MANAGER_K8S_NAMESPACE=default
       PROPLET_KBS_URI=KBS_URI_PLACEHOLDER
-      PROPLET_AA_CONFIG_PATH=/etc/default/proplet.toml
+      PROPLET_AA_CONFIG_PATH=/etc/attestation-agent.conf
       PROPLET_LAYER_STORE_PATH=/tmp/proplet/layers
     permissions: '0644'
 
-  - path: /etc/default/proplet.toml
+  - path: /etc/attestation-agent.conf
     content: |
       [token_configs]
-      [token_configs.coco_kbs]
+
+      [token_configs.kbs]
       url = "KBS_URI_PLACEHOLDER"
+
+      [eventlog_config]
+      init_pcr = 17
+      enable_eventlog = false
+
+      [log]
+      level = "info"
     permissions: '0644'
 
   - path: /etc/default/attestation-agent
@@ -259,7 +267,9 @@ write_files:
       Type=simple
       EnvironmentFile=/etc/default/proplet
       Environment=WASMTIME_HOME=/var/lib/proplet
+      Environment=WASMTIME_CACHE_DIR=/var/cache/wasmtime
       ExecStartPre=/bin/mkdir -p /var/lib/proplet/cache
+      ExecStartPre=/bin/mkdir -p /var/cache/wasmtime
       ExecStartPre=/bin/sh -c 'until nc -z 127.0.0.1 50010 && nc -z 127.0.0.1 50011; do sleep 1; done'
       ExecStart=/usr/local/bin/proplet
       Restart=on-failure
@@ -271,7 +281,7 @@ write_files:
       PrivateTmp=true
       ProtectSystem=strict
       ProtectHome=true
-      ReadWritePaths=/var/lib/proplet /tmp
+      ReadWritePaths=/var/lib/proplet /var/cache/wasmtime /tmp
 
       [Install]
       WantedBy=multi-user.target
@@ -320,6 +330,7 @@ runcmd:
   # Create directories
   - mkdir -p /etc/attestation-agent/certs
   - mkdir -p /var/lib/proplet
+  - mkdir -p /var/cache/wasmtime
   - mkdir -p /etc/proplet
   - mkdir -p /run/attestation-agent
   - mkdir -p /run/coco-keyprovider
