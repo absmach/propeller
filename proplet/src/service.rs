@@ -377,9 +377,23 @@ impl PropletService {
         };
 
         self.metrics.cpu_usage.set(cpu_metrics.percent / 100.0);
+        self.metrics.cpu_user_seconds.set(cpu_metrics.user_seconds);
+        self.metrics
+            .cpu_system_seconds
+            .set(cpu_metrics.system_seconds);
         self.metrics
             .memory_rss_bytes
             .set(memory_metrics.rss_bytes as f64);
+        if let Some(usage) = memory_metrics.container_usage_bytes {
+            self.metrics
+                .memory_container_usage_bytes
+                .set(usage as f64);
+        }
+        if let Some(limit) = memory_metrics.container_limit_bytes {
+            self.metrics
+                .memory_container_limit_bytes
+                .set(limit as f64);
+        }
 
         #[derive(serde::Serialize)]
         struct PropletMetricsMessage {
