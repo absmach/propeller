@@ -940,7 +940,9 @@ impl PropletService {
                     None => {
                         error!("MANAGER_COORDINATOR_URL not set. Must be provided via environment variable in .env file for FML tasks.");
                         running_tasks.lock().await.remove(&task_id);
-                        metrics.tasks_failed.inc();
+                        if error.is_none() {
+                            metrics.tasks_failed.inc();
+                        }
                         metrics.tasks_running.dec();
                         return;
                     }
