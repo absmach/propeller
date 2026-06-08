@@ -608,7 +608,7 @@
             "type": "prometheus",
             "uid": "propeller-prometheus"
           },
-          "expr": "proplet_cpu_user_seconds_total",
+          "expr": "proplet_cpu_user_seconds",
           "legendFormat": "User seconds",
           "refId": "A"
         },
@@ -617,7 +617,7 @@
             "type": "prometheus",
             "uid": "propeller-prometheus"
           },
-          "expr": "proplet_cpu_system_seconds_total",
+          "expr": "proplet_cpu_system_seconds",
           "legendFormat": "System seconds",
           "refId": "B"
         }

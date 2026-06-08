@@ -385,14 +385,10 @@ impl PropletService {
             .memory_rss_bytes
             .set(memory_metrics.rss_bytes as f64);
         if let Some(usage) = memory_metrics.container_usage_bytes {
-            self.metrics
-                .memory_container_usage_bytes
-                .set(usage as f64);
+            self.metrics.memory_container_usage_bytes.set(usage as f64);
         }
         if let Some(limit) = memory_metrics.container_limit_bytes {
-            self.metrics
-                .memory_container_limit_bytes
-                .set(limit as f64);
+            self.metrics.memory_container_limit_bytes.set(limit as f64);
         }
 
         #[derive(serde::Serialize)]
@@ -682,7 +678,8 @@ impl PropletService {
 
         let export_metrics = monitoring_profile.enabled && monitoring_profile.export_to_mqtt;
 
-        let execute_span = tracing::info_span!("task.execute", task_id = %task_id, task_name = %task_name);
+        let execute_span =
+            tracing::info_span!("task.execute", task_id = %task_id, task_name = %task_name);
         tokio::spawn(async move {
             let ctx = RuntimeContext {
                 proplet_id: proplet_id.clone(),
@@ -891,7 +888,7 @@ impl PropletService {
             let result = async {
                 runtime.start_app(ctx, config).await
             }
-            .instrument(tracing::info_span!("wasm.execute", task_id = %task_id))
+            .instrument(tracing::info_span!("wasm.execute"))
             .await;
 
             if let Some(handle) = monitor_handle {
@@ -1050,11 +1047,12 @@ impl PropletService {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, msg), name = "task.stop")]
+    #[tracing::instrument(skip(self, msg), name = "task.stop", fields(task_id))]
     async fn handle_stop_command(&self, msg: MqttMessage) -> Result<()> {
         let req: StopRequest = msg.decode()?;
         req.validate()?;
 
+        tracing::Span::current().record("task_id", req.id.as_str());
         info!("Received stop command for task: {}", req.id);
 
         self.runtime.stop_app(req.id.clone()).await?;

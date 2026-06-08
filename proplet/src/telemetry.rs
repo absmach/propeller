@@ -75,14 +75,14 @@ impl PropletMetrics {
         registry.register(Box::new(cpu_usage.clone()))?;
 
         let cpu_user_seconds = Gauge::with_opts(Opts::new(
-            "proplet_cpu_user_seconds_total",
-            "Total CPU time spent in user mode (seconds)",
+            "proplet_cpu_user_seconds",
+            "Cumulative CPU time spent in user mode (seconds)",
         ))?;
         registry.register(Box::new(cpu_user_seconds.clone()))?;
 
         let cpu_system_seconds = Gauge::with_opts(Opts::new(
-            "proplet_cpu_system_seconds_total",
-            "Total CPU time spent in system (kernel) mode (seconds)",
+            "proplet_cpu_system_seconds",
+            "Cumulative CPU time spent in system (kernel) mode (seconds)",
         ))?;
         registry.register(Box::new(cpu_system_seconds.clone()))?;
 
@@ -218,6 +218,12 @@ mod tests {
         assert_eq!(m.tasks_running.get(), 0);
         assert_eq!(m.mqtt_reconnects.get(), 0);
         assert_eq!(m.wasm_fetch_bytes.get(), 0);
+        assert_eq!(m.cpu_usage.get(), 0.0);
+        assert_eq!(m.cpu_user_seconds.get(), 0.0);
+        assert_eq!(m.cpu_system_seconds.get(), 0.0);
+        assert_eq!(m.memory_rss_bytes.get(), 0.0);
+        assert_eq!(m.memory_container_usage_bytes.get(), 0.0);
+        assert_eq!(m.memory_container_limit_bytes.get(), 0.0);
     }
 
     #[test]
@@ -245,8 +251,8 @@ mod tests {
         assert!(names.contains(&"proplet_tasks_running"));
         assert!(names.contains(&"proplet_mqtt_reconnects_total"));
         assert!(names.contains(&"proplet_cpu_usage_ratio"));
-        assert!(names.contains(&"proplet_cpu_user_seconds_total"));
-        assert!(names.contains(&"proplet_cpu_system_seconds_total"));
+        assert!(names.contains(&"proplet_cpu_user_seconds"));
+        assert!(names.contains(&"proplet_cpu_system_seconds"));
         assert!(names.contains(&"proplet_memory_rss_bytes"));
         assert!(names.contains(&"proplet_memory_container_usage_bytes"));
         assert!(names.contains(&"proplet_memory_container_limit_bytes"));
