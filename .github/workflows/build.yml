@@ -27,13 +27,11 @@ jobs:
         include:
           - { goos: linux, goarch: amd64, service: manager }
           - { goos: linux, goarch: arm64, service: manager }
-          - { goos: linux, goarch: riscv64, service: manager }
           - { goos: linux, goarch: amd64, service: cli }
           - { goos: linux, goarch: arm64, service: cli }
           - { goos: linux, goarch: riscv64, service: cli }
           - { goos: linux, goarch: amd64, service: proxy }
           - { goos: linux, goarch: arm64, service: proxy }
-          - { goos: linux, goarch: riscv64, service: proxy }
 
     steps:
       - name: Checkout Code

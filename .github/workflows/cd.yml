@@ -18,7 +18,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        svc: [manager, cli, proxy]
+        include:
+          # riscv64 disabled for manager and proxy until wasmtime-go adds
+          # riscv64 support: https://github.com/bytecodealliance/wasmtime-go/pull/285
+          - { svc: manager, platforms: "linux/amd64,linux/arm64" }
+          - { svc: cli,     platforms: "linux/amd64,linux/arm64,linux/riscv64" }
+          - { svc: proxy,   platforms: "linux/amd64,linux/arm64" }
 
     permissions:
       contents: read
@@ -55,9 +60,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          # Docker images only make sense on Linux; riscv64 support in the
-          # alpine builder image and multi-arch manifests is available.
-          platforms: linux/amd64,linux/arm64,linux/riscv64
+          platforms: ${{ matrix.platforms }}
           push: true
           build-args: |
             SVC=${{ matrix.svc }}
