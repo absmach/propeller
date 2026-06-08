@@ -13,8 +13,8 @@ serde_json = "1.0"
 tokio = { version = "1.42", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-wasmtime = "44.0.0"
-wasmtime-wasi = "44.0.0"
+wasmtime = "45.0.1"
+wasmtime-wasi = "45.0.1"
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "4ddeb1efe27c341d4711b2789eb33761043e0c4e", default-features = false, features = [
     "amd-sev",
 ] }
