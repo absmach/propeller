@@ -15,7 +15,7 @@ use std::time::SystemTime;
 use sysinfo::System;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument};
 
 const WASM_FETCH_MAX_BYTES: usize = 100 * 1024 * 1024; // 100MB
 
@@ -445,6 +445,7 @@ impl PropletService {
         }
     }
 
+    #[tracing::instrument(skip(self, msg), name = "task.start", fields(task_id, task_name))]
     async fn handle_start_command(&self, msg: MqttMessage) -> Result<()> {
         let req: StartRequest = msg.decode().map_err(|e| {
             error!(
@@ -455,6 +456,9 @@ impl PropletService {
             e
         })?;
         req.validate()?;
+
+        tracing::Span::current().record("task_id", req.id.as_str());
+        tracing::Span::current().record("task_name", req.name.as_str());
 
         if !req.broadcast {
             if let Some(ref target_id) = req.proplet_id {
@@ -664,6 +668,7 @@ impl PropletService {
 
         let export_metrics = monitoring_profile.enabled && monitoring_profile.export_to_mqtt;
 
+        let execute_span = tracing::info_span!("task.execute", task_id = %task_id, task_name = %task_name);
         tokio::spawn(async move {
             let ctx = RuntimeContext {
                 proplet_id: proplet_id.clone(),
@@ -869,7 +874,11 @@ impl PropletService {
                 PluginRegistry::notify_task_start(Arc::clone(registry), plugin_task);
             }
 
-            let result = runtime.start_app(ctx, config).await;
+            let result = async {
+                runtime.start_app(ctx, config).await
+            }
+            .instrument(tracing::info_span!("wasm.execute", task_id = %task_id))
+            .await;
 
             if let Some(handle) = monitor_handle {
                 let _ = handle.await;
@@ -1022,11 +1031,12 @@ impl PropletService {
             if running_tasks.lock().await.remove(&task_id).is_some() {
                 metrics.tasks_running.dec();
             }
-        });
+        }.instrument(execute_span));
 
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, msg), name = "task.stop")]
     async fn handle_stop_command(&self, msg: MqttMessage) -> Result<()> {
         let req: StopRequest = msg.decode()?;
         req.validate()?;
