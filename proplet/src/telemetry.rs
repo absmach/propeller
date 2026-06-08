@@ -248,8 +248,10 @@ mod tests {
         let names: Vec<&str> = gathered.iter().map(|mf| mf.get_name()).collect();
         assert!(names.contains(&"proplet_tasks_started_total"));
         assert!(names.contains(&"proplet_tasks_completed_total"));
+        assert!(names.contains(&"proplet_tasks_failed_total"));
         assert!(names.contains(&"proplet_tasks_running"));
         assert!(names.contains(&"proplet_mqtt_reconnects_total"));
+        assert!(names.contains(&"proplet_wasm_fetch_bytes_total"));
         assert!(names.contains(&"proplet_cpu_usage_ratio"));
         assert!(names.contains(&"proplet_cpu_user_seconds"));
         assert!(names.contains(&"proplet_cpu_system_seconds"));
