@@ -133,8 +133,8 @@ push_proplet_wasinn:
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) hal-test attestation-test hal-runner docker_proplet_wasinn push_proplet_wasinn mocks start-magistrala stop-magistrala start-propeller stop-propeller start-otel stop-otel start-all stop-all
-all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) addition-wat http-client http-server filesystem hal-test attestation-test hal-runner
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) hal-test attestation-test hal-runner http-client-raw-wit docker_proplet_wasinn push_proplet_wasinn mocks start-magistrala stop-magistrala start-propeller stop-propeller start-otel stop-otel start-all stop-all
+all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) addition-wat http-client http-client-raw-wit http-server filesystem hal-test attestation-test hal-runner
 
 clean:
 	rm -rf build
@@ -199,6 +199,11 @@ http-server:
 	cd examples/http-server && cargo build --release
 	cp examples/http-server/target/wasm32-wasip2/release/http_server.wasm $(BUILD_DIR)/http-server.wasm
 
+http-client-raw-wit:
+	mkdir -p $(BUILD_DIR)
+	cd examples/http-client-raw-wit && cargo build --release
+	cp examples/http-client-raw-wit/target/wasm32-wasip2/release/http-client-raw-wit.wasm $(BUILD_DIR)/http-client-raw-wit.wasm
+
 filesystem:
 	mkdir -p $(BUILD_DIR)
 	cd examples/filesystem && cargo build --release
@@ -236,7 +241,8 @@ help:
 	@echo "  <service>:             build the binary for the service i.e manager, proplet, cli"
 	@echo "  all:                   build all binaries (Go: manager, cli; Rust: proplet)"
 	@echo "  proplet:               build the Rust proplet binary"
-	@echo "  http-client:           build the WASI P2 HTTP client example (requires PROPLET_HTTP_ENABLED=true)"
+	@echo "  http-client:           build the WASI P2 HTTP client example (wstd, requires PROPLET_HTTP_ENABLED=true)"
+	@echo "  http-client-raw-wit:   build the WASI P2 raw WIT HTTP/HTTPS client example (no wstd, for scheme-upgrade diagnostics)"
 	@echo "  http-server:           build the WASI P2 HTTP server example (requires PROPLET_HTTP_ENABLED=true, daemon=true)"
 	@echo "  filesystem:            build the WASI P1 filesystem example (requires PROPLET_DIRS=/tmp)"
 	@echo "  install:               install the binary i.e copies to GOBIN"

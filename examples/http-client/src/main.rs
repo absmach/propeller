@@ -21,17 +21,34 @@ use wstd::http::{Body, Client, Method, Request};
 async fn main() {
     let client = Client::new();
 
-    // --- 1. GET against an external endpoint ---
+    // --- 1. GET via plain HTTP (no TLS) — reproduces scheme-upgrade bug ---
+    println!("=== GET http://httpbin.org/get ===");
+    let req = Request::get("http://httpbin.org/get")
+        .body(Body::empty())
+        .unwrap();
+    match client.send(req).await {
+        Ok(mut res) => {
+            println!("Status: {}", res.status());
+            let body = res.body_mut().contents().await.expect("failed to read body");
+            println!("{}\n", String::from_utf8_lossy(body));
+        }
+        Err(e) => {
+            eprintln!("ERROR: plain HTTP GET failed: {e:?}");
+            eprintln!("This likely means the scheme was upgraded to HTTPS (port 443) despite using http://");
+        }
+    }
+
+    // --- 2. GET via HTTPS (baseline — should always work) ---
     println!("=== GET https://httpbin.org/get ===");
     let req = Request::get("https://httpbin.org/get")
         .body(Body::empty())
         .unwrap();
-    let mut res = client.send(req).await.expect("GET httpbin failed");
+    let mut res = client.send(req).await.expect("GET httpbin HTTPS failed");
     println!("Status: {}", res.status());
     let body = res.body_mut().contents().await.expect("failed to read body");
     println!("{}\n", String::from_utf8_lossy(body));
 
-    // --- 2. POST with a body against an external echo endpoint ---
+    // --- 3. POST with a body against an external echo endpoint ---
     println!("=== POST https://httpbin.org/post ===");
     let payload = b"hello from proplet wasm client";
     let req = Request::builder()
