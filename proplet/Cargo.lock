@@ -1780,7 +1780,7 @@ checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 [[package]]
 name = "elastic-tee-hal"
 version = "0.1.0"
-source = "git+https://github.com/elasticproject-eu/wasmhal?rev=c3174f90ef4df71601683d36fa3f1f5f71b6bf4d#c3174f90ef4df71601683d36fa3f1f5f71b6bf4d"
+source = "git+https://github.com/elasticproject-eu/wasmhal?rev=f25abaf2448a4d424061e6355e8a915e4b5c6cf2#f25abaf2448a4d424061e6355e8a915e4b5c6cf2"
 dependencies = [
  "aes-gcm",
  "anyhow",

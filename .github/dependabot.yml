@@ -39,6 +39,7 @@ updates:
       - "examples/wasi-nn"
       - "examples/hal-test"
       - "examples/hal-runner"
+      - "examples/http-greet-component"
     schedule:
       interval: "monthly"
       day: "monday"
