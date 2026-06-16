@@ -194,6 +194,11 @@ http-client:
 	cd examples/http-client && cargo build --release
 	cp examples/http-client/target/wasm32-wasip2/release/http-client.wasm $(BUILD_DIR)/http-client.wasm
 
+http-greet-component:
+	mkdir -p $(BUILD_DIR)
+	cd examples/http-greet-component && cargo build --target wasm32-wasip2 --release
+	cp examples/http-greet-component/target/wasm32-wasip2/release/http_greet_component.wasm $(BUILD_DIR)/http-greet-component.wasm
+
 http-server:
 	mkdir -p $(BUILD_DIR)
 	cd examples/http-server && cargo build --release

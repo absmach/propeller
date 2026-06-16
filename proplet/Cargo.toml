@@ -13,11 +13,7 @@ webpki-roots = "0.26"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.0.6"
-wasmtime = { version = "44.0.0", features = [
-    "component-model",
-    "async",
-    "wave",
-] }
+wasmtime = { version = "44.0.0", features = ["component-model", "async", "wave"] }
 wasmtime-wasi = "44.0.0"
 wasmtime-wasi-http = "44.0.0"
 hyper = { version = "1.9", features = ["full"] }
@@ -45,22 +41,22 @@ reqwest = { version = "0.13", features = ["json", "rustls"] }
 
 # TEE & Encryption Support (default feature)
 attestation-agent = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = [
-    "rust-crypto",
-    "kbs",
+  "rust-crypto",
+  "kbs",
 ] }
 image-rs = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", default-features = false, features = [
-    "encryption-ring",
-    "keywrap-grpc",
-    "oci-client-rustls",
-    "signature-cosign-rustls",
-    "futures",
+  "encryption-ring",
+  "keywrap-grpc",
+  "oci-client-rustls",
+  "signature-cosign-rustls",
+  "futures",
 ] }
 kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads", features = [
-    "background_check",
-    "rust-crypto",
+  "background_check",
+  "rust-crypto",
 ], default-features = false }
 oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "83092a67ebcaeed832eae090895a1c178d867344", default-features = false, features = [
-    "rustls-tls",
+  "rustls-tls",
 ] }
 oci-spec = { version = "0.9.0" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
@@ -68,8 +64,8 @@ hex = { version = "0.4" }
 futures-util = { version = "0.3" }
 
 # ELASTIC TEE HAL — hardware abstraction layer for TEE workloads
-elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "c3174f90ef4df71601683d36fa3f1f5f71b6bf4d", default-features = false, features = [
-    "amd-sev",
+elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "f25abaf2448a4d424061e6355e8a915e4b5c6cf2", default-features = false, features = [
+  "amd-sev",
 ] }
 wasm-wave = "0.246.2"
 

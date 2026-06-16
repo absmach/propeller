@@ -15,6 +15,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wasmtime = "44.0.0"
 wasmtime-wasi = "44.0.0"
-elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "4ddeb1efe27c341d4711b2789eb33761043e0c4e", default-features = false, features = [
-    "amd-sev",
+wasmtime-wasi-http = "44.0.0"
+elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "f25abaf2448a4d424061e6355e8a915e4b5c6cf2", default-features = false, features = [
+  "amd-sev",
 ] }
