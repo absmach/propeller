@@ -1,6 +1,6 @@
 FROM golang:1.26-alpine3.23 AS builder
 
-FROM scratch
+FROM gcr.io/distroless/cc-debian12
 
 LABEL org.opencontainers.image.source=https://github.com/absmach/propeller
 LABEL org.opencontainers.image.licenses=Apache-2.0

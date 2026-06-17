@@ -738,9 +738,17 @@ impl WasmtimeRuntime {
             tasks_map.insert(config.id.clone(), handle);
         }
 
-        match result_rx.await {
-            Ok(result) => result,
-            Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
+        if config.daemon {
+            info!(
+                "Daemon component task {} started, returning immediately",
+                config.id
+            );
+            Ok(Vec::new())
+        } else {
+            match result_rx.await {
+                Ok(result) => result,
+                Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
+            }
         }
     }
 
@@ -891,9 +899,17 @@ impl WasmtimeRuntime {
             tasks_map.insert(config.id.clone(), handle);
         }
 
-        match result_rx.await {
-            Ok(result) => result,
-            Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
+        if config.daemon {
+            info!(
+                "Daemon component export task {} started, returning immediately",
+                config.id
+            );
+            Ok(Vec::new())
+        } else {
+            match result_rx.await {
+                Ok(result) => result,
+                Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
+            }
         }
     }
 
@@ -1073,208 +1089,222 @@ impl WasmtimeRuntime {
         mut store: Store<wasmtime_wasi::p1::WasiP1Ctx>,
         instance: Instance,
     ) -> Result<Vec<u8>> {
-        if config.daemon {
-            info!("Running in daemon mode for task: {}", config.id);
+        let task_id = config.id.clone();
+        let task_id_for_cleanup = task_id.clone();
+        let function_name = config.function_name.clone();
+        let args = config.args.clone();
+        let tasks = self.tasks.clone();
 
-            let task_id = config.id.clone();
-            let handle = tokio::spawn(async move {
-                info!("Daemon task {} is running", task_id);
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                info!("Daemon task {} completed", task_id);
-            });
+        let handle = tokio::task::spawn(async move {
+            let task_id_for_blocking = task_id.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                if let Some(init_func) = instance.get_func(&mut store, "_initialize") {
+                    info!(
+                        "Found _initialize function, initializing WASM runtime for task: {}",
+                        task_id_for_blocking
+                    );
+                    init_func
+                        .call(&mut store, &[], &mut [])
+                        .map_err(|e| anyhow::anyhow!("Failed to initialize WASM runtime via _initialize: {e}"))?;
+                    info!(
+                        "WASM runtime initialized successfully for task: {}",
+                        task_id_for_blocking
+                    );
+                } else {
+                    info!(
+                        "No _initialize function found, skipping initialization for task: {}",
+                        task_id_for_blocking
+                    );
+                }
 
-            {
-                let mut tasks_map = self.tasks.lock().await;
-                tasks_map.insert(config.id.clone(), handle);
+                let exports: Vec<String> = instance
+                    .exports(&mut store)
+                    .map(|export: Export<'_>| export.name().to_string())
+                    .collect();
+                info!(
+                    "WASM module exports for task {}: requested='{}', available={:?}",
+                    task_id_for_blocking, function_name, exports
+                );
+
+                let func = if let Some(f) = instance.get_func(&mut store, &function_name) {
+                    info!(
+                        "Found requested function '{}' in module exports",
+                        function_name
+                    );
+                    f
+                } else {
+                    let fallbacks = vec!["main", "run", "_start"];
+                    let mut found_func = None;
+                    let mut tried_fallbacks = Vec::new();
+
+                    for fallback in &fallbacks {
+                        tried_fallbacks.push(*fallback);
+                        if let Some(f) = instance.get_func(&mut store, fallback) {
+                            info!(
+                                "Function '{}' not found, using fallback '{}'",
+                                function_name, fallback
+                            );
+                            found_func = Some(f);
+                            break;
+                        }
+                    }
+
+                    found_func.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Function '{}' not found, and fallbacks {:?} also not found in module exports. Available function exports: {:?}",
+                            function_name,
+                            tried_fallbacks,
+                            exports
+                        )
+                    })?
+                };
+
+                let func_ty = func.ty(&store);
+
+                let param_types: Vec<_> = func_ty.params().collect();
+                let result_types: Vec<_> = func_ty.results().collect();
+
+                if args.len() != param_types.len() {
+                    return Err(anyhow::anyhow!(
+                        "Argument count mismatch for function '{}': expected {} arguments but got {}",
+                        function_name,
+                        param_types.len(),
+                        args.len()
+                    ));
+                }
+
+                let wasm_args: Vec<Val> = args
+                    .iter()
+                    .zip(param_types.iter())
+                    .map(|(arg, param_type)| match param_type {
+                        ValType::I32 => arg
+                            .parse::<i32>()
+                            .map(Val::I32)
+                            .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i32: {e}", arg)),
+                        ValType::I64 => arg
+                            .parse::<i64>()
+                            .map(Val::I64)
+                            .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i64: {e}", arg)),
+                        ValType::F32 => arg
+                            .parse::<f32>()
+                            .map(|f| Val::F32(f.to_bits()))
+                            .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f32: {e}", arg)),
+                        ValType::F64 => arg
+                            .parse::<f64>()
+                            .map(|f| Val::F64(f.to_bits()))
+                            .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f64: {e}", arg)),
+                        _ => Err(anyhow::anyhow!("Unsupported Wasm value type for arg '{}'", arg)),
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                info!(
+                    "Calling function '{}' with {} params, expects {} results",
+                    function_name,
+                    wasm_args.len(),
+                    result_types.len()
+                );
+
+                let mut results: Vec<Val> = result_types
+                    .iter()
+                    .map(|result_type| match result_type {
+                        ValType::I32 => Val::I32(0),
+                        ValType::I64 => Val::I64(0),
+                        ValType::F32 => Val::F32(0),
+                        ValType::F64 => Val::F64(0),
+                        _ => Val::I32(0),
+                    })
+                    .collect();
+
+                func.call(&mut store, &wasm_args, &mut results)
+                    .map_err(|e| anyhow::anyhow!("Failed to call function '{function_name}': {e}"))?;
+
+                info!("Function '{}' executed successfully", function_name);
+
+                let result_string = if !results.is_empty() {
+                    let result_val = &results[0];
+
+                    if let Some(v) = result_val.i32() {
+                        v.to_string()
+                    } else if let Some(v) = result_val.i64() {
+                        v.to_string()
+                    } else if let Some(v) = result_val.f32() {
+                        v.to_string()
+                    } else if let Some(v) = result_val.f64() {
+                        v.to_string()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
+                let result_bytes = result_string.into_bytes();
+
+                info!(
+                    "Task {} completed successfully, result size: {} bytes",
+                    task_id_for_blocking,
+                    result_bytes.len()
+                );
+
+                Ok::<Vec<u8>, anyhow::Error>(result_bytes)
+            })
+            .await;
+
+            tasks.lock().await.remove(&task_id_for_cleanup);
+
+            match result {
+                Ok(Ok(data)) => {
+                    info!(
+                        "Task {} completed, result size: {} bytes",
+                        task_id,
+                        data.len()
+                    );
+                }
+                Ok(Err(e)) => {
+                    error!("Task {} failed: {}", task_id, e);
+                }
+                Err(e) => {
+                    error!("Task {} join error: {}", task_id, e);
+                }
             }
+        });
 
+        {
+            let mut tasks_map = self.tasks.lock().await;
+            tasks_map.insert(config.id.clone(), handle);
+        }
+
+        if config.daemon {
             info!("Daemon task {} started, returning immediately", config.id);
             Ok(Vec::new())
         } else {
-            info!("Running in synchronous mode for task: {}", config.id);
-
+            info!(
+                "Running in synchronous mode, waiting for task: {}",
+                config.id
+            );
+            // Spawn a watcher that signals completion via the registered handle
             let task_id = config.id.clone();
-            let task_id_for_cleanup = task_id.clone();
-            let function_name = config.function_name.clone();
-            let args = config.args.clone();
             let tasks = self.tasks.clone();
-
             let (result_tx, result_rx) = oneshot::channel();
 
-            let handle = tokio::task::spawn(async move {
-                let result = tokio::task::spawn_blocking(move || {
-                    if let Some(init_func) = instance.get_func(&mut store, "_initialize") {
-                        info!(
-                            "Found _initialize function, initializing WASM runtime for task: {}",
-                            task_id
-                        );
-                        init_func
-                            .call(&mut store, &[], &mut [])
-                            .map_err(|e| anyhow::anyhow!("Failed to initialize WASM runtime via _initialize: {e}"))?;
-                        info!(
-                            "WASM runtime initialized successfully for task: {}",
-                            task_id
-                        );
-                    } else {
-                        info!(
-                            "No _initialize function found, skipping initialization for task: {}",
-                            task_id
-                        );
+            let watcher = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    let tasks_guard = tasks.lock().await;
+                    if !tasks_guard.contains_key(&task_id) {
+                        let _ = result_tx.send(Ok(Vec::new()));
+                        break;
                     }
-
-                    let exports: Vec<String> = instance
-                        .exports(&mut store)
-                        .map(|export: Export<'_>| export.name().to_string())
-                        .collect();
-                    info!(
-                        "WASM module exports for task {}: requested='{}', available={:?}",
-                        task_id, function_name, exports
-                    );
-
-                    let func = if let Some(f) = instance.get_func(&mut store, &function_name) {
-                        info!(
-                            "Found requested function '{}' in module exports",
-                            function_name
-                        );
-                        f
-                    } else {
-                        let fallbacks = vec!["main", "run", "_start"];
-                        let mut found_func = None;
-                        let mut tried_fallbacks = Vec::new();
-
-                        for fallback in &fallbacks {
-                            tried_fallbacks.push(*fallback);
-                            if let Some(f) = instance.get_func(&mut store, fallback) {
-                                info!(
-                                    "Function '{}' not found, using fallback '{}'",
-                                    function_name, fallback
-                                );
-                                found_func = Some(f);
-                                break;
-                            }
-                        }
-
-                        found_func.ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Function '{}' not found, and fallbacks {:?} also not found in module exports. Available function exports: {:?}",
-                                function_name,
-                                tried_fallbacks,
-                                exports
-                            )
-                        })?
-                    };
-
-                    let func_ty = func.ty(&store);
-
-                    let param_types: Vec<_> = func_ty.params().collect();
-                    let result_types: Vec<_> = func_ty.results().collect();
-
-                    if args.len() != param_types.len() {
-                        return Err(anyhow::anyhow!(
-                            "Argument count mismatch for function '{}': expected {} arguments but got {}",
-                            function_name,
-                            param_types.len(),
-                            args.len()
-                        ));
-                    }
-
-                    let wasm_args: Vec<Val> = args
-                        .iter()
-                        .zip(param_types.iter())
-                        .map(|(arg, param_type)| match param_type {
-                            ValType::I32 => arg
-                                .parse::<i32>()
-                                .map(Val::I32)
-                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i32: {e}", arg)),
-                            ValType::I64 => arg
-                                .parse::<i64>()
-                                .map(Val::I64)
-                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as i64: {e}", arg)),
-                            ValType::F32 => arg
-                                .parse::<f32>()
-                                .map(|f| Val::F32(f.to_bits()))
-                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f32: {e}", arg)),
-                            ValType::F64 => arg
-                                .parse::<f64>()
-                                .map(|f| Val::F64(f.to_bits()))
-                                .map_err(|e| anyhow::anyhow!("Failed to parse '{}' as f64: {e}", arg)),
-                            _ => Err(anyhow::anyhow!("Unsupported Wasm value type for arg '{}'", arg)),
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-
-                    info!(
-                        "Calling function '{}' with {} params, expects {} results",
-                        function_name,
-                        wasm_args.len(),
-                        result_types.len()
-                    );
-
-                    let mut results: Vec<Val> = result_types
-                        .iter()
-                        .map(|result_type| match result_type {
-                            ValType::I32 => Val::I32(0),
-                            ValType::I64 => Val::I64(0),
-                            ValType::F32 => Val::F32(0),
-                            ValType::F64 => Val::F64(0),
-                            _ => Val::I32(0),
-                        })
-                        .collect();
-
-                    func.call(&mut store, &wasm_args, &mut results)
-                        .map_err(|e| anyhow::anyhow!("Failed to call function '{function_name}': {e}"))?;
-
-                    info!("Function '{}' executed successfully", function_name);
-
-                    let result_string = if !results.is_empty() {
-                        let result_val = &results[0];
-
-                        if let Some(v) = result_val.i32() {
-                            v.to_string()
-                        } else if let Some(v) = result_val.i64() {
-                            v.to_string()
-                        } else if let Some(v) = result_val.f32() {
-                            v.to_string()
-                        } else if let Some(v) = result_val.f64() {
-                            v.to_string()
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
-
-                    let result_bytes = result_string.into_bytes();
-
-                    info!(
-                        "Task {} completed successfully, result size: {} bytes",
-                        task_id,
-                        result_bytes.len()
-                    );
-
-                    Ok::<Vec<u8>, anyhow::Error>(result_bytes)
-                })
-                .await;
-
-                tasks.lock().await.remove(&task_id_for_cleanup);
-
-                let final_result = match result {
-                    Ok(Ok(data)) => Ok(data),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => Err(anyhow::anyhow!("Task join error: {e}")),
-                };
-
-                let _ = result_tx.send(final_result);
+                    drop(tasks_guard);
+                }
             });
 
-            {
-                let mut tasks_map = self.tasks.lock().await;
-                tasks_map.insert(config.id.clone(), handle);
-            }
-
-            match result_rx.await {
+            let result = match result_rx.await {
                 Ok(result) => result,
                 Err(_) => Err(anyhow::anyhow!("Task was cancelled or panicked")),
-            }
+            };
+            watcher.abort();
+            result
         }
     }
 }
@@ -1423,7 +1453,9 @@ mod tests {
             }
         };
 
-        let runtime = WasmtimeRuntime::new_with_options(false, false, Vec::new(), 8222).unwrap();
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222, None, false)
+                .unwrap();
         let ctx = RuntimeContext {
             proplet_id: "test".to_string(),
         };
