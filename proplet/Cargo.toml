@@ -9,31 +9,35 @@ rumqttc = "0.25.1"
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 tokio-rustls = "0.26"
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "1.0.6"
-wasmtime = { version = "44.0.0", features = ["component-model", "async", "wave"] }
-wasmtime-wasi = "44.0.0"
-wasmtime-wasi-http = "44.0.0"
-hyper = { version = "1.9", features = ["full"] }
+toml = "1.1"
+wasmtime = { version = "46.0.1", features = ["component-model", "async", "wave"] }
+wasmtime-wasi = "46.0.1"
+wasmtime-wasi-http = "46.0.1"
+hyper = { version = "1.10", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
 thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.28"
-opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "trace"] }
-opentelemetry-otlp = { version = "0.27", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
-prometheus = "0.13"
+tracing-opentelemetry = "0.33"
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio", "trace"] }
+opentelemetry-otlp = { version = "0.32", features = [
+  "http-proto",
+  "reqwest-client",
+  "reqwest-rustls",
+] }
+prometheus = "0.14"
 http-body-util = "0.1"
-config = "0.15.22"
+config = "0.15.25"
 async-trait = "0.1"
 base64 = "0.22.1"
 url = "2.5"
-sysinfo = "0.38.4"
+sysinfo = "0.39.5"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
 socket2 = { version = "0.6", features = ["all"] }
@@ -55,10 +59,8 @@ kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch
   "background_check",
   "rust-crypto",
 ], default-features = false }
-oci-client = { git = "https://github.com/oras-project/rust-oci-client", rev = "83092a67ebcaeed832eae090895a1c178d867344", default-features = false, features = [
-  "rustls-tls",
-] }
-oci-spec = { version = "0.9.0" }
+oci-client = { version = "0.17.0", default-features = false, features = ["rustls-tls"] }
+oci-spec = { version = "0.10.0" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
 hex = { version = "0.4" }
 futures-util = { version = "0.3" }
@@ -67,14 +69,14 @@ futures-util = { version = "0.3" }
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "f25abaf2448a4d424061e6355e8a915e4b5c6cf2", default-features = false, features = [
   "amd-sev",
 ] }
-wasm-wave = "0.246.2"
+wasm-wave = "0.251.0"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
-wasmtime-wasi-usb = "44.0.0"
+wasmtime-wasi-usb = "46.0.0"
 
 [dev-dependencies]
 wiremock = "0.6"
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 
 [features]
 default = []

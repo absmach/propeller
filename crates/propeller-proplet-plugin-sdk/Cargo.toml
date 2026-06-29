@@ -9,7 +9,7 @@ license = "Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wit-bindgen = "0.36"
+wit-bindgen = "0.58"
 
 [profile.release]
 opt-level = "s"
