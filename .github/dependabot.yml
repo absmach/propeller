@@ -32,6 +32,7 @@ updates:
       - "proplet"
       - "examples/attestation-test"
       - "examples/http-client"
+      - "examples/http-client-raw-wit"
       - "examples/http-server"
       - "examples/plugin-auth"
       - "examples/plugin-proxy"
@@ -40,6 +41,9 @@ updates:
       - "examples/hal-test"
       - "examples/hal-runner"
       - "examples/http-greet-component"
+      - "examples/greet-component"
+      - "crates/propeller-plugin-sdk"
+      - "crates/propeller-proplet-plugin-sdk"
     schedule:
       interval: "monthly"
       day: "monday"

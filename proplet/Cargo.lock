@@ -290,7 +290,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "attestation-agent"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -318,7 +318,7 @@ dependencies = [
 [[package]]
 name = "attester"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1290,7 +1290,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "aes-gcm 0.11.0",
  "aes-kw",
@@ -2721,7 +2721,7 @@ dependencies = [
 [[package]]
 name = "image-rs"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "astral-tokio-tar",
@@ -2737,7 +2737,7 @@ dependencies = [
  "kbc",
  "loopdev",
  "nix",
- "oci-client 0.16.1",
+ "oci-client 0.17.0",
  "oci-spec 0.10.0",
  "ocicrypt-rs",
  "pathrs",
@@ -3097,7 +3097,7 @@ dependencies = [
 [[package]]
 name = "kbc"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3131,7 +3131,7 @@ dependencies = [
 [[package]]
 name = "kbs_protocol"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3702,8 +3702,9 @@ dependencies = [
 
 [[package]]
 name = "oci-client"
-version = "0.16.1"
-source = "git+https://github.com/oras-project/rust-oci-client?rev=83092a67ebcaeed832eae090895a1c178d867344#83092a67ebcaeed832eae090895a1c178d867344"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5261a7fb43d9c53b8e63e6d5e86860719dad253d015d022066c72d585125aed8"
 dependencies = [
  "bytes",
  "chrono",
@@ -3780,7 +3781,7 @@ dependencies = [
 [[package]]
 name = "ocicrypt-rs"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "aes 0.9.1",
  "anyhow",
@@ -4487,7 +4488,7 @@ dependencies = [
  "image-rs",
  "kbs_protocol",
  "libc",
- "oci-client 0.16.1",
+ "oci-client 0.17.0",
  "oci-spec 0.10.0",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -4566,7 +4567,7 @@ dependencies = [
 [[package]]
 name = "protos"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "prost",
  "tonic",
@@ -4963,7 +4964,7 @@ dependencies = [
 [[package]]
 name = "resource_uri"
 version = "0.1.0"
-source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#93b771288b39180cb3c28eb16c083f42e358ed7a"
+source = "git+https://github.com/rodneyosodo/guest-components?branch=enable-wasm-workloads#0e819e7fb74069f58a53081efd1bc09bc6e8386d"
 dependencies = [
  "anyhow",
  "serde",
