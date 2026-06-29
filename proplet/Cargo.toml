@@ -69,7 +69,7 @@ futures-util = { version = "0.3" }
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "f25abaf2448a4d424061e6355e8a915e4b5c6cf2", default-features = false, features = [
   "amd-sev",
 ] }
-wasm-wave = "0.251.0"
+wasm-wave = "0.252.0"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
 wasmtime-wasi-usb = "46.0.0"
