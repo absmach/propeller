@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "async-task"
@@ -191,9 +191,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.149"
+version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
+checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
  "itoa",
  "memchr",
@@ -233,9 +233,9 @@ checksum = "317211a0dc0ceedd78fb2ca9a44aed3d7b9b26f81870d485c07122b4350673b7"
 
 [[package]]
 name = "wasip2"
-version = "1.0.3+wasi-0.2.9"
+version = "1.0.4+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20064672db26d7cdc89c7798c48a0fdfac8213434a1186e5ef29fd560ae223d6"
+checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen",
 ]
@@ -251,9 +251,9 @@ dependencies = [
 
 [[package]]
 name = "wstd"
-version = "0.6.6"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0903606f1acdecad11576768ecc61ce215d6848652ac16c0e4592bb265e4200e"
+checksum = "d91b0401ae0769f12801304fa4985034d1b07f21733642a36bd0c43388c1cf87"
 dependencies = [
  "anyhow",
  "async-task",
@@ -273,9 +273,9 @@ dependencies = [
 
 [[package]]
 name = "wstd-macro"
-version = "0.6.6"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6a9df01a7fb39fbe7e9b5ef76f586f06425dd6f2be350de4781936f72f9899d"
+checksum = "8023c13a2eb552dfad21984b1947ada6c8d3a8d73a0d5ff57dc5d200aa2e06b9"
 dependencies = [
  "quote",
  "syn",

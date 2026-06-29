@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.43.0"
+wit-bindgen = "0.58.0"
 
 [profile.release]
 opt-level = "s"
