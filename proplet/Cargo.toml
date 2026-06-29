@@ -12,11 +12,11 @@ tokio-rustls = "0.26"
 webpki-roots = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "1.0.6"
+toml = "1.1.2"
 wasmtime = { version = "46.0.1", features = ["component-model", "async", "wave"] }
 wasmtime-wasi = "46.0.1"
 wasmtime-wasi-http = "46.0.1"
-hyper = { version = "1.9", features = ["full"] }
+hyper = { version = "1.10", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
 thiserror = "2.0"
@@ -29,7 +29,7 @@ opentelemetry_sdk = { version = "0.32", features = ["rt-tokio", "trace"] }
 opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
 prometheus = "0.14"
 http-body-util = "0.1"
-config = "0.15.22"
+config = "0.15.25"
 async-trait = "0.1"
 base64 = "0.22.1"
 url = "2.5"
@@ -70,11 +70,11 @@ elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = 
 wasm-wave = "0.251.0"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
-wasmtime-wasi-usb = "45.0.0"
+wasmtime-wasi-usb = "46.0.0"
 
 [dev-dependencies]
 wiremock = "0.6"
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 
 [features]
 default = []
