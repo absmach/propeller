@@ -3,7 +3,7 @@
 # Use the build-machine's platform for the builder stage so that Rust
 # cross-compiles natively instead of running the entire cargo build under
 # QEMU emulation (which would take hours for arm64).
-FROM --platform=$BUILDPLATFORM rust:1.94.0 AS builder
+FROM --platform=$BUILDPLATFORM rust:1.96.0 AS builder
 
 ARG VERSION
 ARG COMMIT

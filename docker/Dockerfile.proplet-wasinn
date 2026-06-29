@@ -1,4 +1,4 @@
-FROM rust:1.94.0 AS builder
+FROM rust:1.96.0 AS builder
 
 ARG VERSION
 ARG COMMIT
