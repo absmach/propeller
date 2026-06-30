@@ -47,19 +47,25 @@ fn is_proxy_component(bytes: &[u8]) -> bool {
         .any(|w| w == b"wasi:http/incoming-handler")
 }
 
-fn find_available_port(start_port: u16) -> Result<u16> {
-    let max_attempts = 100;
-    use std::net::TcpListener;
-    for port in start_port..start_port + max_attempts {
+fn find_available_port(start_port: u16) -> Result<(Socket, u16)> {
+    let max_attempts = 100u16;
+    for port in start_port..start_port.saturating_add(max_attempts) {
         let addr: SocketAddr = ([0, 0, 0, 0], port).into();
-        if TcpListener::bind(addr).is_ok() {
-            return Ok(port);
+        match Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)) {
+            Ok(socket) => {
+                let _ = socket.set_reuse_address(true);
+                if socket.bind(&addr.into()).is_ok() {
+                    return Ok((socket, port));
+                }
+            }
+            Err(_) => continue,
         }
     }
+    let end_port = start_port.saturating_add(max_attempts - 1);
     Err(anyhow::anyhow!(
         "No available port found in range {}-{}",
         start_port,
-        start_port + max_attempts - 1
+        end_port,
     ))
 }
 
@@ -947,10 +953,25 @@ impl WasmtimeRuntime {
                     .iter()
                     .find_map(|a| a.strip_prefix("--port=").or(a.strip_prefix("--addr=")))
                     .and_then(|a| a.split(':').next_back()?.parse().ok())
-            })
-            .unwrap_or(self.proxy_port);
+            });
 
-        let port = find_available_port(preferred_port)?;
+        // Bind the port up front and keep it claimed to eliminate the TOCTOU
+        // window between probing and the real bind. When the user explicitly
+        // provided --port/--addr, use that port directly and fail if busy;
+        // otherwise fall back to auto-probing.
+        let (socket, port) = match preferred_port {
+            Some(p) => {
+                let addr: SocketAddr = ([0, 0, 0, 0], p).into();
+                let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+                socket.set_reuse_address(true)?;
+                socket
+                    .bind(&addr.into())
+                    .with_context(|| format!("Failed to bind HTTP proxy port {addr}"))?;
+                (socket, p)
+            }
+            None => find_available_port(self.proxy_port)?,
+        };
+
         let addr: SocketAddr = ([0, 0, 0, 0], port).into();
         info!(
             "Starting HTTP proxy server for task {} on {addr}",
@@ -990,34 +1011,15 @@ impl WasmtimeRuntime {
                 let mut tasks_map = self.tasks.lock().await;
                 if let Some(handle) = tasks_map.remove(&old_task_id) {
                     handle.abort();
-                    drop(tasks_map);
-
-                    let mut attempts = 0;
-                    loop {
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        if let Ok(test_socket) =
-                            Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-                        {
-                            if test_socket.bind(&addr.into()).is_ok() {
-                                break;
-                            }
-                        }
-                        attempts += 1;
-                        if attempts > 20 {
-                            return Err(anyhow::anyhow!(
-                                "Port {port} still in use after aborting task {old_task_id}"
-                            ));
-                        }
-                    }
                 }
+                drop(tasks_map);
+
+                // The socket from find_available_port is already bound,
+                // confirming the port is free.  The old task's entry was
+                // stale — no rebind needed.
             }
 
-            let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
-            socket.set_reuse_address(true)?;
             socket.set_nonblocking(true)?;
-            socket
-                .bind(&addr.into())
-                .with_context(|| format!("Failed to bind HTTP proxy port {addr}"))?;
             socket.listen(128)?;
             let listener = TcpListener::from_std(std::net::TcpListener::from(socket))?;
 

@@ -70,18 +70,20 @@ impl HostRuntime {
             .any(|w| w == b"wasi:http/incoming-handler")
     }
 
-    async fn find_available_port(start_port: u16) -> Result<u16> {
-        let max_attempts = 100;
-        for port in start_port..start_port + max_attempts {
+    async fn find_available_port(start_port: u16) -> Result<(u16, TcpListener)> {
+        let max_attempts = 100u16;
+        for port in start_port..start_port.saturating_add(max_attempts) {
             let addr: SocketAddr = ([0, 0, 0, 0], port).into();
-            if TcpListener::bind(addr).await.is_ok() {
-                return Ok(port);
+            match TcpListener::bind(addr).await {
+                Ok(listener) => return Ok((port, listener)),
+                Err(_) => continue,
             }
         }
+        let end_port = start_port.saturating_add(max_attempts - 1);
         Err(anyhow::anyhow!(
             "No available port found in range {}-{}",
             start_port,
-            start_port + max_attempts - 1
+            end_port,
         ))
     }
 }
@@ -122,6 +124,9 @@ impl Runtime for HostRuntime {
                 .cli_args
                 .iter()
                 .any(|a| a == "--addr" || a.starts_with("--addr="));
+
+            let mut _port_holder: Option<(u16, TcpListener)> = None;
+
             let actual_port = if has_addr {
                 // User provided --addr, parse port from cli_args if possible
                 config
@@ -138,8 +143,9 @@ impl Runtime for HostRuntime {
                     })
                     .unwrap_or(self.http_proxy_port)
             } else {
-                let port = Self::find_available_port(self.http_proxy_port).await?;
+                let (port, listener) = Self::find_available_port(self.http_proxy_port).await?;
                 cmd.arg("--addr").arg(format!("0.0.0.0:{port}"));
+                _port_holder = Some((port, listener));
                 port
             };
 
@@ -170,6 +176,10 @@ impl Runtime for HostRuntime {
             cmd.arg(&temp_file);
 
             cmd.envs(&config.env);
+
+            // Release the probed port right before wasmtime serve binds to it,
+            // minimising (but not eliminating) the TOCTOU window.
+            drop(_port_holder);
 
             cmd.stdout(Stdio::piped())
                 .stderr(Stdio::piped())
