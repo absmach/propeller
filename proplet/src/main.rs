@@ -119,7 +119,10 @@ async fn main() -> Result<()> {
 
     let runtime: Arc<dyn Runtime> = if let Some(external_runtime) = &config.external_wasm_runtime {
         info!("Using external Wasm runtime: {}", external_runtime);
-        Arc::new(HostRuntime::new(external_runtime.clone()))
+        Arc::new(HostRuntime::new(
+            external_runtime.clone(),
+            config.http_proxy_port,
+        ))
     } else {
         info!("Using Wasmtime runtime");
         Arc::new(WasmtimeRuntime::new_with_options(

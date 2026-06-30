@@ -133,7 +133,7 @@ push_proplet_wasinn:
 install:
 	$(foreach f,$(wildcard $(BUILD_DIR)/*[!.wasm]),cp $(f) $(patsubst $(BUILD_DIR)/%,$(GOBIN)/propeller-%,$(f));)
 
-.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) hal-test attestation-test hal-runner http-client-raw-wit docker_proplet_wasinn push_proplet_wasinn mocks start-magistrala stop-magistrala start-propeller stop-propeller start-otel stop-otel start-all stop-all
+.PHONY: all $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) hal-test attestation-test hal-runner http-client-raw-wit docker_proplet_wasinn push_proplet_wasinn mocks check-certs start-magistrala stop-magistrala start-propeller stop-propeller start-otel stop-otel start-all stop-all
 all: $(SERVICES) $(RUST_SERVICES) $(EXAMPLES) addition-wat http-client http-client-raw-wit http-server filesystem hal-test attestation-test hal-runner
 
 clean:
@@ -156,7 +156,17 @@ test-all: plugin-auth
 	go test -v ./...
 	cd proplet && cargo test --release
 
-start-magistrala:
+check-certs:
+	@if [ ! -f docker/ssl/certs/ca.crt ] || [ ! -f docker/ssl/certs/ca.key ]; then \
+		echo "CA certificates not found, generating..."; \
+		$(MAKE) -C docker/ssl ca; \
+	fi
+	@if [ ! -f docker/ssl/certs/magistrala-server.crt ] || [ ! -f docker/ssl/certs/magistrala-server.key ]; then \
+		echo "Server certificates not found, generating..."; \
+		$(MAKE) -C docker/ssl server_cert; \
+	fi
+
+start-magistrala: check-certs
 	docker compose -f docker/compose.yaml --env-file docker/.env up -d
 
 stop-magistrala:
@@ -174,7 +184,7 @@ start-otel:
 stop-otel:
 	docker compose -f docker/addons/grafana/docker-compose.yaml --env-file docker/.env down
 
-start-all:
+start-all: check-certs
 	docker compose -f docker/compose.yaml --env-file docker/.env up -d
 	docker compose -f docker/compose.propeller.yaml --env-file docker/.env up -d
 
