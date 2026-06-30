@@ -47,6 +47,22 @@ fn is_proxy_component(bytes: &[u8]) -> bool {
         .any(|w| w == b"wasi:http/incoming-handler")
 }
 
+fn find_available_port(start_port: u16) -> Result<u16> {
+    let max_attempts = 100;
+    use std::net::TcpListener;
+    for port in start_port..start_port + max_attempts {
+        let addr: SocketAddr = ([0, 0, 0, 0], port).into();
+        if TcpListener::bind(addr).is_ok() {
+            return Ok(port);
+        }
+    }
+    Err(anyhow::anyhow!(
+        "No available port found in range {}-{}",
+        start_port,
+        start_port + max_attempts - 1
+    ))
+}
+
 /// Resolve a component export by name. Supports three shapes so the same
 /// `function_name` field on `StartConfig` can target both top-level commands
 /// and per-interface instance exports (e.g. the BRT EUCNC demo's
@@ -920,12 +936,21 @@ impl WasmtimeRuntime {
             ));
         }
 
-        let port = config
+        let preferred_port = config
             .cli_args
             .windows(2)
-            .find(|w| w[0] == "--port")
-            .and_then(|w| w[1].parse().ok())
+            .find(|w| w[0] == "--port" || w[0] == "--addr")
+            .and_then(|w| w[1].split(':').next_back()?.parse().ok())
+            .or_else(|| {
+                config
+                    .cli_args
+                    .iter()
+                    .find_map(|a| a.strip_prefix("--port=").or(a.strip_prefix("--addr=")))
+                    .and_then(|a| a.split(':').next_back()?.parse().ok())
+            })
             .unwrap_or(self.proxy_port);
+
+        let port = find_available_port(preferred_port)?;
         let addr: SocketAddr = ([0, 0, 0, 0], port).into();
         info!(
             "Starting HTTP proxy server for task {} on {addr}",
@@ -1080,7 +1105,7 @@ impl WasmtimeRuntime {
 
         tasks.lock().await.insert(config.id.clone(), handle);
 
-        Ok(Vec::new())
+        Ok(format!("started at port {port}").into_bytes())
     }
 
     async fn run_core_instance(
