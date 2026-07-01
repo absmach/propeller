@@ -434,7 +434,10 @@ impl PropletService {
         debug!("Handling message from topic: {}", msg.topic);
 
         if let Ok(payload_str) = String::from_utf8(msg.payload.clone()) {
-            debug!("Raw message payload: {}", payload_str);
+            debug!(
+                "Raw message payload: {}",
+                crate::redact::redact_payload(&payload_str)
+            );
         }
 
         if msg.topic.contains("control/manager/start") {
