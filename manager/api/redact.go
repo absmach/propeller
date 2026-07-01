@@ -26,6 +26,7 @@ type taskAlias task.Task
 
 type redactedTask struct {
 	taskAlias
+
 	File string `json:"file,omitempty"`
 }
 
@@ -39,8 +40,8 @@ func redactTasks(tasks []task.Task) []redactedTask {
 	}
 
 	out := make([]redactedTask, len(tasks))
-	for i, t := range tasks {
-		out[i] = newRedactedTask(t)
+	for i := range tasks {
+		out[i] = newRedactedTask(tasks[i])
 	}
 
 	return out
@@ -48,6 +49,7 @@ func redactTasks(tasks []task.Task) []redactedTask {
 
 type redactedJobSummary struct {
 	manager.JobSummary
+
 	Tasks []redactedTask `json:"tasks"`
 }
 
@@ -57,8 +59,8 @@ func redactJobSummaries(jobs []manager.JobSummary) []redactedJobSummary {
 	}
 
 	out := make([]redactedJobSummary, len(jobs))
-	for i, j := range jobs {
-		out[i] = redactedJobSummary{JobSummary: j, Tasks: redactTasks(j.Tasks)}
+	for i := range jobs {
+		out[i] = redactedJobSummary{JobSummary: jobs[i], Tasks: redactTasks(jobs[i].Tasks)}
 	}
 
 	return out
