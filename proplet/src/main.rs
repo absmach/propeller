@@ -5,6 +5,7 @@ mod metrics;
 mod monitoring;
 mod mqtt;
 mod plugin;
+mod redact;
 mod runtime;
 mod service;
 mod task_handler;

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/absmach/magistrala"
@@ -138,6 +139,10 @@ func (t taskResponse) Empty() bool {
 	return t.deleted
 }
 
+func (t taskResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(newRedactedTask(t.Task))
+}
+
 type listTaskResponse struct {
 	task.TaskPage
 }
@@ -152,6 +157,20 @@ func (l listTaskResponse) Headers() map[string]string {
 
 func (l listTaskResponse) Empty() bool {
 	return false
+}
+
+func (l listTaskResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Offset uint64         `json:"offset"`
+		Limit  uint64         `json:"limit"`
+		Total  uint64         `json:"total"`
+		Tasks  []redactedTask `json:"tasks"`
+	}{
+		Offset: l.Offset,
+		Limit:  l.Limit,
+		Total:  l.Total,
+		Tasks:  redactTasks(l.Tasks),
+	})
 }
 
 type messageResponse map[string]any
@@ -216,6 +235,12 @@ func (w workflowResponse) Empty() bool {
 	return len(w.Tasks) == 0
 }
 
+func (w workflowResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Tasks []redactedTask `json:"tasks"`
+	}{Tasks: redactTasks(w.Tasks)})
+}
+
 type taskResultsResponse struct {
 	Results any `json:"results"`
 }
@@ -251,6 +276,13 @@ func (j jobResponse) Empty() bool {
 	return len(j.Tasks) == 0
 }
 
+func (j jobResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		JobID string         `json:"job_id"`
+		Tasks []redactedTask `json:"tasks"`
+	}{JobID: j.JobID, Tasks: redactTasks(j.Tasks)})
+}
+
 type listJobResponse struct {
 	manager.JobPage
 }
@@ -265,4 +297,18 @@ func (l listJobResponse) Headers() map[string]string {
 
 func (l listJobResponse) Empty() bool {
 	return len(l.Jobs) == 0
+}
+
+func (l listJobResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Offset uint64               `json:"offset"`
+		Limit  uint64               `json:"limit"`
+		Total  uint64               `json:"total"`
+		Jobs   []redactedJobSummary `json:"jobs"`
+	}{
+		Offset: l.Offset,
+		Limit:  l.Limit,
+		Total:  l.Total,
+		Jobs:   redactJobSummaries(l.Jobs),
+	})
 }
