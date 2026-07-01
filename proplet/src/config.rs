@@ -10,6 +10,20 @@ use std::time::Duration;
 const DEFAULT_CONFIG_PATH: &str = "config.toml";
 const DEFAULT_CONFIG_SECTION: &str = "proplet";
 
+fn is_truthy(s: &str) -> bool {
+    s == "1"
+        || s.eq_ignore_ascii_case("true")
+        || s.eq_ignore_ascii_case("yes")
+        || s.eq_ignore_ascii_case("on")
+}
+
+fn is_falsy(s: &str) -> bool {
+    s == "0"
+        || s.eq_ignore_ascii_case("false")
+        || s.eq_ignore_ascii_case("no")
+        || s.eq_ignore_ascii_case("off")
+}
+
 /// Configuration fields that can be loaded from TOML file
 #[derive(Debug, Clone, Deserialize)]
 pub struct PropletFileConfig {
@@ -273,7 +287,7 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY") {
-            config.mqtt_tls_insecure_skip_verify = val.to_lowercase() == "true" || val == "1";
+            config.mqtt_tls_insecure_skip_verify = is_truthy(&val);
         }
 
         if let Ok(val) = env::var("PROPLET_HTTP_TLS_CA_CERT") {
@@ -283,7 +297,7 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY") {
-            config.http_tls_insecure_skip_verify = val.to_lowercase() == "true" || val == "1";
+            config.http_tls_insecure_skip_verify = is_truthy(&val);
         }
 
         if let Ok(val) = env::var("PROPLET_LIVELINESS_INTERVAL") {
@@ -335,7 +349,7 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_ENABLE_MONITORING") {
-            config.enable_monitoring = val.to_lowercase() == "true" || val == "1";
+            config.enable_monitoring = is_truthy(&val);
         }
 
         {
@@ -358,15 +372,15 @@ impl PropletConfig {
             }
 
             if let Ok(val) = env::var("PROPLET_HAL_ENABLED") {
-                config.hal_enabled = val.to_lowercase() == "true" || val == "1";
+                config.hal_enabled = is_truthy(&val);
             }
 
             if let Ok(val) = env::var("PROPLET_HTTP_ENABLED") {
-                config.http_enabled = val.to_lowercase() == "true" || val == "1";
+                config.http_enabled = is_truthy(&val);
             }
 
             if let Ok(val) = env::var("PROPLET_USB_ENABLED") {
-                config.usb_enabled = val.to_lowercase() == "true" || val == "1";
+                config.usb_enabled = is_truthy(&val);
             }
 
             if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT") {
@@ -407,7 +421,7 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_COLLECT_SYSTEM_INFO") {
-            config.collect_system_info = val.to_lowercase() != "false" && val != "0";
+            config.collect_system_info = !is_falsy(&val);
         }
 
         if let Ok(val) = env::var("PROPLET_PLUGIN_DIR") {
@@ -427,7 +441,7 @@ impl PropletConfig {
         }
 
         if let Ok(val) = env::var("PROPLET_METRICS_ENABLED") {
-            config.metrics_enabled = val.to_lowercase() == "true" || val == "1";
+            config.metrics_enabled = is_truthy(&val);
         }
 
         if let Ok(val) = env::var("PROPLET_OTEL_URL") {
