@@ -430,6 +430,7 @@ struct PrecompiledComponent {
     component: component::Component,
     config: StartConfig,
     is_proxy: bool,
+    wasm_binary: Arc<Vec<u8>>,
 }
 
 pub struct WasmtimeRuntime {
@@ -609,7 +610,7 @@ impl Runtime for WasmtimeRuntime {
         Ok(Some(std::process::id()))
     }
 
-    async fn precompile(&self, config: StartConfig) -> Result<()> {
+    async fn precompile(&self, mut config: StartConfig) -> Result<()> {
         if !is_wasm_component(&config.wasm_binary) {
             return Err(anyhow::anyhow!(
                 "latent tasks require a WASM component; task {} is not a component",
@@ -623,6 +624,7 @@ impl Runtime for WasmtimeRuntime {
             .map_err(|e| anyhow::anyhow!("Failed to precompile WASM component: {e}"))?;
 
         let is_proxy = is_proxy_component(&config.wasm_binary);
+        let wasm_binary = Arc::new(std::mem::take(&mut config.wasm_binary));
         let task_id = config.id.clone();
 
         self.precompiled.lock().await.insert(
@@ -631,6 +633,7 @@ impl Runtime for WasmtimeRuntime {
                 component,
                 config,
                 is_proxy,
+                wasm_binary,
             },
         );
 
@@ -645,13 +648,14 @@ impl Runtime for WasmtimeRuntime {
         args: Vec<String>,
         env: HashMap<String, String>,
     ) -> Result<Vec<u8>> {
-        let (component, mut config, is_proxy) = {
+        let (component, mut config, is_proxy, wasm_binary) = {
             let precompiled = self.precompiled.lock().await;
             match precompiled.get(&id) {
                 Some(entry) => (
                     entry.component.clone(),
                     entry.config.clone(),
                     entry.is_proxy,
+                    entry.wasm_binary.clone(),
                 ),
                 None => {
                     return Err(anyhow::anyhow!(
@@ -686,7 +690,8 @@ impl Runtime for WasmtimeRuntime {
         );
 
         if has_custom_export {
-            self.run_component_export(config, component).await
+            self.run_component_export(config, component, wasm_binary)
+                .await
         } else {
             self.run_component_command(config, component).await
         }
@@ -878,7 +883,7 @@ impl WasmtimeRuntime {
         }
     }
 
-    async fn start_app_component_export(&self, config: StartConfig) -> Result<Vec<u8>> {
+    async fn start_app_component_export(&self, mut config: StartConfig) -> Result<Vec<u8>> {
         info!(
             "Compiling WASM component for custom export '{}' for task: {}",
             config.function_name, config.id
@@ -893,13 +898,17 @@ impl WasmtimeRuntime {
             }
         };
 
-        self.run_component_export(config, component).await
+        let wasm_binary = Arc::new(std::mem::take(&mut config.wasm_binary));
+
+        self.run_component_export(config, component, wasm_binary)
+            .await
     }
 
     async fn run_component_export(
         &self,
         config: StartConfig,
         component: component::Component,
+        wasm_binary: Arc<Vec<u8>>,
     ) -> Result<Vec<u8>> {
         let mut wasi_builder = WasiCtxBuilder::new();
         wasi_builder.inherit_stdio();
@@ -949,7 +958,6 @@ impl WasmtimeRuntime {
         let function_name = config.function_name.clone();
         let args = config.args.clone();
         let tasks = self.tasks.clone();
-        let wasm_binary = config.wasm_binary.clone();
 
         let (result_tx, result_rx) = oneshot::channel();
 
