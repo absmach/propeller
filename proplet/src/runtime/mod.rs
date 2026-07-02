@@ -41,6 +41,23 @@ pub trait Runtime: Send + Sync {
     /// - The task does not exist or is not running
     /// - The platform does not support PID retrieval
     async fn get_pid(&self, id: &str) -> Result<Option<u32>>;
+
+    async fn precompile(&self, _config: StartConfig) -> Result<()> {
+        Err(anyhow::anyhow!(
+            "latent tasks are not supported by this runtime"
+        ))
+    }
+
+    async fn invoke(
+        &self,
+        _id: String,
+        _args: Vec<String>,
+        _env: HashMap<String, String>,
+    ) -> Result<Vec<u8>> {
+        Err(anyhow::anyhow!(
+            "latent task invocation is not supported by this runtime"
+        ))
+    }
 }
 
 #[derive(Clone)]
