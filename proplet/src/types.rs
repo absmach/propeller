@@ -70,6 +70,8 @@ pub struct StartRequest {
     pub broadcast: bool,
     #[serde(default)]
     pub hal_storage_path: Option<String>,
+    #[serde(default)]
+    pub latent: bool,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -104,6 +106,31 @@ impl StartRequest {
         } else if self.file.is_empty() && self.image_url.is_empty() {
             return Err(anyhow::anyhow!("either file or image_url must be provided"));
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvokeRequest {
+    pub id: String,
+    #[serde(default)]
+    pub invocation_id: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub inputs: Vec<String>,
+    #[serde(default)]
+    pub env: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub proplet_id: Option<String>,
+    #[serde(default)]
+    pub broadcast: bool,
+}
+
+impl InvokeRequest {
+    pub fn validate(&self) -> Result<()> {
+        if self.id.is_empty() {
+            return Err(anyhow::anyhow!("id is required"));
+        }
+
         Ok(())
     }
 }
@@ -180,6 +207,15 @@ pub struct DiscoveryMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultMessage {
     pub task_id: String,
+    pub proplet_id: String,
+    pub results: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvokeResultMessage {
+    pub task_id: String,
+    pub invocation_id: String,
     pub proplet_id: String,
     pub results: String,
     pub error: Option<String>,
@@ -318,6 +354,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert!(req.validate().is_ok());
@@ -342,6 +379,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert!(req.validate().is_ok());
@@ -366,6 +404,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();
@@ -392,6 +431,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();
@@ -418,6 +458,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();
@@ -447,6 +488,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert!(req.validate().is_ok());
@@ -471,6 +513,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();
@@ -500,6 +543,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();
@@ -579,6 +623,65 @@ mod tests {
         let result = req.validate();
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "id is required");
+    }
+
+    #[test]
+    fn test_invoke_request_deserialize_and_validate() {
+        let json_data = json!({
+            "id": "task-invoke-1",
+            "inputs": ["10", "20"],
+            "env": {"KEY": "value"},
+            "proplet_id": "proplet-7",
+            "broadcast": false
+        });
+
+        let req: InvokeRequest = serde_json::from_value(json_data).unwrap();
+
+        assert_eq!(req.id, "task-invoke-1");
+        assert_eq!(req.inputs, vec!["10", "20"]);
+        assert_eq!(
+            req.env.as_ref().unwrap().get("KEY"),
+            Some(&"value".to_string())
+        );
+        assert_eq!(req.proplet_id, Some("proplet-7".to_string()));
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_invoke_request_defaults_and_empty_id() {
+        let req: InvokeRequest = serde_json::from_value(json!({ "id": "task-1" })).unwrap();
+        assert!(req.inputs.is_empty());
+        assert!(req.env.is_none());
+        assert!(req.proplet_id.is_none());
+        assert!(!req.broadcast);
+        assert!(req.validate().is_ok());
+
+        let empty: InvokeRequest = serde_json::from_value(json!({ "id": "" })).unwrap();
+        let result = empty.validate();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "id is required");
+    }
+
+    #[test]
+    fn test_start_request_latent_defaults_false() {
+        let req: StartRequest = serde_json::from_value(json!({
+            "id": "task-latent",
+            "name": "func",
+            "image_url": "registry.example.com/app:v1",
+            "state": 0
+        }))
+        .unwrap();
+        assert!(!req.latent);
+
+        let latent: StartRequest = serde_json::from_value(json!({
+            "id": "task-latent",
+            "name": "func",
+            "image_url": "registry.example.com/app:v1",
+            "latent": true,
+            "state": 0
+        }))
+        .unwrap();
+        assert!(latent.latent);
     }
 
     #[test]
@@ -759,6 +862,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
@@ -826,6 +930,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -857,6 +962,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert!(req.validate().is_ok());
@@ -881,6 +987,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         assert!(req.validate().is_ok());
@@ -905,6 +1012,7 @@ mod tests {
             proplet_id: None,
             broadcast: false,
             hal_storage_path: None,
+            latent: false,
         };
 
         let result = req.validate();

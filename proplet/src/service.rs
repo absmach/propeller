@@ -222,6 +222,13 @@ impl PropletService {
         );
         self.pubsub.subscribe(&stop_topic, qos).await?;
 
+        let invoke_topic = build_topic(
+            &self.config.domain_id,
+            &self.config.channel_id,
+            "control/manager/invoke",
+        );
+        self.pubsub.subscribe(&invoke_topic, qos).await?;
+
         let chunk_topic = build_topic(
             &self.config.domain_id,
             &self.config.channel_id,
@@ -439,6 +446,8 @@ impl PropletService {
 
         if msg.topic.contains("control/manager/start") {
             self.handle_start_command(msg).await
+        } else if msg.topic.contains("control/manager/invoke") {
+            self.handle_invoke_command(msg).await
         } else if msg.topic.contains("control/manager/stop") {
             self.handle_stop_command(msg).await
         } else if msg.topic.contains("registry/server") {
@@ -655,6 +664,43 @@ impl PropletService {
         }
         for (k, v) in plugin_env_additions {
             env.insert(k, v);
+        }
+
+        if req.latent {
+            let mut latent_env = env;
+            latent_env
+                .entry("PROPLET_ID".to_string())
+                .or_insert_with(|| proplet_id.clone());
+
+            let config = StartConfig {
+                id: task_id.clone(),
+                function_name: task_name.clone(),
+                daemon: false,
+                wasm_binary,
+                cli_args: req.cli_args.clone(),
+                env: latent_env,
+                args: req.inputs.clone(),
+                mode: req.mode.clone(),
+                hal_storage_path: req.hal_storage_path.clone(),
+            };
+
+            if let Err(e) = runtime.precompile(config).await {
+                error!("Failed to precompile latent task {}: {:#}", task_id, e);
+                self.running_tasks.lock().await.remove(&task_id);
+                self.metrics.tasks_failed.inc();
+                self.metrics.tasks_running.dec();
+                self.publish_result(&task_id, Vec::new(), Some(e.to_string()))
+                    .await?;
+
+                return Err(e);
+            }
+
+            info!(
+                "Latent task {} precompiled and ready for on-demand invocation",
+                task_id
+            );
+
+            return Ok(());
         }
 
         let daemon = req.daemon;
@@ -1039,6 +1085,83 @@ impl PropletService {
                 metrics.tasks_running.dec();
             }
         }.instrument(execute_span));
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, msg), name = "task.invoke", fields(task_id))]
+    async fn handle_invoke_command(&self, msg: MqttMessage) -> Result<()> {
+        let req: InvokeRequest = msg.decode()?;
+        req.validate()?;
+
+        tracing::Span::current().record("task_id", req.id.as_str());
+
+        if !req.broadcast {
+            if let Some(ref target_id) = req.proplet_id {
+                if target_id != &self.config.client_id {
+                    return Ok(());
+                }
+            }
+        }
+
+        info!("Received invoke command for task: {}", req.id);
+
+        let runtime = self.runtime.clone();
+        let pubsub = self.pubsub.clone();
+        let domain_id = self.config.domain_id.clone();
+        let channel_id = self.config.channel_id.clone();
+        let qos = self.config.qos();
+        let proplet_id = self.config.client_id.clone();
+        let task_id = req.id.clone();
+        let invocation_id = req.invocation_id.clone().unwrap_or_default();
+        let inputs = req.inputs.clone();
+        let env = req.env.unwrap_or_default();
+        let metrics = self.metrics.clone();
+
+        let invoke_span = tracing::info_span!("task.invoke.execute", task_id = %task_id);
+        tokio::spawn(
+            async move {
+                metrics.tasks_started.inc();
+                metrics.tasks_running.inc();
+
+                let result = runtime.invoke(task_id.clone(), inputs, env).await;
+
+                metrics.tasks_running.dec();
+
+                let (results, error) = match result {
+                    Ok(data) => {
+                        let results = String::from_utf8_lossy(&data).to_string();
+                        info!("Invocation of task {} completed: {}", task_id, results);
+                        metrics.tasks_completed.inc();
+                        (results, None)
+                    }
+                    Err(e) => {
+                        error!("Invocation of task {} failed: {:#}", task_id, e);
+                        metrics.tasks_failed.inc();
+                        (String::new(), Some(e.to_string()))
+                    }
+                };
+
+                let result_msg = InvokeResultMessage {
+                    task_id: task_id.clone(),
+                    invocation_id,
+                    proplet_id,
+                    results,
+                    error,
+                };
+
+                let topic = build_topic(&domain_id, &channel_id, "control/proplet/invoke_results");
+                if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
+                    error!(
+                        "Failed to publish invoke result for task {}: {}",
+                        task_id, e
+                    );
+                } else {
+                    info!("Published invoke result for task {}", task_id);
+                }
+            }
+            .instrument(invoke_span),
+        );
 
         Ok(())
     }

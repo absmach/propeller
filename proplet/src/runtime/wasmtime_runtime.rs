@@ -426,11 +426,19 @@ impl WasiUsbView for StoreData {
     }
 }
 
+struct PrecompiledComponent {
+    component: component::Component,
+    config: StartConfig,
+    is_proxy: bool,
+    wasm_binary: Arc<Vec<u8>>,
+}
+
 pub struct WasmtimeRuntime {
     engine: Engine,
     tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     proxy_ports: Arc<Mutex<HashMap<u16, String>>>,
     proxy_cancellers: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    precompiled: Arc<Mutex<HashMap<String, PrecompiledComponent>>>,
     hal_enabled: bool,
     hal: Arc<PropletHal>,
     http_enabled: bool,
@@ -484,6 +492,7 @@ impl WasmtimeRuntime {
             tasks: Arc::new(Mutex::new(HashMap::new())),
             proxy_ports: Arc::new(Mutex::new(HashMap::new())),
             proxy_cancellers: Arc::new(Mutex::new(HashMap::new())),
+            precompiled: Arc::new(Mutex::new(HashMap::new())),
             hal_enabled,
             hal: PropletHal::new(),
             http_enabled,
@@ -565,6 +574,8 @@ impl Runtime for WasmtimeRuntime {
     async fn stop_app(&self, id: String) -> Result<()> {
         info!("Stopping Wasmtime runtime app: task_id={}", id);
 
+        let was_latent = self.precompiled.lock().await.remove(&id).is_some();
+
         self.proxy_ports
             .lock()
             .await
@@ -582,6 +593,9 @@ impl Runtime for WasmtimeRuntime {
             handle.abort();
             info!("Task {} aborted and removed from tasks", id);
             Ok(())
+        } else if was_latent {
+            info!("Latent task {} removed from precompiled cache", id);
+            Ok(())
         } else {
             Err(anyhow::anyhow!("Task {id} not found in running tasks"))
         }
@@ -594,6 +608,93 @@ impl Runtime for WasmtimeRuntime {
         }
 
         Ok(Some(std::process::id()))
+    }
+
+    async fn precompile(&self, mut config: StartConfig) -> Result<()> {
+        if !is_wasm_component(&config.wasm_binary) {
+            return Err(anyhow::anyhow!(
+                "latent tasks require a WASM component; task {} is not a component",
+                config.id
+            ));
+        }
+
+        info!("Precompiling latent component for task: {}", config.id);
+
+        let component = component::Component::from_binary(&self.engine, &config.wasm_binary)
+            .map_err(|e| anyhow::anyhow!("Failed to precompile WASM component: {e}"))?;
+
+        let is_proxy = is_proxy_component(&config.wasm_binary);
+        let wasm_binary = Arc::new(std::mem::take(&mut config.wasm_binary));
+        let task_id = config.id.clone();
+
+        self.precompiled.lock().await.insert(
+            task_id.clone(),
+            PrecompiledComponent {
+                component,
+                config,
+                is_proxy,
+                wasm_binary,
+            },
+        );
+
+        info!("Precompiled latent component cached for task: {}", task_id);
+
+        Ok(())
+    }
+
+    async fn invoke(
+        &self,
+        id: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+    ) -> Result<Vec<u8>> {
+        let (component, mut config, is_proxy, wasm_binary) = {
+            let precompiled = self.precompiled.lock().await;
+            match precompiled.get(&id) {
+                Some(entry) => (
+                    entry.component.clone(),
+                    entry.config.clone(),
+                    entry.is_proxy,
+                    entry.wasm_binary.clone(),
+                ),
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "task {id} has not been precompiled; deploy it as a latent task first"
+                    ))
+                }
+            }
+        };
+
+        if is_proxy {
+            return Err(anyhow::anyhow!(
+                "task {id} is an HTTP proxy component; it is served by its listener, not by direct invocation"
+            ));
+        }
+
+        for (k, v) in env {
+            config.env.insert(k, v);
+        }
+        if !args.is_empty() {
+            config.args = args;
+        }
+        config.daemon = false;
+        config.id = format!("{id}-inv-{}", uuid::Uuid::new_v4());
+
+        let has_custom_export = !config.function_name.is_empty()
+            && config.function_name != "_start"
+            && !config.function_name.starts_with("fl-round-");
+
+        info!(
+            "Invoking latent task {} as {} (custom_export={})",
+            id, config.id, has_custom_export
+        );
+
+        if has_custom_export {
+            self.run_component_export(config, component, wasm_binary)
+                .await
+        } else {
+            self.run_component_command(config, component).await
+        }
     }
 }
 
@@ -664,6 +765,14 @@ impl WasmtimeRuntime {
 
         info!("Component compiled successfully for task: {}", config.id);
 
+        self.run_component_command(config, component).await
+    }
+
+    async fn run_component_command(
+        &self,
+        config: StartConfig,
+        component: component::Component,
+    ) -> Result<Vec<u8>> {
         let mut wasi_builder = WasiCtxBuilder::new();
         wasi_builder.inherit_stdio();
 
@@ -774,7 +883,7 @@ impl WasmtimeRuntime {
         }
     }
 
-    async fn start_app_component_export(&self, config: StartConfig) -> Result<Vec<u8>> {
+    async fn start_app_component_export(&self, mut config: StartConfig) -> Result<Vec<u8>> {
         info!(
             "Compiling WASM component for custom export '{}' for task: {}",
             config.function_name, config.id
@@ -789,6 +898,18 @@ impl WasmtimeRuntime {
             }
         };
 
+        let wasm_binary = Arc::new(std::mem::take(&mut config.wasm_binary));
+
+        self.run_component_export(config, component, wasm_binary)
+            .await
+    }
+
+    async fn run_component_export(
+        &self,
+        config: StartConfig,
+        component: component::Component,
+        wasm_binary: Arc<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
         let mut wasi_builder = WasiCtxBuilder::new();
         wasi_builder.inherit_stdio();
         for (key, value) in &config.env {
@@ -837,7 +958,6 @@ impl WasmtimeRuntime {
         let function_name = config.function_name.clone();
         let args = config.args.clone();
         let tasks = self.tasks.clone();
-        let wasm_binary = config.wasm_binary.clone();
 
         let (result_tx, result_rx) = oneshot::channel();
 
@@ -1506,5 +1626,136 @@ mod tests {
         );
         let output = result.unwrap();
         assert!(!output.is_empty());
+    }
+
+    fn latent_config(id: &str, function_name: &str, wasm_binary: Vec<u8>) -> StartConfig {
+        StartConfig {
+            id: id.to_string(),
+            function_name: function_name.to_string(),
+            daemon: false,
+            wasm_binary,
+            cli_args: Vec::new(),
+            env: HashMap::new(),
+            args: Vec::new(),
+            mode: None,
+            hal_storage_path: None,
+        }
+    }
+
+    fn greet_component() -> Option<Vec<u8>> {
+        let wasm_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/greet-component/target/wasm32-wasip2/release/greet_component.wasm"
+        );
+        match std::fs::read(wasm_path) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                eprintln!(
+                    "Skipping: WASM binary not found at {wasm_path}: {e}. \
+                     Build it with: make greet-component"
+                );
+                None
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_precompile_rejects_non_component() {
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222, None, false)
+                .unwrap();
+        let config = latent_config(
+            &uuid::Uuid::new_v4().to_string(),
+            "run",
+            vec![0xFF, 0xFF, 0xFF, 0xFF],
+        );
+        assert!(runtime.precompile(config).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_invoke_unknown_task_errors() {
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222, None, false)
+                .unwrap();
+        let result = runtime
+            .invoke("does-not-exist".to_string(), Vec::new(), HashMap::new())
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_precompile_then_invoke_component_export() {
+        let Some(wasm_binary) = greet_component() else {
+            return;
+        };
+        let runtime =
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222, None, false)
+                .unwrap();
+        let task_id = uuid::Uuid::new_v4().to_string();
+
+        runtime
+            .precompile(latent_config(&task_id, "greet", wasm_binary))
+            .await
+            .expect("precompile should succeed");
+
+        let output = runtime
+            .invoke(
+                task_id.clone(),
+                vec!["\"world\"".to_string()],
+                HashMap::new(),
+            )
+            .await
+            .expect("invoke should succeed");
+        assert!(
+            String::from_utf8_lossy(&output).contains("Hello, world"),
+            "unexpected invoke output: {}",
+            String::from_utf8_lossy(&output)
+        );
+
+        let output2 = runtime
+            .invoke(task_id, vec!["\"again\"".to_string()], HashMap::new())
+            .await
+            .expect("second invoke should succeed");
+        assert!(String::from_utf8_lossy(&output2).contains("Hello, again"));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_invocations_run_in_parallel() {
+        let Some(wasm_binary) = greet_component() else {
+            return;
+        };
+        let runtime = Arc::new(
+            WasmtimeRuntime::new_with_options(false, false, false, Vec::new(), 8222, None, false)
+                .unwrap(),
+        );
+        let task_id = uuid::Uuid::new_v4().to_string();
+
+        runtime
+            .precompile(latent_config(&task_id, "greet", wasm_binary))
+            .await
+            .expect("precompile should succeed");
+
+        let mut handles = Vec::new();
+        for i in 0..8 {
+            let runtime = runtime.clone();
+            let task_id = task_id.clone();
+            handles.push(tokio::spawn(async move {
+                runtime
+                    .invoke(task_id, vec![format!("\"caller-{i}\"")], HashMap::new())
+                    .await
+            }));
+        }
+
+        for (i, handle) in handles.into_iter().enumerate() {
+            let output = handle
+                .await
+                .expect("task join")
+                .expect("invoke should succeed");
+            assert!(
+                String::from_utf8_lossy(&output).contains(&format!("Hello, caller-{i}")),
+                "invocation {i} returned unexpected output: {}",
+                String::from_utf8_lossy(&output)
+            );
+        }
     }
 }

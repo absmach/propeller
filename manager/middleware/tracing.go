@@ -149,6 +149,15 @@ func (tm *tracing) StopTask(ctx context.Context, id string) (err error) {
 	return tm.svc.StopTask(ctx, id)
 }
 
+func (tm *tracing) InvokeTask(ctx context.Context, id string, inputs []string) (string, error) {
+	ctx, span := tm.tracer.Start(ctx, "invoke-task", trace.WithAttributes(
+		attribute.String("id", id),
+	))
+	defer span.End()
+
+	return tm.svc.InvokeTask(ctx, id, inputs)
+}
+
 func (tm *tracing) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (resp manager.TaskMetricsPage, err error) {
 	ctx, span := tm.tracer.Start(ctx, "get-task-metrics", trace.WithAttributes(
 		attribute.String("task_id", taskID),

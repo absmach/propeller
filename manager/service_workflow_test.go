@@ -8,14 +8,17 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	smqerrors "github.com/absmach/magistrala/pkg/errors"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	mqttmocks "github.com/absmach/propeller/pkg/mqtt/mocks"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -315,4 +318,62 @@ func TestStartTask(t *testing.T) {
 			tc.check(t, svc, taskID)
 		})
 	}
+}
+
+func TestInvokeTask(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invoke non-latent task fails", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		created, err := svc.CreateTask(context.Background(), task.Task{Name: "standard"})
+		require.NoError(t, err)
+
+		_, err = svc.InvokeTask(context.Background(), created.ID, []string{"1"})
+		require.Error(t, err)
+	})
+
+	t.Run("invoke broadcast latent task selects a proplet then awaits result", func(t *testing.T) {
+		t.Parallel()
+		svc, repos := newServiceWithRepos(t)
+		require.NoError(t, repos.Proplets.Create(context.Background(), proplet.Proplet{
+			ID:           uuid.NewString(),
+			Name:         uuid.NewString(),
+			AliveHistory: []time.Time{time.Now()},
+		}))
+
+		created, err := svc.CreateTask(context.Background(), task.Task{
+			Name:      "latent-fn",
+			Latent:    true,
+			Broadcast: true,
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+
+		_, err = svc.InvokeTask(ctx, created.ID, []string{"\"world\""})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("invoke broadcast latent task with no proplets fails", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		created, err := svc.CreateTask(context.Background(), task.Task{
+			Name:      "latent-fn",
+			Latent:    true,
+			Broadcast: true,
+		})
+		require.NoError(t, err)
+
+		_, err = svc.InvokeTask(context.Background(), created.ID, []string{"\"world\""})
+		require.Error(t, err)
+	})
+
+	t.Run("invoke unknown task fails", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		_, err := svc.InvokeTask(context.Background(), "nonexistent", nil)
+		require.Error(t, err)
+	})
 }

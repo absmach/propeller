@@ -13,6 +13,7 @@ const (
 	ActionCreate Action = "create"
 	ActionStart  Action = "start"
 	ActionStop   Action = "stop"
+	ActionInvoke Action = "invoke"
 	ActionDelete Action = "delete"
 	ActionUpdate Action = "update"
 )

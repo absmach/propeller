@@ -1,11 +1,14 @@
 package scheduler
 
 import (
+	"sync"
+
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/task"
 )
 
 type roundRobin struct {
+	mu          sync.Mutex
 	LastProplet int
 }
 
@@ -29,6 +32,9 @@ func (r *roundRobin) SelectProplet(t task.Task, proplets []proplet.Proplet) (pro
 	if alive == 0 {
 		return proplet.Proplet{}, ErrDeadProplers
 	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	for range proplets {
 		r.LastProplet = (r.LastProplet + 1) % len(proplets)

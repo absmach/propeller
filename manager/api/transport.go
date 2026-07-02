@@ -14,6 +14,7 @@ import (
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/api"
 	"github.com/absmach/propeller/pkg/plugin"
+	"github.com/absmach/propeller/pkg/task"
 	"github.com/go-chi/chi/v5"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -131,6 +132,12 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 				api.EncodeResponse,
 				opts...,
 			), "stop-task").ServeHTTP)
+			r.Post("/invoke", otelhttp.NewHandler(kithttp.NewServer(
+				invokeTaskEndpoint(svc),
+				decodeInvokeTaskReq,
+				api.EncodeResponse,
+				opts...,
+			), "invoke-task").ServeHTTP)
 			r.Get("/metrics", otelhttp.NewHandler(kithttp.NewServer(
 				getTaskMetricsEndpoint(svc),
 				decodeMetricsReq("taskID"),
@@ -302,6 +309,28 @@ func decodeUploadTaskFileReq(_ context.Context, r *http.Request) (any, error) {
 	}
 	req.File = data
 	req.ID = chi.URLParam(r, "taskID")
+
+	return req, nil
+}
+
+func decodeInvokeTaskReq(_ context.Context, r *http.Request) (any, error) {
+	req := invokeReq{id: chi.URLParam(r, "taskID")}
+
+	if r.Body == nil || r.ContentLength == 0 {
+		return req, nil
+	}
+
+	if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
+		return nil, errors.Join(apiutil.ErrValidation, apiutil.ErrUnsupportedContentType)
+	}
+
+	var body struct {
+		Inputs task.FlexStrings `json:"inputs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return nil, errors.Join(err, apiutil.ErrValidation)
+	}
+	req.inputs = []string(body.Inputs)
 
 	return req, nil
 }

@@ -167,6 +167,7 @@ type Task struct {
 	Inputs            FlexStrings                `json:"inputs,omitempty"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Daemon            bool                       `json:"daemon"`
+	Latent            bool                       `json:"latent,omitempty"`
 	Encrypted         bool                       `json:"encrypted"`
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
 	PropletID         string                     `json:"proplet_id,omitempty"`

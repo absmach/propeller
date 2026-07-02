@@ -65,7 +65,16 @@ type service struct {
 	plugins          plugin.Registry
 	shuttingDown     atomic.Bool
 	wg               sync.WaitGroup
+	pendingInvokes   map[string]chan invokeResult
+	pendingInvokesMu sync.Mutex
 }
+
+type invokeResult struct {
+	results string
+	err     string
+}
+
+const invokeTimeout = 30 * time.Second
 
 func NewService(
 	repos *storage.Repositories,
@@ -95,6 +104,7 @@ func NewService(
 		flCoordinatorURL: coordinatorURL,
 		httpClient:       httpClient,
 		plugins:          plugins,
+		pendingInvokes:   make(map[string]chan invokeResult),
 	}
 	coordinator := NewWorkflowCoordinator(repos.Tasks, svc, logger)
 	svc.coordinator = coordinator
@@ -827,6 +837,57 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (svc *service) InvokeTask(ctx context.Context, taskID string, inputs []string) (string, error) {
+	if svc.shuttingDown.Load() {
+		return "", errShuttingDown
+	}
+
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
+
+	if !t.Latent {
+		return "", fmt.Errorf("task %s is not a latent task and cannot be invoked", taskID)
+	}
+
+	propletID, err := svc.invocationProplet(ctx, t)
+	if err != nil {
+		return "", err
+	}
+
+	invocationID := uuid.NewString()
+	resultCh := make(chan invokeResult, 1)
+	svc.pendingInvokesMu.Lock()
+	svc.pendingInvokes[invocationID] = resultCh
+	svc.pendingInvokesMu.Unlock()
+	defer func() {
+		svc.pendingInvokesMu.Lock()
+		delete(svc.pendingInvokes, invocationID)
+		svc.pendingInvokesMu.Unlock()
+	}()
+
+	if err := svc.publishInvoke(ctx, taskID, propletID, invocationID, inputs); err != nil {
+		return "", err
+	}
+
+	timer := time.NewTimer(invokeTimeout)
+	defer timer.Stop()
+
+	select {
+	case res := <-resultCh:
+		if res.err != "" {
+			return "", errors.New(res.err)
+		}
+
+		return res.results, nil
+	case <-timer.C:
+		return "", fmt.Errorf("invocation of task %s timed out after %s", taskID, invokeTimeout)
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
 func (svc *service) StartJob(ctx context.Context, jobID string) error {
 	if svc.shuttingDown.Load() {
 		return errShuttingDown
@@ -1235,6 +1296,8 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
 			return svc.updateResultsHandler(ctx, msg)
+		case svc.baseTopic + "/control/proplet/invoke_results":
+			return svc.updateInvokeResultsHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/task_metrics":
 			return svc.handleTaskMetrics(ctx, msg)
 		case svc.baseTopic + "/control/proplet/metrics":
@@ -1390,6 +1453,28 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 
 	if err := svc.coordinator.OnTaskCompletion(ctx, taskID); err != nil {
 		svc.logger.ErrorContext(ctx, "failed to trigger workflow coordinator", "task_id", taskID, "error", err)
+	}
+
+	return nil
+}
+
+func (svc *service) updateInvokeResultsHandler(_ context.Context, msg map[string]any) error {
+	invocationID, ok := msg["invocation_id"].(string)
+	if !ok || invocationID == "" {
+		return nil
+	}
+
+	results, _ := msg["results"].(string)
+	errMsg, _ := msg["error"].(string)
+
+	svc.pendingInvokesMu.Lock()
+	ch, waiting := svc.pendingInvokes[invocationID]
+	svc.pendingInvokesMu.Unlock()
+	if waiting {
+		select {
+		case ch <- invokeResult{results: results, err: errMsg}:
+		default:
+		}
 	}
 
 	return nil
@@ -1849,6 +1934,7 @@ type startPayload struct {
 	CLIArgs           []string                   `json:"cli_args"`
 	Broadcast         bool                       `json:"broadcast"`
 	Daemon            bool                       `json:"daemon"`
+	Latent            bool                       `json:"latent"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Encrypted         bool                       `json:"encrypted"`
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
@@ -1871,6 +1957,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		CLIArgs:           t.CLIArgs,
 		Broadcast:         t.Broadcast,
 		Daemon:            t.Daemon,
+		Latent:            t.Latent,
 		Env:               t.Env,
 		Encrypted:         t.Encrypted,
 		KBSResourcePath:   t.KBSResourcePath,
@@ -1902,6 +1989,32 @@ func (svc *service) publishStop(ctx context.Context, t task.Task, propletID stri
 	topic := svc.baseTopic + "/control/manager/stop"
 
 	return svc.pubsub.Publish(ctx, topic, stopPayload)
+}
+
+func (svc *service) invocationProplet(ctx context.Context, t task.Task) (string, error) {
+	if t.Broadcast {
+		p, err := svc.SelectProplet(ctx, t)
+		if err != nil {
+			return "", err
+		}
+
+		return p.ID, nil
+	}
+
+	return svc.taskPropletRepo.Get(ctx, t.ID)
+}
+
+func (svc *service) publishInvoke(ctx context.Context, taskID, propletID, invocationID string, inputs []string) error {
+	payload := map[string]any{
+		"id":            taskID,
+		"broadcast":     false,
+		"proplet_id":    propletID,
+		"invocation_id": invocationID,
+		"inputs":        inputs,
+	}
+	topic := svc.baseTopic + "/control/manager/invoke"
+
+	return svc.pubsub.Publish(ctx, topic, payload)
 }
 
 func (svc *service) runOnBeforePropletSelect(ctx context.Context, t task.Task) (plugin.PropletSelectResponse, error) {

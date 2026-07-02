@@ -171,12 +171,34 @@ Examples:
 		},
 	}
 
+	invokeCmd := &cobra.Command{
+		Use:   "invoke <id> [inputs...]",
+		Short: "Invoke a latent task",
+		Long:  `Invoke a latent task with optional inputs.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) < 1 {
+				logUsageCmd(*cmd, cmd.Use)
+
+				return
+			}
+
+			results, err := psdk.InvokeTask(args[0], args[1:])
+			if err != nil {
+				logErrorCmd(*cmd, err)
+
+				return
+			}
+			logJSONCmd(*cmd, results)
+		},
+	}
+
 	cmd.AddCommand(createCmd)
 	cmd.AddCommand(viewCmd)
 	cmd.AddCommand(updateCmd)
 	cmd.AddCommand(deleteCmd)
 	cmd.AddCommand(startCmd)
 	cmd.AddCommand(stopCmd)
+	cmd.AddCommand(invokeCmd)
 
 	cmd.PersistentFlags().Uint64VarP(
 		&defOffset,
