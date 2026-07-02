@@ -1458,40 +1458,26 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	return nil
 }
 
-func (svc *service) updateInvokeResultsHandler(ctx context.Context, msg map[string]any) error {
-	taskID, ok := msg["task_id"].(string)
-	if !ok {
-		return errors.New("invalid task_id")
-	}
-	if taskID == "" {
-		return errors.New("task id is empty")
+func (svc *service) updateInvokeResultsHandler(_ context.Context, msg map[string]any) error {
+	invocationID, ok := msg["invocation_id"].(string)
+	if !ok || invocationID == "" {
+		return nil
 	}
 
 	results, _ := msg["results"].(string)
 	errMsg, _ := msg["error"].(string)
 
-	if invocationID, ok := msg["invocation_id"].(string); ok && invocationID != "" {
-		svc.pendingInvokesMu.Lock()
-		ch, waiting := svc.pendingInvokes[invocationID]
-		svc.pendingInvokesMu.Unlock()
-		if waiting {
-			select {
-			case ch <- invokeResult{results: results, err: errMsg}:
-			default:
-			}
+	svc.pendingInvokesMu.Lock()
+	ch, waiting := svc.pendingInvokes[invocationID]
+	svc.pendingInvokesMu.Unlock()
+	if waiting {
+		select {
+		case ch <- invokeResult{results: results, err: errMsg}:
+		default:
 		}
 	}
 
-	t, err := svc.GetTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-
-	t.Results = msg["results"]
-	t.Error = errMsg
-	t.UpdatedAt = time.Now()
-
-	return svc.taskRepo.Update(ctx, t)
+	return nil
 }
 
 func (svc *service) startJobDependentTasks(ctx context.Context, jobTasks []task.Task, completedTaskID string) {
