@@ -871,6 +871,9 @@ func (svc *service) InvokeTask(ctx context.Context, taskID string, inputs []stri
 		return "", err
 	}
 
+	timer := time.NewTimer(invokeTimeout)
+	defer timer.Stop()
+
 	select {
 	case res := <-resultCh:
 		if res.err != "" {
@@ -878,7 +881,7 @@ func (svc *service) InvokeTask(ctx context.Context, taskID string, inputs []stri
 		}
 
 		return res.results, nil
-	case <-time.After(invokeTimeout):
+	case <-timer.C:
 		return "", fmt.Errorf("invocation of task %s timed out after %s", taskID, invokeTimeout)
 	case <-ctx.Done():
 		return "", ctx.Err()
