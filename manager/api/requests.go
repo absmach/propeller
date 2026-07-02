@@ -120,6 +120,23 @@ func (e *entityReq) validate() error {
 	return nil
 }
 
+type invokeReq struct {
+	id     string
+	inputs []string
+}
+
+func (r *invokeReq) validate() error {
+	if r.id == "" {
+		return apiutil.ErrMissingID
+	}
+
+	if _, err := uuid.Parse(r.id); err != nil {
+		return apiutil.ErrInvalidQueryParams
+	}
+
+	return nil
+}
+
 type listEntityStatus uint8
 
 const (

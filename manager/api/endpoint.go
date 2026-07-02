@@ -382,6 +382,26 @@ func stopTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 	}
 }
 
+func invokeTaskEndpoint(svc manager.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		req, ok := request.(invokeReq)
+		if !ok {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, pkgerrors.ErrInvalidData)
+		}
+		if err := req.validate(); err != nil {
+			return messageResponse{}, errors.Join(apiutil.ErrValidation, err)
+		}
+
+		if err := svc.InvokeTask(ctx, req.id, req.inputs); err != nil {
+			return messageResponse{}, err
+		}
+
+		return messageResponse{
+			"invoked": true,
+		}, nil
+	}
+}
+
 func getTaskMetricsEndpoint(svc manager.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req, ok := request.(metricsReq)

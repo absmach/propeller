@@ -827,6 +827,32 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (svc *service) InvokeTask(ctx context.Context, taskID string, inputs []string) error {
+	if svc.shuttingDown.Load() {
+		return errShuttingDown
+	}
+
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	if !t.Latent {
+		return fmt.Errorf("task %s is not a latent task and cannot be invoked", taskID)
+	}
+
+	if t.Broadcast {
+		return svc.publishInvoke(ctx, t, "", inputs)
+	}
+
+	propletID, err := svc.taskPropletRepo.Get(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	return svc.publishInvoke(ctx, t, propletID, inputs)
+}
+
 func (svc *service) StartJob(ctx context.Context, jobID string) error {
 	if svc.shuttingDown.Load() {
 		return errShuttingDown
@@ -1235,6 +1261,8 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 			return svc.updateLivenessHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/results":
 			return svc.updateResultsHandler(ctx, msg)
+		case svc.baseTopic + "/control/proplet/invoke_results":
+			return svc.updateInvokeResultsHandler(ctx, msg)
 		case svc.baseTopic + "/control/proplet/task_metrics":
 			return svc.handleTaskMetrics(ctx, msg)
 		case svc.baseTopic + "/control/proplet/metrics":
@@ -1393,6 +1421,29 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	}
 
 	return nil
+}
+
+func (svc *service) updateInvokeResultsHandler(ctx context.Context, msg map[string]any) error {
+	taskID, ok := msg["task_id"].(string)
+	if !ok {
+		return errors.New("invalid task_id")
+	}
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+
+	t, err := svc.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+
+	t.Results = msg["results"]
+	t.UpdatedAt = time.Now()
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
+		t.Error = errMsg
+	}
+
+	return svc.taskRepo.Update(ctx, t)
 }
 
 func (svc *service) startJobDependentTasks(ctx context.Context, jobTasks []task.Task, completedTaskID string) {
@@ -1849,6 +1900,7 @@ type startPayload struct {
 	CLIArgs           []string                   `json:"cli_args"`
 	Broadcast         bool                       `json:"broadcast"`
 	Daemon            bool                       `json:"daemon"`
+	Latent            bool                       `json:"latent"`
 	Env               map[string]string          `json:"env,omitempty"`
 	Encrypted         bool                       `json:"encrypted"`
 	KBSResourcePath   string                     `json:"kbs_resource_path,omitempty"`
@@ -1871,6 +1923,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 		CLIArgs:           t.CLIArgs,
 		Broadcast:         t.Broadcast,
 		Daemon:            t.Daemon,
+		Latent:            t.Latent,
 		Env:               t.Env,
 		Encrypted:         t.Encrypted,
 		KBSResourcePath:   t.KBSResourcePath,
@@ -1902,6 +1955,18 @@ func (svc *service) publishStop(ctx context.Context, t task.Task, propletID stri
 	topic := svc.baseTopic + "/control/manager/stop"
 
 	return svc.pubsub.Publish(ctx, topic, stopPayload)
+}
+
+func (svc *service) publishInvoke(ctx context.Context, t task.Task, propletID string, inputs []string) error {
+	payload := map[string]any{
+		"id":         t.ID,
+		"broadcast":  t.Broadcast,
+		"proplet_id": propletID,
+		"inputs":     inputs,
+	}
+	topic := svc.baseTopic + "/control/manager/invoke"
+
+	return svc.pubsub.Publish(ctx, topic, payload)
 }
 
 func (svc *service) runOnBeforePropletSelect(ctx context.Context, t task.Task) (plugin.PropletSelectResponse, error) {

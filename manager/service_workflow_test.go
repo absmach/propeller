@@ -316,3 +316,38 @@ func TestStartTask(t *testing.T) {
 		})
 	}
 }
+
+func TestInvokeTask(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invoke non-latent task fails", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		created, err := svc.CreateTask(context.Background(), task.Task{Name: "standard"})
+		require.NoError(t, err)
+
+		err = svc.InvokeTask(context.Background(), created.ID, []string{"1"})
+		require.Error(t, err)
+	})
+
+	t.Run("invoke latent broadcast task succeeds", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		created, err := svc.CreateTask(context.Background(), task.Task{
+			Name:      "latent-fn",
+			Latent:    true,
+			Broadcast: true,
+		})
+		require.NoError(t, err)
+
+		err = svc.InvokeTask(context.Background(), created.ID, []string{"\"world\""})
+		require.NoError(t, err)
+	})
+
+	t.Run("invoke unknown task fails", func(t *testing.T) {
+		t.Parallel()
+		svc := newService(t)
+		err := svc.InvokeTask(context.Background(), "nonexistent", nil)
+		require.Error(t, err)
+	})
+}

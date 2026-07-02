@@ -144,6 +144,15 @@ func (mm *metricsMiddleware) StopTask(ctx context.Context, id string) error {
 	return mm.svc.StopTask(ctx, id)
 }
 
+func (mm *metricsMiddleware) InvokeTask(ctx context.Context, id string, inputs []string) error {
+	defer func(begin time.Time) {
+		mm.counter.With("method", "invoke-task").Add(1)
+		mm.latency.With("method", "invoke-task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mm.svc.InvokeTask(ctx, id, inputs)
+}
+
 func (mm *metricsMiddleware) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (manager.TaskMetricsPage, error) {
 	defer func(begin time.Time) {
 		mm.counter.With("method", "get-task-metrics").Add(1)

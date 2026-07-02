@@ -290,6 +290,26 @@ func (lm *loggingMiddleware) StopTask(ctx context.Context, id string) (err error
 	return lm.svc.StopTask(ctx, id)
 }
 
+func (lm *loggingMiddleware) InvokeTask(ctx context.Context, id string, inputs []string) (err error) {
+	defer func(begin time.Time) {
+		args := []any{
+			slog.String("duration", time.Since(begin).String()),
+			slog.Group("task",
+				slog.String("id", id),
+			),
+		}
+		if err != nil {
+			args = append(args, slog.Any("error", err))
+			lm.logger.Warn("Invoking task failed", args...)
+
+			return
+		}
+		lm.logger.Info("Invoking task completed successfully", args...)
+	}(time.Now())
+
+	return lm.svc.InvokeTask(ctx, id, inputs)
+}
+
 func (lm *loggingMiddleware) GetTaskMetrics(ctx context.Context, taskID string, offset, limit uint64) (resp manager.TaskMetricsPage, err error) {
 	defer func(begin time.Time) {
 		args := []any{
