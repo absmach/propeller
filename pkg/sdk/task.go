@@ -156,6 +156,25 @@ func (sdk *propSDK) StopTask(id string) error {
 	return nil
 }
 
+func (sdk *propSDK) InvokeTask(id string, inputs []string) error {
+	reqURL := fmt.Sprintf("%s/tasks/%s/invoke", sdk.managerURL, id)
+
+	var data []byte
+	if len(inputs) > 0 {
+		body, err := json.Marshal(map[string]any{"inputs": inputs})
+		if err != nil {
+			return err
+		}
+		data = body
+	}
+
+	if _, err := sdk.processRequest(http.MethodPost, reqURL, data, http.StatusOK); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 const jobsEndpoint = "/jobs"
 
 type JobSummary struct {
