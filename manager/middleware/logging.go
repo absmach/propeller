@@ -290,7 +290,7 @@ func (lm *loggingMiddleware) StopTask(ctx context.Context, id string) (err error
 	return lm.svc.StopTask(ctx, id)
 }
 
-func (lm *loggingMiddleware) InvokeTask(ctx context.Context, id string, inputs []string) (err error) {
+func (lm *loggingMiddleware) InvokeTask(ctx context.Context, id string, inputs []string) (result string, err error) {
 	defer func(begin time.Time) {
 		args := []any{
 			slog.String("duration", time.Since(begin).String()),

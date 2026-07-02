@@ -1818,20 +1818,29 @@ func (_c *MockService_StartTask_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // InvokeTask provides a mock function for the type MockService
-func (_mock *MockService) InvokeTask(ctx context.Context, taskID string, inputs []string) error {
+func (_mock *MockService) InvokeTask(ctx context.Context, taskID string, inputs []string) (string, error) {
 	ret := _mock.Called(ctx, taskID, inputs)
 
 	if len(ret) == 0 {
 		panic("no return value specified for InvokeTask")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) error); ok {
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) (string, error)); ok {
+		return returnFunc(ctx, taskID, inputs)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) string); ok {
 		r0 = returnFunc(ctx, taskID, inputs)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(string)
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string) error); ok {
+		r1 = returnFunc(ctx, taskID, inputs)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockService_InvokeTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'InvokeTask'
@@ -1870,12 +1879,12 @@ func (_c *MockService_InvokeTask_Call) Run(run func(ctx context.Context, taskID 
 	return _c
 }
 
-func (_c *MockService_InvokeTask_Call) Return(err error) *MockService_InvokeTask_Call {
-	_c.Call.Return(err)
+func (_c *MockService_InvokeTask_Call) Return(s string, err error) *MockService_InvokeTask_Call {
+	_c.Call.Return(s, err)
 	return _c
 }
 
-func (_c *MockService_InvokeTask_Call) RunAndReturn(run func(ctx context.Context, taskID string, inputs []string) error) *MockService_InvokeTask_Call {
+func (_c *MockService_InvokeTask_Call) RunAndReturn(run func(ctx context.Context, taskID string, inputs []string) (string, error)) *MockService_InvokeTask_Call {
 	_c.Call.Return(run)
 	return _c
 }

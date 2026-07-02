@@ -76,7 +76,7 @@ type SDK interface {
 	//  fmt.Println(task)
 	StopTask(id string) error
 
-	InvokeTask(id string, inputs []string) error
+	InvokeTask(id string, inputs []string) (string, error)
 
 	// CreateJob creates a new job with multiple tasks.
 	//

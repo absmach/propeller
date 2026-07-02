@@ -182,12 +182,13 @@ Examples:
 				return
 			}
 
-			if err := psdk.InvokeTask(args[0], args[1:]); err != nil {
+			results, err := psdk.InvokeTask(args[0], args[1:])
+			if err != nil {
 				logErrorCmd(*cmd, err)
 
 				return
 			}
-			logOKCmd(*cmd)
+			logJSONCmd(*cmd, results)
 		},
 	}
 

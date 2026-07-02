@@ -84,14 +84,14 @@ func (pm *pluginMiddleware) StartTask(ctx context.Context, taskID string) error 
 	return nil
 }
 
-func (pm *pluginMiddleware) InvokeTask(ctx context.Context, taskID string, inputs []string) error {
+func (pm *pluginMiddleware) InvokeTask(ctx context.Context, taskID string, inputs []string) (string, error) {
 	t, err := pm.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if err := pm.authorize(ctx, plugin.ActionInvoke, plugin.NewTaskInfo(t)); err != nil {
-		return err
+		return "", err
 	}
 
 	return pm.Service.InvokeTask(ctx, taskID, inputs)

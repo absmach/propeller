@@ -149,7 +149,7 @@ func (tm *tracing) StopTask(ctx context.Context, id string) (err error) {
 	return tm.svc.StopTask(ctx, id)
 }
 
-func (tm *tracing) InvokeTask(ctx context.Context, id string, inputs []string) (err error) {
+func (tm *tracing) InvokeTask(ctx context.Context, id string, inputs []string) (string, error) {
 	ctx, span := tm.tracer.Start(ctx, "invoke-task", trace.WithAttributes(
 		attribute.String("id", id),
 	))

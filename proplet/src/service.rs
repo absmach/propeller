@@ -1113,6 +1113,7 @@ impl PropletService {
         let qos = self.config.qos();
         let proplet_id = self.config.client_id.clone();
         let task_id = req.id.clone();
+        let invocation_id = req.invocation_id.clone().unwrap_or_default();
         let inputs = req.inputs.clone();
         let env = req.env.unwrap_or_default();
         let metrics = self.metrics.clone();
@@ -1141,8 +1142,9 @@ impl PropletService {
                     }
                 };
 
-                let result_msg = ResultMessage {
+                let result_msg = InvokeResultMessage {
                     task_id: task_id.clone(),
+                    invocation_id,
                     proplet_id,
                     results,
                     error,

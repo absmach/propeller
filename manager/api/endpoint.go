@@ -392,12 +392,14 @@ func invokeTaskEndpoint(svc manager.Service) endpoint.Endpoint {
 			return messageResponse{}, errors.Join(apiutil.ErrValidation, err)
 		}
 
-		if err := svc.InvokeTask(ctx, req.id, req.inputs); err != nil {
+		results, err := svc.InvokeTask(ctx, req.id, req.inputs)
+		if err != nil {
 			return messageResponse{}, err
 		}
 
 		return messageResponse{
 			"invoked": true,
+			"results": results,
 		}, nil
 	}
 }

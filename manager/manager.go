@@ -34,7 +34,7 @@ type Service interface {
 	DeleteTask(ctx context.Context, taskID string) error
 	StartTask(ctx context.Context, taskID string) error
 	StopTask(ctx context.Context, taskID string) error
-	InvokeTask(ctx context.Context, taskID string, inputs []string) error
+	InvokeTask(ctx context.Context, taskID string, inputs []string) (string, error)
 
 	GetTaskResults(ctx context.Context, taskID string) (any, error)
 	GetParentResults(ctx context.Context, taskID string) (map[string]any, error)

@@ -113,6 +113,8 @@ impl StartRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvokeRequest {
     pub id: String,
+    #[serde(default)]
+    pub invocation_id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub inputs: Vec<String>,
     #[serde(default)]
@@ -205,6 +207,15 @@ pub struct DiscoveryMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultMessage {
     pub task_id: String,
+    pub proplet_id: String,
+    pub results: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvokeResultMessage {
+    pub task_id: String,
+    pub invocation_id: String,
     pub proplet_id: String,
     pub results: String,
     pub error: Option<String>,
