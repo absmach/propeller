@@ -8,14 +8,17 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	smqerrors "github.com/absmach/magistrala/pkg/errors"
 	"github.com/absmach/propeller/manager"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	mqttmocks "github.com/absmach/propeller/pkg/mqtt/mocks"
+	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/scheduler"
 	"github.com/absmach/propeller/pkg/storage"
 	"github.com/absmach/propeller/pkg/task"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -330,7 +333,29 @@ func TestInvokeTask(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("invoke latent broadcast task succeeds", func(t *testing.T) {
+	t.Run("invoke broadcast latent task load-balances to an active proplet", func(t *testing.T) {
+		t.Parallel()
+		svc, repos := newServiceWithRepos(t)
+		ctx := context.Background()
+
+		require.NoError(t, repos.Proplets.Create(ctx, proplet.Proplet{
+			ID:           uuid.NewString(),
+			Name:         uuid.NewString(),
+			AliveHistory: []time.Time{time.Now()},
+		}))
+
+		created, err := svc.CreateTask(ctx, task.Task{
+			Name:      "latent-fn",
+			Latent:    true,
+			Broadcast: true,
+		})
+		require.NoError(t, err)
+
+		err = svc.InvokeTask(ctx, created.ID, []string{"\"world\""})
+		require.NoError(t, err)
+	})
+
+	t.Run("invoke broadcast latent task with no proplets fails", func(t *testing.T) {
 		t.Parallel()
 		svc := newService(t)
 		created, err := svc.CreateTask(context.Background(), task.Task{
@@ -341,7 +366,7 @@ func TestInvokeTask(t *testing.T) {
 		require.NoError(t, err)
 
 		err = svc.InvokeTask(context.Background(), created.ID, []string{"\"world\""})
-		require.NoError(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("invoke unknown task fails", func(t *testing.T) {

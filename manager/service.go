@@ -841,16 +841,12 @@ func (svc *service) InvokeTask(ctx context.Context, taskID string, inputs []stri
 		return fmt.Errorf("task %s is not a latent task and cannot be invoked", taskID)
 	}
 
-	if t.Broadcast {
-		return svc.publishInvoke(ctx, t, "", inputs)
-	}
-
-	propletID, err := svc.taskPropletRepo.Get(ctx, taskID)
+	propletID, err := svc.invocationProplet(ctx, t)
 	if err != nil {
 		return err
 	}
 
-	return svc.publishInvoke(ctx, t, propletID, inputs)
+	return svc.publishInvoke(ctx, taskID, propletID, inputs)
 }
 
 func (svc *service) StartJob(ctx context.Context, jobID string) error {
@@ -1957,10 +1953,23 @@ func (svc *service) publishStop(ctx context.Context, t task.Task, propletID stri
 	return svc.pubsub.Publish(ctx, topic, stopPayload)
 }
 
-func (svc *service) publishInvoke(ctx context.Context, t task.Task, propletID string, inputs []string) error {
+func (svc *service) invocationProplet(ctx context.Context, t task.Task) (string, error) {
+	if t.Broadcast {
+		p, err := svc.SelectProplet(ctx, t)
+		if err != nil {
+			return "", err
+		}
+
+		return p.ID, nil
+	}
+
+	return svc.taskPropletRepo.Get(ctx, t.ID)
+}
+
+func (svc *service) publishInvoke(ctx context.Context, taskID, propletID string, inputs []string) error {
 	payload := map[string]any{
-		"id":         t.ID,
-		"broadcast":  t.Broadcast,
+		"id":         taskID,
+		"broadcast":  false,
 		"proplet_id": propletID,
 		"inputs":     inputs,
 	}
