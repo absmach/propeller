@@ -57,7 +57,11 @@ services:
       # MANAGER_MQTT_TLS_CLIENT_KEY: ${MANAGER_MQTT_TLS_CLIENT_KEY}
       # MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY: ${MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY}
     volumes:
-      - ./config.toml:/config.toml
+      - type: bind
+        source: ./config.toml
+        target: /config.toml
+        bind:
+          create_host_path: false
       # MQTT TLS certs (uncomment and change source paths when using ssl://):
       # - type: bind
       #   source: ./ssl/certs/ca.crt
@@ -141,7 +145,11 @@ services:
       # PROPLET_HTTP_TLS_CA_CERT: ${PROPLET_HTTP_TLS_CA_CERT}
       # PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY: ${PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY}
     volumes:
-      - ./config.toml:/home/proplet/config.toml
+      - type: bind
+        source: ./config.toml
+        target: /home/proplet/config.toml
+        bind:
+          create_host_path: false
       # MQTT TLS certs (uncomment and change source paths when using ssl://):
       # - type: bind
       #   source: ./ssl/certs/ca.crt
@@ -209,7 +217,11 @@ services:
       # PROXY_MQTT_TLS_CLIENT_KEY: ${PROXY_MQTT_TLS_CLIENT_KEY}
       # PROXY_MQTT_TLS_INSECURE_SKIP_VERIFY: ${PROXY_MQTT_TLS_INSECURE_SKIP_VERIFY}
     volumes:
-      - ./config.toml:/config.toml
+      - type: bind
+        source: ./config.toml
+        target: /config.toml
+        bind:
+          create_host_path: false
       # MQTT TLS certs (uncomment and change source paths when using ssl://):
       # - type: bind
       #   source: ./ssl/certs/ca.crt
