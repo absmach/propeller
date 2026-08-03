@@ -13,13 +13,13 @@ webpki-roots = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
-wasmtime = { version = "46.0.1", features = ["component-model", "async", "wave"] }
-wasmtime-wasi = "46.0.1"
-wasmtime-wasi-http = "46.0.1"
+wasmtime = { version = "47.0.2", features = ["component-model", "async", "wave"] }
+wasmtime-wasi = "47.0.2"
+wasmtime-wasi-http = "47.0.2"
 hyper = { version = "1.10", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1.23", features = ["v4", "serde"] }
-which = "7.0"
+which = "8.0"
 thiserror = "2.0"
 anyhow = "1.0"
 tracing = "0.1"
@@ -36,7 +36,7 @@ prometheus = "0.14"
 http-body-util = "0.1"
 config = "0.15.25"
 async-trait = "0.1"
-base64 = "0.22.1"
+base64 = "0.23.0"
 url = "2.5"
 sysinfo = "0.39.5"
 chrono = { version = "0.4", features = ["serde"] }
@@ -70,10 +70,10 @@ futures-util = { version = "0.3" }
 elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", rev = "f25abaf2448a4d424061e6355e8a915e4b5c6cf2", default-features = false, features = [
   "amd-sev",
 ] }
-wasm-wave = "0.251.0"
+wasm-wave = "0.252.0"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
-wasmtime-wasi-usb = "46.0.0"
+wasmtime-wasi-usb = "47.0.0"
 
 [dev-dependencies]
 wiremock = "0.6"
