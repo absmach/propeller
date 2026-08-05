@@ -1,6 +1,7 @@
 mod config;
 mod hal;
 mod hal_component;
+mod jsonrpc;
 mod metrics;
 mod monitoring;
 mod mqtt;
