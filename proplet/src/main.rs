@@ -7,6 +7,7 @@ mod monitoring;
 mod mqtt;
 mod plugin;
 mod redact;
+mod rpc;
 mod runtime;
 mod service;
 mod task_handler;
@@ -194,6 +195,33 @@ async fn main() -> Result<()> {
         None
     };
 
+    let mut rpc_state_handle = None;
+    let rpc_shutdown = if config.rpc_enabled {
+        let state = Arc::new(rpc::RpcState::new(
+            runtime.clone(),
+            config.entity_id.clone(),
+            config.rpc_token.clone(),
+        ));
+        if state.token.is_none() {
+            tracing::warn!(
+                "RPC server enabled without PROPLET_RPC_TOKEN; \
+                 every caller that can reach {}:{} may invoke deployed functions",
+                config.rpc_bind_address,
+                config.rpc_port
+            );
+        }
+        let rpc_port = config.rpc_port;
+        let bind_address = config.rpc_bind_address.clone();
+        let (tx, rx) = oneshot::channel::<()>();
+        rpc_state_handle = Some(state.clone());
+        tokio::spawn(async move {
+            rpc::serve_rpc(rpc_port, bind_address, state, rx).await;
+        });
+        Some(tx)
+    } else {
+        None
+    };
+
     let service = if config.tee_enabled {
         match TeeWasmRuntime::new(&config).await {
             Ok(tee_runtime) => {
@@ -225,6 +253,16 @@ async fn main() -> Result<()> {
         ))
     };
 
+    let service = match rpc_state_handle {
+        Some(state) => {
+            let mut owned = Arc::try_unwrap(service)
+                .map_err(|_| anyhow::anyhow!("proplet service was already shared"))?;
+            owned.set_rpc_state(state);
+            Arc::new(owned)
+        }
+        None => service,
+    };
+
     let shutdown_handle = tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
@@ -248,6 +286,10 @@ async fn main() -> Result<()> {
     }
 
     if let Some(tx) = telemetry_shutdown {
+        let _ = tx.send(());
+    }
+
+    if let Some(tx) = rpc_shutdown {
         let _ = tx.send(());
     }
 

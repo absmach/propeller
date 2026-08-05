@@ -65,6 +65,7 @@ pub struct PropletService {
     http_client: HttpClient,
     plugin_registry: Option<Arc<PluginRegistry>>,
     metrics: Arc<PropletMetrics>,
+    rpc_state: Option<Arc<crate::rpc::RpcState>>,
 }
 
 impl PropletService {
@@ -96,6 +97,7 @@ impl PropletService {
             http_client,
             plugin_registry,
             metrics,
+            rpc_state: None,
         };
 
         service.start_chunk_expiry_task();
@@ -132,6 +134,7 @@ impl PropletService {
             http_client,
             plugin_registry,
             metrics,
+            rpc_state: None,
         };
 
         service.start_chunk_expiry_task();
@@ -142,6 +145,10 @@ impl PropletService {
     #[allow(dead_code)]
     pub fn set_tee_runtime(&mut self, tee_runtime: Arc<dyn Runtime>) {
         self.tee_runtime = Some(tee_runtime);
+    }
+
+    pub fn set_rpc_state(&mut self, rpc_state: Arc<crate::rpc::RpcState>) {
+        self.rpc_state = Some(rpc_state);
     }
 
     fn start_chunk_expiry_task(&self) {
@@ -447,6 +454,26 @@ impl PropletService {
             );
         }
 
+        if let Some(method) = msg.envelope_method() {
+            let expected = if msg.topic.contains("control/manager/start") {
+                Some(crate::jsonrpc::METHOD_TASK_START)
+            } else if msg.topic.contains("control/manager/stop") {
+                Some(crate::jsonrpc::METHOD_TASK_STOP)
+            } else {
+                None
+            };
+
+            if let Some(expected) = expected {
+                if method != expected {
+                    warn!(
+                        "Ignoring message on '{}': method '{}' does not match '{}'",
+                        msg.topic, method, expected
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         if msg.topic.contains("control/manager/start") {
             self.handle_start_command(msg).await
         } else if msg.topic.contains("control/manager/invoke") {
@@ -702,6 +729,19 @@ impl PropletService {
             env.insert(k, v);
         }
 
+        if let Some(ref rpc_state) = self.rpc_state {
+            rpc_state
+                .register(
+                    task_name.clone(),
+                    crate::rpc::DeployedFunction {
+                        task_id: task_id.clone(),
+                        wasm_binary: Arc::new(wasm_binary.clone()),
+                    },
+                )
+                .await;
+            info!("Registered task {} as RPC method '{}'", task_id, task_name);
+        }
+
         if req.latent {
             let mut latent_env = env;
             latent_env
@@ -725,8 +765,13 @@ impl PropletService {
                 self.running_tasks.lock().await.remove(&task_id);
                 self.metrics.tasks_failed.inc();
                 self.metrics.tasks_running.dec();
-                self.publish_result(&task_id, Vec::new(), Some(e.to_string()))
-                    .await?;
+                self.publish_result_correlated(
+                    &task_id,
+                    Vec::new(),
+                    Some(e.to_string()),
+                    correlation.clone(),
+                )
+                .await?;
 
                 return Err(e);
             }
@@ -1213,6 +1258,10 @@ impl PropletService {
         self.runtime.stop_app(req.id.clone()).await?;
         self.monitor.stop_monitoring(&req.id).await.ok();
 
+        if let Some(ref rpc_state) = self.rpc_state {
+            rpc_state.deregister(&req.id).await;
+        }
+
         if self.running_tasks.lock().await.remove(&req.id).is_some() {
             self.metrics.tasks_running.dec();
         }
@@ -1331,16 +1380,6 @@ impl PropletService {
         }
 
         Ok(None)
-    }
-
-    async fn publish_result(
-        &self,
-        task_id: &str,
-        results: Vec<u8>,
-        error: Option<String>,
-    ) -> Result<()> {
-        self.publish_result_correlated(task_id, results, error, None)
-            .await
     }
 
     async fn publish_result_correlated(

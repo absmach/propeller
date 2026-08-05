@@ -158,6 +158,12 @@ impl MqttMessage {
 
         crate::jsonrpc::unwrap(value).id
     }
+
+    pub fn envelope_method(&self) -> Option<String> {
+        let value: serde_json::Value = serde_json::from_slice(&self.payload).ok()?;
+
+        crate::jsonrpc::unwrap(value).method
+    }
 }
 
 pub async fn process_mqtt_events(mut eventloop: EventLoop, tx: mpsc::Sender<MqttMessage>) {
