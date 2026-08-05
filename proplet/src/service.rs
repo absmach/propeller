@@ -500,11 +500,18 @@ impl PropletService {
             encrypted: req.encrypted,
         };
 
+        let correlation = msg.correlation_id();
+
         if let Some(ref registry) = self.plugin_registry {
             if let Some(reason) = registry.authorize(&plugin_task_info)? {
                 error!("Plugin denied task {}: {}", req.id, reason);
-                self.publish_result(&req.id, Vec::new(), Some(reason.clone()))
-                    .await?;
+                self.publish_result_correlated(
+                    &req.id,
+                    Vec::new(),
+                    Some(reason.clone()),
+                    correlation.clone(),
+                )
+                .await?;
                 return Err(anyhow::anyhow!("task denied by plugin: {}", reason));
             }
         }
@@ -521,10 +528,11 @@ impl PropletService {
                 tee_runtime.clone()
             } else {
                 error!("TEE runtime not available but encrypted workload requested");
-                self.publish_result(
+                self.publish_result_correlated(
                     &req.id,
                     Vec::new(),
                     Some("TEE runtime not available".to_string()),
+                    correlation.clone(),
                 )
                 .await?;
                 return Err(anyhow::anyhow!("TEE runtime not available"));
@@ -562,8 +570,13 @@ impl PropletService {
                     self.running_tasks.lock().await.remove(&req.id);
                     self.metrics.tasks_failed.inc();
                     self.metrics.tasks_running.dec();
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result_correlated(
+                        &req.id,
+                        Vec::new(),
+                        Some(e.to_string()),
+                        correlation.clone(),
+                    )
+                    .await?;
                     return Err(e.into());
                 }
             }
@@ -583,8 +596,13 @@ impl PropletService {
                         self.running_tasks.lock().await.remove(&req.id);
                         self.metrics.tasks_failed.inc();
                         self.metrics.tasks_running.dec();
-                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                            .await?;
+                        self.publish_result_correlated(
+                            &req.id,
+                            Vec::new(),
+                            Some(e.to_string()),
+                            correlation.clone(),
+                        )
+                        .await?;
                         return Err(e);
                     }
                 }
@@ -598,8 +616,13 @@ impl PropletService {
                     self.running_tasks.lock().await.remove(&req.id);
                     self.metrics.tasks_failed.inc();
                     self.metrics.tasks_running.dec();
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result_correlated(
+                        &req.id,
+                        Vec::new(),
+                        Some(e.to_string()),
+                        correlation.clone(),
+                    )
+                    .await?;
                     return Err(e);
                 }
 
@@ -613,8 +636,13 @@ impl PropletService {
                         self.running_tasks.lock().await.remove(&req.id);
                         self.metrics.tasks_failed.inc();
                         self.metrics.tasks_running.dec();
-                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                            .await?;
+                        self.publish_result_correlated(
+                            &req.id,
+                            Vec::new(),
+                            Some(e.to_string()),
+                            correlation.clone(),
+                        )
+                        .await?;
                         return Err(e);
                     }
                 }
@@ -625,8 +653,13 @@ impl PropletService {
             self.running_tasks.lock().await.remove(&req.id);
             self.metrics.tasks_failed.inc();
             self.metrics.tasks_running.dec();
-            self.publish_result(&req.id, Vec::new(), Some(err.to_string()))
-                .await?;
+            self.publish_result_correlated(
+                &req.id,
+                Vec::new(),
+                Some(err.to_string()),
+                correlation.clone(),
+            )
+            .await?;
             return Err(err);
         };
 
@@ -1306,6 +1339,17 @@ impl PropletService {
         results: Vec<u8>,
         error: Option<String>,
     ) -> Result<()> {
+        self.publish_result_correlated(task_id, results, error, None)
+            .await
+    }
+
+    async fn publish_result_correlated(
+        &self,
+        task_id: &str,
+        results: Vec<u8>,
+        error: Option<String>,
+        correlation: Option<serde_json::Value>,
+    ) -> Result<()> {
         let proplet_id = self.config.entity_id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
 
@@ -1313,7 +1357,7 @@ impl PropletService {
             task_id: task_id.to_string(),
             proplet_id,
             results: result_str,
-            error,
+            error: error.clone(),
         };
 
         let topic = build_topic(
@@ -1322,9 +1366,29 @@ impl PropletService {
             "control/proplet/results",
         );
 
-        self.pubsub
-            .publish(&topic, &result_msg, self.config.qos())
-            .await?;
+        match correlation {
+            Some(id) => {
+                let response = match error {
+                    Some(message) => crate::jsonrpc::Response::failure(
+                        Some(id),
+                        crate::jsonrpc::Error::internal(message),
+                    ),
+                    None => crate::jsonrpc::Response::success(
+                        Some(id),
+                        serde_json::to_value(&result_msg)?,
+                    ),
+                };
+                self.pubsub
+                    .publish(&topic, &response, self.config.qos())
+                    .await?;
+            }
+            None => {
+                self.pubsub
+                    .publish(&topic, &result_msg, self.config.qos())
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 
