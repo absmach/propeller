@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/absmach/propeller/manager/mocks"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/jsonrpc"
 	"github.com/absmach/propeller/pkg/task"
@@ -46,7 +45,9 @@ func TestRPCEndpoint(t *testing.T) {
 		desc        string
 		contentType string
 		body        string
-		setup       func(svc *mocks.MockService)
+		svcMethod   string
+		svcArgs     []any
+		svcReturns  []any
 		status      int
 		want        string
 	}{
@@ -54,27 +55,26 @@ func TestRPCEndpoint(t *testing.T) {
 			desc:        "a call returns its result",
 			contentType: "application/json",
 			body:        `{"jsonrpc":"2.0","method":"task.start","params":{"id":"` + taskID + `"},"id":1}`,
-			setup: func(svc *mocks.MockService) {
-				svc.On("StartTask", mock.Anything, taskID).Return(nil)
-			},
-			status: http.StatusOK,
-			want:   `{"jsonrpc":"2.0","result":{"ok":true},"id":1}`,
+			svcMethod:   "StartTask",
+			svcArgs:     []any{mock.Anything, taskID},
+			svcReturns:  []any{nil},
+			status:      http.StatusOK,
+			want:        `{"jsonrpc":"2.0","result":{"ok":true},"id":1}`,
 		},
 		{
 			desc:        "a service error becomes a jsonrpc error with a 200 status",
 			contentType: "application/json",
 			body:        `{"jsonrpc":"2.0","method":"task.get","params":{"id":"` + taskID + `"},"id":2}`,
-			setup: func(svc *mocks.MockService) {
-				svc.On("GetTask", mock.Anything, taskID).Return(task.Task{}, pkgerrors.ErrNotFound)
-			},
-			status: http.StatusOK,
-			want:   `{"jsonrpc":"2.0","error":{"code":-32001,"message":"not found"},"id":2}`,
+			svcMethod:   "GetTask",
+			svcArgs:     []any{mock.Anything, taskID},
+			svcReturns:  []any{task.Task{}, pkgerrors.ErrNotFound},
+			status:      http.StatusOK,
+			want:        `{"jsonrpc":"2.0","error":{"code":-32001,"message":"not found"},"id":2}`,
 		},
 		{
 			desc:        "malformed json returns a parse error",
 			contentType: "application/json",
 			body:        `{"jsonrpc":"2.0",`,
-			setup:       func(_ *mocks.MockService) {},
 			status:      http.StatusOK,
 			want:        `{"jsonrpc":"2.0","error":{"code":-32700,"message":"Parse error"},"id":null}`,
 		},
@@ -82,7 +82,6 @@ func TestRPCEndpoint(t *testing.T) {
 			desc:        "an unknown method is reported",
 			contentType: "application/json",
 			body:        `{"jsonrpc":"2.0","method":"task.explode","id":3}`,
-			setup:       func(_ *mocks.MockService) {},
 			status:      http.StatusOK,
 			want:        `{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found","data":"task.explode"},"id":3}`,
 		},
@@ -94,7 +93,9 @@ func TestRPCEndpoint(t *testing.T) {
 
 			ts, svc := newServer(t)
 			defer ts.Close()
-			tc.setup(svc)
+			if tc.svcMethod != "" {
+				svc.On(tc.svcMethod, tc.svcArgs...).Return(tc.svcReturns...)
+			}
 
 			status, body := postRPC(t, ts.URL, tc.contentType, tc.body)
 			assert.Equal(t, tc.status, status)
