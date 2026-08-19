@@ -20,6 +20,7 @@ import (
 	"github.com/absmach/propeller/pkg/dag"
 	pkgerrors "github.com/absmach/propeller/pkg/errors"
 	"github.com/absmach/propeller/pkg/job"
+	"github.com/absmach/propeller/pkg/jsonrpc"
 	"github.com/absmach/propeller/pkg/maps"
 	"github.com/absmach/propeller/pkg/mqtt"
 	"github.com/absmach/propeller/pkg/plugin"
@@ -73,6 +74,8 @@ type service struct {
 	wg               sync.WaitGroup
 	pendingInvokes   map[string]chan invokeResult
 	pendingInvokesMu sync.Mutex
+
+	jsonrpcControlPlane bool
 }
 
 type invokeResult struct {
@@ -86,6 +89,7 @@ func NewService(
 	repos *storage.Repositories,
 	s scheduler.Scheduler, pubsub mqtt.PubSub,
 	tenantID, channelID, coordinatorURL string, logger *slog.Logger, plugins plugin.Registry,
+	opts ...Option,
 ) (Service, CronScheduler, *WorkflowCoordinator) {
 	var httpClient *http.Client
 	if coordinatorURL != "" {
@@ -112,6 +116,10 @@ func NewService(
 		plugins:          plugins,
 		pendingInvokes:   make(map[string]chan invokeResult),
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+
 	coordinator := NewWorkflowCoordinator(repos.Tasks, svc, logger)
 	svc.coordinator = coordinator
 
@@ -809,7 +817,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 
 	if t.Broadcast {
 		topic := svc.baseTopic + "/control/manager/stop"
-		if err := svc.pubsub.Publish(ctx, topic, stopPayload); err != nil {
+		if err := svc.publishControl(ctx, topic, jsonrpc.MethodTaskStop, t.ID, stopPayload); err != nil {
 			return err
 		}
 
@@ -828,7 +836,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 	stopPayload["proplet_id"] = propletID
 
 	topic := svc.baseTopic + "/control/manager/stop"
-	if err := svc.pubsub.Publish(ctx, topic, stopPayload); err != nil {
+	if err := svc.publishControl(ctx, topic, jsonrpc.MethodTaskStop, t.ID, stopPayload); err != nil {
 		return err
 	}
 
@@ -1094,7 +1102,7 @@ func (svc *service) RecoverInterruptedTasks(ctx context.Context) error {
 					"id":         t.ID,
 					"proplet_id": propletID,
 				}
-				if err := svc.pubsub.Publish(ctx, stopTopic, stopPayload); err != nil {
+				if err := svc.publishControl(ctx, stopTopic, jsonrpc.MethodTaskStop, t.ID, stopPayload); err != nil {
 					svc.logger.Warn("failed to send stop command for interrupted task", slog.String("task_id", t.ID), slog.Any("error", err))
 				} else {
 					// Give proplets a small window to observe the stop signal before marking failed.
@@ -1365,6 +1373,8 @@ func (svc *service) stopJobTasks(ctx context.Context, tasks []task.Task) {
 
 func (svc *service) handle(ctx context.Context) func(topic string, msg map[string]any) error {
 	return func(topic string, msg map[string]any) error {
+		msg, _ = decodeControlMessage(msg)
+
 		switch topic {
 		case svc.baseTopic + "/control/proplet/create":
 			if err := svc.createPropletHandler(ctx, msg); err != nil {
@@ -2069,7 +2079,7 @@ func (svc *service) publishStart(ctx context.Context, t task.Task, propletID str
 
 	topic := svc.baseTopic + "/control/manager/start"
 
-	return svc.pubsub.Publish(ctx, topic, payload)
+	return svc.publishControl(ctx, topic, jsonrpc.MethodTaskStart, t.ID, payload)
 }
 
 func (svc *service) publishStop(ctx context.Context, t task.Task, propletID string) error {
@@ -2080,7 +2090,7 @@ func (svc *service) publishStop(ctx context.Context, t task.Task, propletID stri
 	}
 	topic := svc.baseTopic + "/control/manager/stop"
 
-	return svc.pubsub.Publish(ctx, topic, stopPayload)
+	return svc.publishControl(ctx, topic, jsonrpc.MethodTaskStop, t.ID, stopPayload)
 }
 
 func (svc *service) invocationProplet(ctx context.Context, t task.Task) (string, error) {
@@ -2349,7 +2359,7 @@ func (svc *service) signalStopToActiveTasks(ctx context.Context) error {
 			"id":         t.ID,
 			"proplet_id": propletID,
 		}
-		if err := svc.pubsub.Publish(ctx, stopTopic, stopPayload); err != nil {
+		if err := svc.publishControl(ctx, stopTopic, jsonrpc.MethodTaskStop, t.ID, stopPayload); err != nil {
 			svc.logger.Warn("failed to send stop command for active task", slog.String("task_id", t.ID), slog.Any("error", err))
 
 			continue

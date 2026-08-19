@@ -42,8 +42,9 @@ func main() {
 	workflowsCmd := cli.NewWorkflowsCmd()
 	flCmd := cli.NewFLCmd()
 	healthCmd := cli.NewHealthCmd()
+	rpcCmd := cli.NewRPCCmd()
 
-	rootCmd.AddCommand(tasksCmd, provisionCmd, propletsCmd, jobsCmd, workflowsCmd, flCmd, healthCmd)
+	rootCmd.AddCommand(tasksCmd, provisionCmd, propletsCmd, jobsCmd, workflowsCmd, flCmd, healthCmd, rpcCmd)
 
 	rootCmd.PersistentFlags().StringVarP(
 		&managerURL,
