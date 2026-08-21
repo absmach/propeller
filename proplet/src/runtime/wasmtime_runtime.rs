@@ -1,6 +1,7 @@
 use super::{Runtime, RuntimeContext, StartConfig};
 use crate::hal::PropletHal;
 use crate::hal_component;
+use crate::wasi_security::WasiSecurity;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use elastic_tee_hal::StorageInterface;
@@ -37,6 +38,79 @@ use wasmtime_wasi_http::p2::{
 };
 use wasmtime_wasi_http::WasiHttpCtx;
 use wasmtime_wasi_usb::{WasiUsbCtx, WasiUsbCtxView, WasiUsbView};
+
+/// Apply the task's environment, filesystem preopens and network policy to a fresh [`WasiCtxBuilder`].
+fn configure_wasi<'a>(
+    builder: &mut WasiCtxBuilder,
+    task_id: &str,
+    env: impl IntoIterator<Item = (&'a str, &'a str)>,
+    global_preopens: &[String],
+    policy: Option<&WasiSecurity>,
+    inherit_stdio: bool,
+) -> Result<()> {
+    if inherit_stdio {
+        builder.inherit_stdio();
+    }
+
+    for (key, value) in env {
+        builder.env(key, value);
+    }
+
+    let Some(policy) = policy else {
+        for dir in global_preopens {
+            if let Err(e) = builder.preopened_dir(dir, dir, DirPerms::all(), FilePerms::all()) {
+                warn!("Task {task_id}: failed to preopen '{dir}': {e}");
+            }
+        }
+
+        return Ok(());
+    };
+
+    // Policy env wins over the task env, so it is applied last.
+    if let Some(policy_env) = &policy.env {
+        for (key, value) in policy_env {
+            builder.env(key, value);
+        }
+    }
+
+    if let Some(arguments) = &policy.arguments {
+        builder.args(arguments);
+    }
+
+    // A preopen the policy asked for but that could not be granted is a silent
+    // downgrade of the workload's capabilities, so fail the task instead.
+    for (host, guest) in &policy.storage_readonly {
+        builder
+            .preopened_dir(host, guest, DirPerms::READ, FilePerms::READ)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Task {task_id}: failed to preopen read-only '{host}' as '{guest}': {e}"
+                )
+            })?;
+    }
+
+    for (host, guest) in &policy.storage_mount {
+        builder
+            .preopened_dir(host, guest, DirPerms::all(), FilePerms::all())
+            .map_err(|e| {
+                anyhow::anyhow!("Task {task_id}: failed to mount '{host}' as '{guest}': {e}")
+            })?;
+    }
+
+    // The socket check runs on every socket operation and cannot move its capture into
+    // the future it returns, so share the policy instead of deep-cloning it.
+    let check_policy = Arc::new(policy.clone());
+    builder.socket_addr_check(move |addr, use_| {
+        let policy = check_policy.clone();
+
+        Box::pin(async move { policy.allows_socket(addr, use_) })
+    });
+    builder.allow_tcp(policy.uses_tcp());
+    builder.allow_udp(policy.uses_udp());
+    builder.allow_ip_name_lookup(policy.allow_ip_name_lookup);
+
+    Ok(())
+}
 
 fn is_wasm_component(bytes: &[u8]) -> bool {
     bytes.len() >= 8 && bytes[0..4] == [0x00, 0x61, 0x73, 0x6d] && bytes[4] == 0x0d
@@ -750,18 +824,26 @@ impl WasmtimeRuntime {
 
         info!("Module compiled successfully for task: {}", config.id);
 
+        let policy = config.wasi_security.clone();
+
+        // WASI preview1 has no sockets, so network rules cannot be honoured here.
+        // Nothing is granted, which is the safe direction, but the guest will simply have no network at all.
+        if policy.as_ref().is_some_and(|p| p.has_network_rules()) {
+            warn!(
+                "Task {}: WASI security policy declares network rules, but core modules run on WASI preview1 which has no socket support. No network access will be granted",
+                config.id
+            );
+        }
+
         let mut wasi_builder = wasmtime_wasi::WasiCtxBuilder::new();
-        wasi_builder.inherit_stdio();
-
-        for (key, value) in &config.env {
-            wasi_builder.env(key, value);
-        }
-
-        for dir in &self.preopened_dirs {
-            let _ = wasi_builder
-                .preopened_dir(dir, dir, DirPerms::all(), FilePerms::all())
-                .map_err(|e| format!("Failed to preopen directory '{dir}': {e}"));
-        }
+        configure_wasi(
+            &mut wasi_builder,
+            &config.id,
+            config.env.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+            &self.preopened_dirs,
+            policy.as_ref(),
+            true,
+        )?;
 
         let wasi = wasi_builder.build_p1();
 
@@ -815,20 +897,20 @@ impl WasmtimeRuntime {
         let stderr_pipe = Arc::new(MemoryOutputPipe::new(INVOCATION_OUTPUT_CAPACITY));
 
         let mut wasi_builder = WasiCtxBuilder::new();
+
         wasi_builder
             .stdin(tokio::io::empty())
             .stdout(stdout_pipe.clone())
             .stderr(stderr_pipe.clone());
 
-        for (key, value) in &config.env {
-            wasi_builder.env(key, value);
-        }
-
-        for dir in &self.preopened_dirs {
-            let _ = wasi_builder
-                .preopened_dir(dir, dir, DirPerms::all(), FilePerms::all())
-                .map_err(|e| format!("Failed to preopen directory '{dir}': {e}"));
-        }
+        configure_wasi(
+            &mut wasi_builder,
+            &config.id,
+            config.env.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+            &self.preopened_dirs,
+            config.wasi_security.clone().as_ref(),
+            false,
+        )?;
 
         let wasi = wasi_builder.build();
 
@@ -965,15 +1047,15 @@ impl WasmtimeRuntime {
         wasm_binary: Arc<Vec<u8>>,
     ) -> Result<Vec<u8>> {
         let mut wasi_builder = WasiCtxBuilder::new();
-        wasi_builder.inherit_stdio();
-        for (key, value) in &config.env {
-            wasi_builder.env(key, value);
-        }
-        for dir in &self.preopened_dirs {
-            let _ = wasi_builder
-                .preopened_dir(dir, dir, DirPerms::all(), FilePerms::all())
-                .map_err(|e| format!("Failed to preopen directory '{dir}': {e}"));
-        }
+        configure_wasi(
+            &mut wasi_builder,
+            &config.id,
+            config.env.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+            &self.preopened_dirs,
+            config.wasi_security.clone().as_ref(),
+            true,
+        )?;
+
         let wasi = wasi_builder.build();
 
         let storage = self.init_task_storage(&config).await;
@@ -1173,8 +1255,24 @@ impl WasmtimeRuntime {
                 .map_err(|e| anyhow::anyhow!("Failed to create ProxyPre: {e}"))?,
         );
 
+        // Shared because every connection and request clones it below.
+        let policy = config.wasi_security.clone().map(Arc::new);
         let env: Arc<Vec<(String, String)>> = Arc::new(config.env.into_iter().collect());
         let preopened_dirs = self.preopened_dirs.clone();
+
+        // Each connection builds its own WASI context, so validate the policy once up front.
+        // Otherwise a broken policy would start the proxy and then fail every request instead of failing the task.
+        if policy.is_some() {
+            let mut probe = WasiCtxBuilder::new();
+            configure_wasi(
+                &mut probe,
+                &config.id,
+                env.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+                &preopened_dirs,
+                policy.as_deref(),
+                true,
+            )?;
+        }
 
         let listener = {
             let mut proxy_ports = self.proxy_ports.lock().await;
@@ -1243,6 +1341,7 @@ impl WasmtimeRuntime {
                 let pre = pre.clone();
                 let env = env.clone();
                 let dirs = preopened_dirs.clone();
+                let conn_policy = policy.clone();
                 let task_id_conn = task_id.clone();
                 let cancel_rx_conn = cancel_rx.clone();
                 let tls_config = http_tls_config.clone();
@@ -1263,11 +1362,20 @@ impl WasmtimeRuntime {
                                 let pre = pre.clone();
                                 let env = env.clone();
                                 let dirs = dirs.clone();
+                                let req_policy = conn_policy.clone();
                                 let task_id_req = task_id_conn.clone();
                                 let tls_cfg = tls_config.clone();
                                 async move {
-                                    handle_proxy_request(pre, env, dirs, req, task_id_req, tls_cfg)
-                                        .await
+                                    handle_proxy_request(
+                                        pre,
+                                        env,
+                                        dirs,
+                                        req_policy,
+                                        req,
+                                        task_id_req,
+                                        tls_cfg,
+                                    )
+                                    .await
                                 }
                             }),
                         )
@@ -1506,20 +1614,20 @@ async fn handle_proxy_request(
     pre: Arc<ProxyPre<StoreData>>,
     env: Arc<Vec<(String, String)>>,
     preopened_dirs: Vec<String>,
+    policy: Option<Arc<WasiSecurity>>,
     req: hyper::Request<hyper::body::Incoming>,
     task_id: String,
     http_tls_config: Option<Arc<rustls::ClientConfig>>,
 ) -> Result<hyper::Response<HyperOutgoingBody>> {
     let mut wasi_builder = WasiCtxBuilder::new();
-    wasi_builder.inherit_stdio();
-    for (k, v) in env.iter() {
-        wasi_builder.env(k, v);
-    }
-    for dir in &preopened_dirs {
-        if let Err(e) = wasi_builder.preopened_dir(dir, dir, DirPerms::all(), FilePerms::all()) {
-            warn!("Proxy request {task_id}: failed to preopen '{dir}': {e}");
-        }
-    }
+    configure_wasi(
+        &mut wasi_builder,
+        &task_id,
+        env.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+        &preopened_dirs,
+        policy.as_deref(),
+        true,
+    )?;
 
     let store_data = StoreData {
         wasi: wasi_builder.build(),
@@ -1575,6 +1683,60 @@ async fn handle_proxy_request(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    fn policy_from_toml(toml: &str) -> WasiSecurity {
+        WasiSecurity::from_toml(toml).unwrap()
+    }
+
+    #[test]
+    fn configure_wasi_without_policy_grants_global_preopens() {
+        let dir = std::env::temp_dir();
+        let global = vec![dir.to_string_lossy().into_owned()];
+
+        let mut builder = WasiCtxBuilder::new();
+        configure_wasi(
+            &mut builder,
+            "task-1",
+            [("KEY", "value")],
+            &global,
+            None,
+            true,
+        )
+        .unwrap();
+
+        // Building succeeds, which means every preopen resolved.
+        let _ = builder.build();
+    }
+
+    /// A policy naming a directory that does not exist must fail the task
+    /// rather than silently running with fewer capabilities than requested.
+    #[test]
+    fn configure_wasi_fails_when_policy_dir_is_missing() {
+        let policy = policy_from_toml(
+            r#"
+            [storage]
+            mount = ["/definitely/not/a/real/path::/data"]
+            "#,
+        );
+
+        let mut builder = WasiCtxBuilder::new();
+        let result = configure_wasi(&mut builder, "task-1", [], &[], Some(&policy), true);
+
+        assert!(result.is_err());
+    }
+
+    /// A policy replaces the global preopens, so a bad global entry that would
+    /// normally only warn is not consulted at all.
+    #[test]
+    fn configure_wasi_with_policy_ignores_global_preopens() {
+        let global = vec!["/definitely/not/a/real/path".to_string()];
+        let policy = policy_from_toml("[network]\nconnect = [\"tcp://127.0.0.1:9000\"]\n");
+
+        let mut builder = WasiCtxBuilder::new();
+        configure_wasi(&mut builder, "task-1", [], &global, Some(&policy), true).unwrap();
+
+        let _ = builder.build();
+    }
 
     #[test]
     fn test_wasmtime_runtime_new() {
@@ -1732,6 +1894,7 @@ mod tests {
             args: Vec::new(),
             mode: None,
             hal_storage_path: None,
+            wasi_security: None,
         };
 
         let result = runtime.start_app(ctx, config).await;
@@ -1755,6 +1918,7 @@ mod tests {
             args: Vec::new(),
             mode: None,
             hal_storage_path: None,
+            wasi_security: None,
         }
     }
 

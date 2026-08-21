@@ -1,0 +1,33 @@
+# Example WASI security policy.
+#
+# Pass it to a task with:
+#
+#   propeller-cli tasks create my-task --wasi-security examples/wasi-security/policy.toml
+#
+
+# version of the policy file
+version = "0.0.1"
+
+# WASI argv for the guest. Distinct from the task's `inputs` (function-call arguments) and `cli_args`.
+arguments = ["--verbose"]
+
+# Extra environment variables for the guest. Applied after the task's own env, so these have priority on conflict.
+[env]
+LOG_LEVEL = "debug"
+
+[storage]
+# Entries are `host::guest`; a single path uses the same value for both.
+# When a policy is present these replace the proplet-global preopened_dirs, so the task can only reach what is listed here.
+readonly = ["/srv/models::/models"]
+
+# Mount a host directory into the guest. The guest can read and write to this.
+mount = ["/var/lib/task::/data"]
+
+[network]
+# akin to: guest is allowed to use the getaddrinfo() in POSIX.
+allow_ip_name_lookup = false
+
+# `[tcp://|udp://]<ip>:<port>`.
+# No scheme means both protocols, an unspecified IP (0.0.0.0) matches any host, and port 0 matches any port.
+bind = ["tcp://0.0.0.0:8080"]
+connect = ["tcp://10.0.0.5:5432"]

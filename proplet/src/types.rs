@@ -72,6 +72,8 @@ pub struct StartRequest {
     pub hal_storage_path: Option<String>,
     #[serde(default)]
     pub latent: bool,
+    #[serde(default)]
+    pub extra_config: Option<ExtraConfig>,
 }
 
 fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
@@ -253,6 +255,17 @@ impl Default for MonitoringProfile {
     }
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraConfig {
+    /// WASI security policy as a TOML document string.
+    #[serde(default)]
+    pub wasi_security: Option<String>,
+
+    /// Preparation for upcoming THS changes.
+    #[allow(dead_code)]
+    pub wasi_pep: Option<String>,
+}
+
 mod serde_duration {
     use serde::{Deserialize, Deserializer, Serializer};
     use std::time::Duration;
@@ -355,6 +368,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert!(req.validate().is_ok());
@@ -380,6 +394,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert!(req.validate().is_ok());
@@ -405,6 +420,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();
@@ -432,6 +448,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();
@@ -459,6 +476,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();
@@ -489,6 +507,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert!(req.validate().is_ok());
@@ -514,6 +533,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();
@@ -544,6 +564,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();
@@ -605,6 +626,57 @@ mod tests {
         assert_eq!(req.inputs, vec!["10", "20", "30"]);
         assert!(req.daemon);
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_start_request_deserializes_extra_config() {
+        let policy =
+            "arguments = [\"--verbose\"]\n\n[storage]\nreadonly = [\"/srv/models::/models\"]\n";
+        let json_data = json!({
+            "id": "task-policy",
+            "name": "run",
+            "file": "ZGF0YQ==",
+            "extra_config": {
+                "wasi_security": policy,
+                "wasi_pep": "pep-1"
+            }
+        });
+
+        let req: StartRequest = serde_json::from_value(json_data).unwrap();
+        let extra = req.extra_config.expect("extra_config should be present");
+
+        assert_eq!(extra.wasi_pep.as_deref(), Some("pep-1"));
+        assert_eq!(extra.wasi_security.as_deref(), Some(policy));
+    }
+
+    /// A policy that is not valid TOML must still decode, so the proplet can
+    /// reject it against the task id and report the failure to the user.
+    #[test]
+    fn test_start_request_accepts_unparsed_wasi_security() {
+        let json_data = json!({
+            "id": "task-policy",
+            "name": "run",
+            "file": "ZGF0YQ==",
+            "extra_config": { "wasi_security": "this is = not valid = toml" }
+        });
+
+        let req: StartRequest = serde_json::from_value(json_data).unwrap();
+        assert_eq!(
+            req.extra_config.unwrap().wasi_security.as_deref(),
+            Some("this is = not valid = toml")
+        );
+    }
+
+    #[test]
+    fn test_start_request_without_extra_config() {
+        let json_data = json!({
+            "id": "task-plain",
+            "name": "run",
+            "file": "ZGF0YQ==",
+        });
+
+        let req: StartRequest = serde_json::from_value(json_data).unwrap();
+        assert!(req.extra_config.is_none());
     }
 
     #[test]
@@ -863,6 +935,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert_eq!(req.env.as_ref().unwrap().len(), 2);
@@ -931,6 +1004,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -963,6 +1037,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert!(req.validate().is_ok());
@@ -988,6 +1063,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         assert!(req.validate().is_ok());
@@ -1013,6 +1089,7 @@ mod tests {
             broadcast: false,
             hal_storage_path: None,
             latent: false,
+            extra_config: None,
         };
 
         let result = req.validate();

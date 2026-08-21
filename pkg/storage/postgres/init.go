@@ -281,6 +281,15 @@ func (db *Database) Migrate() error {
 					`ALTER TABLE tasks DROP COLUMN IF EXISTS latent`,
 				},
 			},
+			{
+				Id: "7_add_task_extra_config",
+				Up: []string{
+					`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS extra_config JSONB`,
+				},
+				Down: []string{
+					`ALTER TABLE tasks DROP COLUMN IF EXISTS extra_config`,
+				},
+			},
 		},
 	}
 

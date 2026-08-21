@@ -149,3 +149,61 @@ url = "http://10.0.2.2:8082"
 Do not include a `file` field for encrypted workloads.
 
 For full TEE setup (KBS, image encryption, CVM provisioning), see the [Encrypted workloads guide](https://propeller.absmach.eu/docs/tee).
+
+## WASI security policy
+
+A task can carry a per-task WASI sandbox policy through `extra_config.wasi_security`. The
+value is a **TOML document sent as a JSON string**; the proplet parses it when the task
+starts and uses it to build the task's `WasiCtx`.
+
+```toml
+# Example WASI security policy.
+
+# WASI argv for the guest. Distinct from the task's `inputs` (function-call arguments) and `cli_args`.
+arguments = ["--verbose"]
+
+# Extra environment variables for the guest. Applied after the task's own env, so these have priority on conflict.
+[env]
+LOG_LEVEL = "debug"
+
+[storage]
+# Entries are `host::guest`; a single path uses the same value for both.
+# When a policy is present these replace the proplet-global preopened_dirs, so the task can only reach what is listed here.
+readonly = ["/srv/models::/models"]
+
+# Mount a host directory into the guest. The guest can read and write to this.
+mount = ["/var/lib/task::/data"]
+
+[network]
+# akin to: guest is allowed to use the getaddrinfo() in POSIX.
+allow_ip_name_lookup = false
+
+# `[tcp://|udp://]<ip>:<port>`.
+# No scheme means both protocols, an unspecified IP (0.0.0.0) matches any host, and port 0 matches any port.
+bind = ["tcp://0.0.0.0:8080"]
+connect = ["tcp://10.0.0.5:5432"]
+```
+
+Via the CLI:
+
+```bash
+propeller-cli tasks create "my-task" --wasi-security policy.toml
+```
+
+Semantics:
+
+- **Storage is exclusive.** When a task has a policy, the proplet-global `preopened_dirs`
+  are ignored for that task and only the policy's `readonly`/`mount` entries are preopened.
+  A policy entry that cannot be preopened fails the task rather than silently granting less.
+- **Network is deny-by-default.** Wasmtime rejects every socket address unless a rule
+  permits it, so without a policy a task has no `wasi:sockets` access at all, and the rules
+  are grants rather than restrictions.
+- **Core modules get no network.** WASI preview1 has no sockets, so `network` rules on a
+  core (non-component) module are ignored with a warning. `env`, `arguments` and `storage`
+  still apply.
+- **`wasi:http` is not covered.** Outbound `wasi:http` requests do not go through the
+  WASI socket address check, so a policy without a `network` section still permits HTTP
+  egress.
+
+An invalid policy is rejected as soon as possible; the proplet reports the
+parse error back as a failed task result.

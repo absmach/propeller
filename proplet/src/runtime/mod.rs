@@ -6,6 +6,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
+use crate::wasi_security::WasiSecurity;
+
 #[derive(Clone, Debug)]
 pub struct StartConfig {
     pub id: String,
@@ -22,6 +24,8 @@ pub struct StartConfig {
     /// `container_<n>/` directories. When `None`, the runtime derives a
     /// default of `/tmp/proplet/hal-storage/<task-id>`.
     pub hal_storage_path: Option<String>,
+    /// Policy parsed from `extra_config.wasi_security` before the task started.
+    pub wasi_security: Option<WasiSecurity>,
 }
 
 #[async_trait]

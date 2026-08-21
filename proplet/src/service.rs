@@ -7,6 +7,7 @@ use crate::plugin::{TaskInfo as PluginTaskInfo, TaskResult as PluginTaskResult};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
 use crate::telemetry::PropletMetrics;
 use crate::types::*;
+use crate::wasi_security::WasiSecurity;
 use anyhow::{Context, Result};
 use reqwest::Client as HttpClient;
 use std::collections::{BTreeMap, HashMap};
@@ -486,6 +487,24 @@ impl PropletService {
 
         info!("Received start command for task: {}", req.id);
 
+        // Parse the policy before anything is fetched or spawned, so a
+        // malformed one (bad TOML) fails the task immediately and is reported against it.
+        let wasi_security = match req
+            .extra_config
+            .as_ref()
+            .and_then(|extra| extra.wasi_security.as_deref())
+            .map(WasiSecurity::from_toml)
+            .transpose()
+        {
+            Ok(policy) => policy,
+            Err(e) => {
+                error!("Invalid wasi_security policy for task {}: {:#}", req.id, e);
+                self.publish_result(&req.id, Vec::new(), Some(format!("{e:#}")))
+                    .await?;
+                return Err(e);
+            }
+        };
+
         let plugin_task_info = PluginTaskInfo {
             id: req.id.clone(),
             name: req.name.clone(),
@@ -685,6 +704,7 @@ impl PropletService {
                 args: req.inputs.clone(),
                 mode: req.mode.clone(),
                 hal_storage_path: req.hal_storage_path.clone(),
+                wasi_security,
             };
 
             if let Err(e) = runtime.precompile(config).await {
@@ -751,6 +771,7 @@ impl PropletService {
                 args: inputs,
                 mode: req.mode.clone(),
                 hal_storage_path: req.hal_storage_path.clone(),
+                wasi_security,
             };
 
             if export_metrics {

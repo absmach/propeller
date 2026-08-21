@@ -41,6 +41,7 @@ type Task struct {
 	Timezone        string         `json:"timezone,omitempty"`
 	IsRecurring     bool           `json:"is_recurring,omitempty"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
+	ExtraConfig     map[string]any `json:"extra_config,omitempty"`
 	StartTime       time.Time      `json:"start_time"`
 	FinishTime      time.Time      `json:"finish_time"`
 	CreatedAt       time.Time      `json:"created_at"`

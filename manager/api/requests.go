@@ -15,7 +15,10 @@ import (
 
 var errStatusFilterUnsupported = errors.New("status filter is not supported")
 
-const maxMetadataBytes = 1048576 // 1MB
+const (
+	maxMetadataBytes    = 1048576 // 1MB
+	maxExtraConfigBytes = 1048576 // 1MB
+)
 
 type taskReq struct {
 	task.Task `json:",inline"`
@@ -51,6 +54,16 @@ func (t *taskReq) validate() error {
 		}
 		if len(b) > maxMetadataBytes {
 			return errors.New("metadata exceeds 1MB limit")
+		}
+	}
+
+	if len(t.ExtraConfig) > 0 {
+		b, err := json.Marshal(t.ExtraConfig)
+		if err != nil {
+			return fmt.Errorf("invalid extra_config: %w", err)
+		}
+		if len(b) > maxExtraConfigBytes {
+			return errors.New("extra_config exceeds 1MB limit")
 		}
 	}
 

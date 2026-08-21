@@ -191,6 +191,7 @@ type Task struct {
 	Priority          int                        `json:"priority,omitempty"`
 	Metadata          Metadata                   `json:"metadata,omitempty"`
 	HalStoragePath    *string                    `json:"hal_storage_path,omitempty"`
+	ExtraConfig       map[string]any             `json:"extra_config,omitempty"`
 }
 
 type TaskPage struct {
