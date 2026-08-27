@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proplet-config
+data:
+  config.toml: |
+    # SuperMQ Configuration
+
+    [manager]
+    domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+    client_id = "cdaccb11-7209-4fb9-8df1-3c52e9d64284"
+    client_key = "507d687d-51f8-4c71-8599-4273a5d75429"
+    channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+    [proplet1]
+    domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+    client_id = "0deb859f-973d-4e2e-93cf-ec756f4fc3c8"
+    client_key = "17c03d05-b55d-4a05-88ec-cadecb2130c4"
+    channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
+
+    [proxy]
+    domain_id = "4bae1a76-afc4-4054-976c-5427c49fbbf3"
+    client_id = "0deb859f-973d-4e2e-93cf-ec756f4fc3c8"
+    client_key = "17c03d05-b55d-4a05-88ec-cadecb2130c4"
+    channel_id = "34a616c3-8817-4995-aade-a383e64766a8"
