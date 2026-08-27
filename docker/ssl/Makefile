@@ -8,8 +8,10 @@ OU_CRT ?= propeller_crt
 EA ?= propeller@absmach.eu
 CN_CA ?= Propeller_Self_Signed_CA
 CN_SRV ?= localhost
-CLIENT_SECRET ?= "" # e.g. 8f65ed04-0770-4ce4-a291-6d1bf2000f4d
 CRT_FILE_NAME ?= proplet
+# The CN is an identifier only (for example, an Atom entity UUID). Never put
+# an MQTT password or API key in a certificate subject.
+CLIENT_CN ?= $(CRT_FILE_NAME)
 COAP_DTLS_SERVER_CONF_FILE_NAME=coap-server.conf
 COAP_DTLS_SERVER_CN=coap
 COAP_DTLS_SERVER_CRT_FILE_NAME=coap-server
@@ -73,7 +75,7 @@ server_cert:
 client_cert:
 	# Create propeller client key and CSR.
 	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/$(CRT_FILE_NAME).key \
-				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(CLIENT_SECRET)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
+				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(CLIENT_CN)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
 
 	# Sign client CSR.
 	openssl x509 -req -days 730 -in $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/$(CRT_FILE_NAME).crt

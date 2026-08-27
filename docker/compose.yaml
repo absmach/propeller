@@ -103,6 +103,18 @@ services:
     volumes:
       - ./fluxmq/node1.yaml:/etc/fluxmq/config.yaml:ro
       - propeller-fluxmq-node1-volume:/tmp/fluxmq
+      - type: bind
+        source: ${FLUXMQ_MQTT_MTLS_CERT:-./ssl/certs/propeller-server.crt}
+        target: /etc/fluxmq/certs/server.crt
+        read_only: true
+      - type: bind
+        source: ${FLUXMQ_MQTT_MTLS_KEY:-./ssl/certs/propeller-server.key}
+        target: /etc/fluxmq/certs/server.key
+        read_only: true
+      - type: bind
+        source: ${FLUXMQ_MQTT_MTLS_CLIENT_CA:-./ssl/certs/ca.crt}
+        target: /etc/fluxmq/certs/client-ca.crt
+        read_only: true
 
   fluxmq-auth:
     image: ghcr.io/absmach/magistrala/fluxmq:${MG_RELEASE_TAG}
@@ -134,7 +146,7 @@ services:
     container_name: propeller-nginx
     restart: on-failure
     volumes:
-      - ./nginx/nginx-key.conf:/etc/nginx/nginx.conf.template
+      - ./nginx/nginx-key.conf:/etc/nginx/nginx.conf.template:ro
       - ./nginx/entrypoint.sh:/docker-entrypoint.d/entrypoint.sh
       - ./nginx/snippets:/etc/nginx/snippets
       - ./ssl/authorization.js:/etc/nginx/authorization.js
