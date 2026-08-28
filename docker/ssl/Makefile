@@ -77,11 +77,14 @@ client_cert:
 	openssl req -new -sha256 -newkey rsa:4096 -nodes -keyout $(CRT_LOCATION)/$(CRT_FILE_NAME).key \
 				-out $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -subj "/CN=$(CLIENT_CN)/O=$(O)/OU=$(OU_CRT)/emailAddress=$(EA)"
 
-	# Sign client CSR.
-	openssl x509 -req -days 730 -in $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/$(CRT_FILE_NAME).crt
+	# Sign an explicit X.509 v3 client certificate. Rustls rejects v1 leaf
+	# certificates, even when OpenSSL and Go accept them.
+	printf '[v3_client]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n' > $(CRT_LOCATION)/$(CRT_FILE_NAME)-client.conf
+	openssl x509 -req -days 730 -in $(CRT_LOCATION)/$(CRT_FILE_NAME).csr -CA $(CRT_LOCATION)/ca.crt -CAkey $(CRT_LOCATION)/ca.key -CAcreateserial -out $(CRT_LOCATION)/$(CRT_FILE_NAME).crt \
+		-extfile $(CRT_LOCATION)/$(CRT_FILE_NAME)-client.conf -extensions v3_client
 
-	# Remove CSR.
-	rm $(CRT_LOCATION)/$(CRT_FILE_NAME).csr
+	# Remove CSR and extension config.
+	rm $(CRT_LOCATION)/$(CRT_FILE_NAME).csr $(CRT_LOCATION)/$(CRT_FILE_NAME)-client.conf
 
 # Function to generate gRPC certificates (server or client)
 # Usage: $(call gen_grpc_cert,cert_file_name,common_name)

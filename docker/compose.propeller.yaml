@@ -8,6 +8,9 @@ networks:
     external: true
     name: propeller-base-net
 
+volumes:
+  propeller-proplet-tls-volume:
+
 services:
   manager:
     image: ghcr.io/absmach/propeller/manager:${PROP_RELEASE_TAG}
@@ -51,33 +54,67 @@ services:
       MANAGER_POSTGRES_PASS: ${MANAGER_POSTGRES_PASS:-propeller}
       MANAGER_POSTGRES_DB: ${MANAGER_POSTGRES_DB:-propeller}
       MANAGER_POSTGRES_SSLMODE: ${MANAGER_POSTGRES_SSLMODE:-disable}
-      # MQTT over TLS / mTLS — uncomment to enable.
-      # Then also mount cert files (see volumes section below).
-      # MANAGER_MQTT_TLS_CA_CERT: ${MANAGER_MQTT_TLS_CA_CERT}
-      # MANAGER_MQTT_TLS_CLIENT_CERT: ${MANAGER_MQTT_TLS_CLIENT_CERT}
-      # MANAGER_MQTT_TLS_CLIENT_KEY: ${MANAGER_MQTT_TLS_CLIENT_KEY}
-      # MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY: ${MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY}
+      MANAGER_MQTT_TLS_CA_CERT: ${MANAGER_MQTT_TLS_CA_CERT}
+      MANAGER_MQTT_TLS_CLIENT_CERT: ${MANAGER_MQTT_TLS_CLIENT_CERT}
+      MANAGER_MQTT_TLS_CLIENT_KEY: ${MANAGER_MQTT_TLS_CLIENT_KEY}
+      MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY: ${MANAGER_MQTT_TLS_INSECURE_SKIP_VERIFY}
     volumes:
       - type: bind
-        source: ./config.toml
+        source: ../config.toml
         target: /config.toml
         bind:
           create_host_path: false
-      # MQTT TLS certs (uncomment and change source paths when using ssl://):
-      # - type: bind
-      #   source: ./ssl/certs/ca.crt
-      #   target: /etc/propeller/tls/ca.crt
-      #   read_only: true
-      # - type: bind
-      #   source: ./ssl/certs/manager.crt
-      #   target: /etc/propeller/tls/client.crt
-      #   read_only: true
-      # - type: bind
-      #   source: ./ssl/certs/manager.key
-      #   target: /etc/propeller/tls/client.key
-      #   read_only: true
+      - type: bind
+        source: ./ssl/certs/ca.crt
+        target: /etc/propeller/tls/ca.crt
+        read_only: true
+      - type: bind
+        source: ./ssl/certs/manager.crt
+        target: /etc/propeller/tls/client.crt
+        read_only: true
+      - type: bind
+        source: ./ssl/certs/manager.key
+        target: /etc/propeller/tls/client.key
+        read_only: true
     networks:
       - propeller-base-net
+
+  # Stage the Proplet client key in a private volume owned by the non-root
+  # Proplet user. Bind-mounted host keys remain mode 0600.
+  proplet-tls-init:
+    image: ${PROPLET_IMAGE}:${PROPLET_IMAGE_TAG}
+    pull_policy: always
+    container_name: propeller-proplet-tls-init
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        proplet_uid=$$(id -u proplet)
+        proplet_gid=$$(id -g proplet)
+        install -d -o "$${proplet_uid}" -g "$${proplet_gid}" -m 0700 /target
+        install -o "$${proplet_uid}" -g "$${proplet_gid}" -m 0444 /source/ca.crt /target/ca.crt
+        install -o "$${proplet_uid}" -g "$${proplet_gid}" -m 0444 /source/client.crt /target/client.crt
+        install -o "$${proplet_uid}" -g "$${proplet_gid}" -m 0400 /source/client.key /target/client.key
+    volumes:
+      - type: bind
+        source: ./ssl/certs/ca.crt
+        target: /source/ca.crt
+        read_only: true
+      - type: bind
+        source: ./ssl/certs/proplet.crt
+        target: /source/client.crt
+        read_only: true
+      - type: bind
+        source: ./ssl/certs/proplet.key
+        target: /source/client.key
+        read_only: true
+      - type: volume
+        source: propeller-proplet-tls-volume
+        target: /target
+        volume:
+          nocopy: true
+    restart: "no"
 
   # Proplet - WebAssembly edge runtime
   # Available images:
@@ -93,6 +130,9 @@ services:
     pull_policy: always
     container_name: propeller-proplet
     restart: on-failure
+    depends_on:
+      proplet-tls-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -131,36 +171,26 @@ services:
       MANAGER_COORDINATOR_URL: ${MANAGER_COORDINATOR_URL:-http://coordinator-http:8080}
       MODEL_REGISTRY_URL: ${MODEL_REGISTRY_URL:-http://model-registry:8081}
       DATA_STORE_URL: ${DATA_STORE_URL:-http://local-data-store:8083}
-      # MQTT over TLS / mTLS configuration — uncomment to enable.
-      # Certificate/key paths refer to files inside the container.
-      # See the volumes section below for bind mounts.
-      # PROPLET_MQTT_TLS_CA_CERT: ${PROPLET_MQTT_TLS_CA_CERT}
-      # PROPLET_MQTT_TLS_CLIENT_CERT: ${PROPLET_MQTT_TLS_CLIENT_CERT}
-      # PROPLET_MQTT_TLS_CLIENT_KEY: ${PROPLET_MQTT_TLS_CLIENT_KEY}
-      # PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY: ${PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY}
+      PROPLET_MQTT_TLS_CA_CERT: ${PROPLET_MQTT_TLS_CA_CERT}
+      PROPLET_MQTT_TLS_CLIENT_CERT: ${PROPLET_MQTT_TLS_CLIENT_CERT}
+      PROPLET_MQTT_TLS_CLIENT_KEY: ${PROPLET_MQTT_TLS_CLIENT_KEY}
+      PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY: ${PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY}
       # Outgoing HTTP TLS — uncomment to trust custom/self-signed CA certificates
       # for HTTPS requests made by WASM workloads and proplet itself.
       # PROPLET_HTTP_TLS_CA_CERT: ${PROPLET_HTTP_TLS_CA_CERT}
       # PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY: ${PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY}
     volumes:
       - type: bind
-        source: ./config.toml
+        source: ../config.toml
         target: /home/proplet/config.toml
         bind:
           create_host_path: false
-      # MQTT TLS certs (uncomment and change source paths when using ssl://):
-      # - type: bind
-      #   source: ./ssl/certs/ca.crt
-      #   target: /etc/propeller/tls/ca.crt
-      #   read_only: true
-      # - type: bind
-      #   source: ./ssl/certs/proplet.crt
-      #   target: /etc/propeller/tls/client.crt
-      #   read_only: true
-      # - type: bind
-      #   source: ./ssl/certs/proplet.key
-      #   target: /etc/propeller/tls/client.key
-      #   read_only: true
+      - type: volume
+        source: propeller-proplet-tls-volume
+        target: /etc/propeller/tls
+        read_only: true
+        volume:
+          nocopy: true
       # HTTP TLS CA cert (uncomment to trust custom CAs for outgoing HTTPS):
       # - type: bind
       #   source: ./ca.crt
@@ -217,7 +247,7 @@ services:
       # PROXY_MQTT_TLS_INSECURE_SKIP_VERIFY: ${PROXY_MQTT_TLS_INSECURE_SKIP_VERIFY}
     volumes:
       - type: bind
-        source: ./config.toml
+        source: ../config.toml
         target: /config.toml
         bind:
           create_host_path: false
