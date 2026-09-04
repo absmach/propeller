@@ -3,10 +3,12 @@ package sdk
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/absmach/propeller/pkg/jsonrpc"
 	"github.com/absmach/propeller/pkg/proplet"
 	"github.com/absmach/propeller/pkg/sdf"
 	"github.com/absmach/propeller/pkg/task"
@@ -98,6 +100,22 @@ type SDK interface {
 	StopTask(id string) error
 
 	InvokeTask(id string, inputs []string, env map[string]string) (string, error)
+
+	// Call invokes a single JSON-RPC method on the manager and returns the
+	// raw result, leaving decoding to the caller.
+	//
+	// example:
+	//  result, _ := sdk.Call("task.start", map[string]string{"id": "b1d10738"})
+	//  fmt.Println(string(result))
+	Call(method string, params any) (json.RawMessage, error)
+
+	// CallBatch invokes several JSON-RPC methods in one request and returns
+	// one response per call.
+	//
+	// example:
+	//  responses, _ := sdk.CallBatch([]sdk.RPCCall{{Method: "proplet.list"}})
+	//  fmt.Println(len(responses))
+	CallBatch(calls []RPCCall) ([]jsonrpc.Response, error)
 
 	// CreateJob creates a new job with multiple tasks.
 	//

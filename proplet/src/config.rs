@@ -75,6 +75,10 @@ pub struct PropletConfig {
     pub plugin_dir: Option<String>,
     pub metrics_port: u16,
     pub metrics_enabled: bool,
+    pub rpc_enabled: bool,
+    pub rpc_port: u16,
+    pub rpc_bind_address: String,
+    pub rpc_token: Option<String>,
     pub otel_url: Option<String>,
     pub trace_ratio: f64,
 }
@@ -122,6 +126,10 @@ impl Default for PropletConfig {
             plugin_dir: None,
             metrics_port: 9092,
             metrics_enabled: true,
+            rpc_enabled: false,
+            rpc_port: 9094,
+            rpc_bind_address: "127.0.0.1".to_string(),
+            rpc_token: None,
             otel_url: None,
             trace_ratio: 0.0,
         }
@@ -442,6 +450,32 @@ impl PropletConfig {
 
         if let Ok(val) = env::var("PROPLET_METRICS_ENABLED") {
             config.metrics_enabled = is_truthy(&val);
+        }
+
+        if let Ok(val) = env::var("PROPLET_RPC_ENABLED") {
+            config.rpc_enabled = is_truthy(&val);
+        }
+
+        if let Ok(val) = env::var("PROPLET_RPC_PORT") {
+            match val.parse::<u16>() {
+                Ok(0) | Err(_) => eprintln!(
+                    "warn: invalid PROPLET_RPC_PORT '{}', using default {}",
+                    val, config.rpc_port
+                ),
+                Ok(port) => config.rpc_port = port,
+            }
+        }
+
+        if let Ok(val) = env::var("PROPLET_RPC_BIND_ADDRESS") {
+            if !val.is_empty() {
+                config.rpc_bind_address = val;
+            }
+        }
+
+        if let Ok(val) = env::var("PROPLET_RPC_TOKEN") {
+            if !val.is_empty() {
+                config.rpc_token = Some(val);
+            }
         }
 
         if let Ok(val) = env::var("PROPLET_OTEL_URL") {

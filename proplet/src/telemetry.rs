@@ -245,7 +245,7 @@ mod tests {
         m.tasks_started.inc();
         m.tasks_completed.inc();
         let gathered = m.registry.gather();
-        let names: Vec<&str> = gathered.iter().map(|mf| mf.get_name()).collect();
+        let names: Vec<&str> = gathered.iter().map(|mf| mf.name()).collect();
         assert!(names.contains(&"proplet_tasks_started_total"));
         assert!(names.contains(&"proplet_tasks_completed_total"));
         assert!(names.contains(&"proplet_tasks_failed_total"));
