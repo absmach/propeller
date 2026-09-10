@@ -69,7 +69,31 @@ impl WasiSecurity {
             SocketAddrUse::TcpAccept | SocketAddrUse::UdpReceive => return true,
         };
 
-        rules.iter().any(|rule| rule.matches(protocol, addr))
+        if rules.iter().any(|rule| rule.matches(protocol, addr)) {
+            return true;
+        }
+
+        // v48 additionally checks the ephemeral bind the OS performs as part of
+        // `connect` and `send`, passing the wildcard address. No `bind` rule can
+        // name that address, so admit it when the policy allows outbound traffic
+        // on the protocol; the peer is still policed by the TcpConnect/UdpSend
+        // check that follows.
+        //
+        // The check callback only receives an address and a reason, so this also
+        // admits a guest that explicitly binds to port 0. That grants nothing
+        // beyond occupying an ephemeral local port: `listen` is re-checked
+        // against the real local address the kernel assigned, and every peer
+        // still goes through the connect rules.
+        matches!(use_, SocketAddrUse::TcpBind | SocketAddrUse::UdpBind)
+            && is_implicit_bind(addr)
+            && self.allows_outbound(protocol)
+    }
+
+    /// Whether the policy permits any outbound traffic over `protocol`.
+    fn allows_outbound(&self, protocol: NetworkRuleProtocol) -> bool {
+        self.network_connect
+            .iter()
+            .any(|rule| rule.covers(protocol))
     }
 
     pub fn uses_tcp(&self) -> bool {
@@ -157,6 +181,11 @@ impl TryFrom<ParsePolicyFile> for WasiSecurity {
             allow_ip_name_lookup: network.allow_ip_name_lookup.unwrap_or(false),
         })
     }
+}
+
+/// Whether `addr` is the wildcard address wasmtime passes when it checks an implicit bind.
+fn is_implicit_bind(addr: SocketAddr) -> bool {
+    addr.ip().is_unspecified() && addr.port() == 0
 }
 
 /// Parse a storage entry of the form `host::guest`.
@@ -414,5 +443,82 @@ mod tests {
         assert!(
             !security.allows_socket("127.0.0.1:1234".parse().unwrap(), SocketAddrUse::TcpConnect)
         );
+    }
+
+    #[test]
+    fn implicit_bind_probe_follows_the_connect_rules() {
+        let security = parse(
+            r#"
+            [network]
+            connect = ["tcp://10.0.0.1:9000"]
+            "#,
+        );
+
+        // wasmtime checks the ephemeral bind that precedes `connect` with the
+        // wildcard address, for both address families.
+        for probe in ["0.0.0.0:0", "[::]:0"] {
+            let probe: SocketAddr = probe.parse().unwrap();
+            assert!(security.allows_socket(probe, SocketAddrUse::TcpBind));
+            // The policy has no UDP connect rule, so the UDP probe stays denied.
+            assert!(!security.allows_socket(probe, SocketAddrUse::UdpBind));
+        }
+
+        // A bind the guest actually asked for is still policed by the bind rules.
+        assert!(!security.allows_socket("0.0.0.0:8080".parse().unwrap(), SocketAddrUse::TcpBind));
+        assert!(!security.allows_socket("127.0.0.1:0".parse().unwrap(), SocketAddrUse::TcpBind));
+    }
+
+    #[test]
+    fn implicit_bind_probe_is_denied_without_connect_rules() {
+        let security = parse(
+            r#"
+            [network]
+            bind = ["tcp://0.0.0.0:8080"]
+            "#,
+        );
+
+        let probe: SocketAddr = "0.0.0.0:0".parse().unwrap();
+        assert!(!security.allows_socket(probe, SocketAddrUse::TcpBind));
+        assert!(!security.allows_socket(probe, SocketAddrUse::UdpBind));
+    }
+
+    #[test]
+    fn catch_all_bind_rule_still_allows_binds_without_connect_rules() {
+        let security = parse(
+            r#"
+            [network]
+            bind = ["0.0.0.0:0"]
+            "#,
+        );
+
+        // The catch-all rule matches on its own, so the widening for implicit
+        // binds never has to kick in.
+        let probe: SocketAddr = "0.0.0.0:0".parse().unwrap();
+        assert!(security.allows_socket(probe, SocketAddrUse::TcpBind));
+        assert!(security.allows_socket(probe, SocketAddrUse::UdpBind));
+
+        // And it keeps covering the binds the guest asks for itself.
+        assert!(security.allows_socket("0.0.0.0:8080".parse().unwrap(), SocketAddrUse::TcpBind));
+        assert!(security.allows_socket("127.0.0.1:9000".parse().unwrap(), SocketAddrUse::UdpBind));
+        assert!(security.allows_socket("0.0.0.0:8080".parse().unwrap(), SocketAddrUse::TcpListen));
+
+        // It is a bind rule, so it grants nothing outbound.
+        assert!(
+            !security.allows_socket("10.0.0.1:9000".parse().unwrap(), SocketAddrUse::TcpConnect)
+        );
+    }
+
+    #[test]
+    fn implicit_bind_probe_honours_protocol_agnostic_rules() {
+        let security = parse(
+            r#"
+            [network]
+            connect = ["10.0.0.1:9000"]
+            "#,
+        );
+
+        let probe: SocketAddr = "0.0.0.0:0".parse().unwrap();
+        assert!(security.allows_socket(probe, SocketAddrUse::TcpBind));
+        assert!(security.allows_socket(probe, SocketAddrUse::UdpBind));
     }
 }
