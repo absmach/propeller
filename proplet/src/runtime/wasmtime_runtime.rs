@@ -40,20 +40,44 @@ use wasmtime_wasi_http::{
 };
 use wasmtime_wasi_usb::{WasiUsbCtx, WasiUsbCtxView, WasiUsbView};
 
+/// Merge the task environment with the policy environment, keeping first-seen order.
+fn merge_env<'a>(
+    env: impl IntoIterator<Item = (&'a str, &'a str)>,
+    policy_env: Option<&'a HashMap<String, String>>,
+) -> Vec<(&'a str, &'a str)> {
+    let mut merged: Vec<(&str, &str)> = Vec::new();
+    let mut upsert = |key: &'a str, value: &'a str| match merged.iter_mut().find(|(k, _)| *k == key)
+    {
+        Some(entry) => entry.1 = value,
+        None => merged.push((key, value)),
+    };
+
+    for (key, value) in env {
+        upsert(key, value);
+    }
+
+    // The policy env wins over the task env, so it is applied last.
+    for (key, value) in policy_env.into_iter().flatten() {
+        upsert(key, value);
+    }
+
+    merged
+}
+
 /// Apply the task's environment, filesystem preopens and network policy to a fresh [`WasiCtxBuilder`].
 fn configure_wasi<'a>(
     builder: &mut WasiCtxBuilder,
     task_id: &str,
     env: impl IntoIterator<Item = (&'a str, &'a str)>,
     global_preopens: &[String],
-    policy: Option<&WasiSecurity>,
+    policy: Option<&'a WasiSecurity>,
     inherit_stdio: bool,
 ) -> Result<()> {
     if inherit_stdio {
         builder.inherit_stdio();
     }
 
-    for (key, value) in env {
+    for (key, value) in merge_env(env, policy.and_then(|p| p.env.as_ref())) {
         builder.env(key, value);
     }
 
@@ -66,13 +90,6 @@ fn configure_wasi<'a>(
 
         return Ok(());
     };
-
-    // Policy env wins over the task env, so it is applied last.
-    if let Some(policy_env) = &policy.env {
-        for (key, value) in policy_env {
-            builder.env(key, value);
-        }
-    }
 
     if let Some(arguments) = &policy.arguments {
         builder.args(arguments);
@@ -1785,6 +1802,37 @@ mod tests {
 
         // Building succeeds, which means every preopen resolved.
         let _ = builder.build();
+    }
+
+    /// `WasiCtxBuilder::env` appends without deduplicating, so a key the policy also sets
+    /// must replace the task's value rather than adding a second entry for it.
+    #[test]
+    fn merge_env_lets_policy_override_task_env() {
+        let policy_env = HashMap::from([
+            ("SHARED".to_string(), "from-policy".to_string()),
+            ("POLICY_ONLY".to_string(), "policy".to_string()),
+        ]);
+
+        let mut merged = merge_env(
+            [
+                ("SHARED", "from-task"),
+                ("TASK_ONLY", "task"),
+                ("DUP", "first"),
+                ("DUP", "second"),
+            ],
+            Some(&policy_env),
+        );
+        merged.sort();
+
+        assert_eq!(
+            merged,
+            vec![
+                ("DUP", "second"),
+                ("POLICY_ONLY", "policy"),
+                ("SHARED", "from-policy"),
+                ("TASK_ONLY", "task"),
+            ]
+        );
     }
 
     /// A policy naming a directory that does not exist must fail the task
