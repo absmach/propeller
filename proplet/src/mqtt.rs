@@ -140,10 +140,29 @@ pub struct MqttMessage {
 
 impl MqttMessage {
     pub fn decode<T: DeserializeOwned>(&self) -> Result<T> {
-        serde_json::from_slice(&self.payload).context(format!(
+        let value: serde_json::Value = serde_json::from_slice(&self.payload).context(format!(
+            "Failed to deserialize message payload from topic '{}'",
+            self.topic
+        ))?;
+
+        let envelope = crate::jsonrpc::unwrap(value);
+
+        serde_json::from_value(envelope.payload).context(format!(
             "Failed to deserialize message payload from topic '{}'",
             self.topic
         ))
+    }
+
+    pub fn correlation_id(&self) -> Option<serde_json::Value> {
+        let value: serde_json::Value = serde_json::from_slice(&self.payload).ok()?;
+
+        crate::jsonrpc::unwrap(value).id
+    }
+
+    pub fn envelope_method(&self) -> Option<String> {
+        let value: serde_json::Value = serde_json::from_slice(&self.payload).ok()?;
+
+        crate::jsonrpc::unwrap(value).method
     }
 }
 
@@ -251,6 +270,50 @@ fn parse_mqtt_address(address: &str) -> Result<(String, u16, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::StartRequest;
+
+    fn message(payload: serde_json::Value) -> MqttMessage {
+        MqttMessage {
+            topic: "m/t/c/c/control/manager/start".to_string(),
+            payload: serde_json::to_vec(&payload).unwrap(),
+            is_reconnect: false,
+        }
+    }
+
+    #[test]
+    fn test_decode_accepts_a_legacy_flat_payload() {
+        let msg = message(serde_json::json!({
+            "id": "task-1",
+            "name": "fn",
+            "image_url": "registry.example.com/app:v1",
+            "state": 0
+        }));
+
+        let req: StartRequest = msg.decode().unwrap();
+        assert_eq!(req.id, "task-1");
+        assert_eq!(req.name, "fn");
+        assert!(msg.correlation_id().is_none());
+    }
+
+    #[test]
+    fn test_decode_accepts_a_jsonrpc_envelope() {
+        let msg = message(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "task.start",
+            "params": {
+                "id": "task-1",
+                "name": "fn",
+                "image_url": "registry.example.com/app:v1",
+                "state": 0
+            },
+            "id": "task-1"
+        }));
+
+        let req: StartRequest = msg.decode().unwrap();
+        assert_eq!(req.id, "task-1");
+        assert_eq!(req.name, "fn");
+        assert_eq!(msg.correlation_id(), Some(serde_json::json!("task-1")));
+    }
 
     #[test]
     fn test_parse_mqtt_address_tcp_scheme() {

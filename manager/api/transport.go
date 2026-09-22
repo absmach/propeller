@@ -11,6 +11,7 @@ import (
 
 	"github.com/absmach/propeller/manager"
 	"github.com/absmach/propeller/pkg/api"
+	"github.com/absmach/propeller/pkg/jsonrpc"
 	"github.com/absmach/propeller/pkg/plugin"
 	"github.com/absmach/propeller/pkg/task"
 	"github.com/go-chi/chi/v5"
@@ -257,10 +258,40 @@ func MakeHandler(svc manager.Service, logger *slog.Logger, instanceID string) ht
 		})
 	})
 
+	mux.Post("/rpc", otelhttp.NewHandler(rpcHandler(NewRPCServer(svc)), "rpc").ServeHTTP)
+
 	mux.Get("/health", api.HealthHandler("manager", instanceID))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux
+}
+
+func rpcHandler(srv *jsonrpc.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Content-Type"), api.ContentType) {
+			api.EncodeError(r.Context(), errors.Join(api.ErrValidation, api.ErrUnsupportedContentType), w)
+
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			body = nil
+		}
+
+		out := srv.Handle(r.Context(), body)
+		if out == nil {
+			w.WriteHeader(http.StatusNoContent)
+
+			return
+		}
+
+		w.Header().Set("Content-Type", api.ContentType)
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(out); err != nil {
+			return
+		}
+	}
 }
 
 func decodeEntityReq(key string) kithttp.DecodeRequestFunc {

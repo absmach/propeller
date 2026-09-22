@@ -67,6 +67,7 @@ pub struct PropletService {
     http_client: HttpClient,
     plugin_registry: Option<Arc<PluginRegistry>>,
     metrics: Arc<PropletMetrics>,
+    rpc_state: Option<Arc<crate::rpc::RpcState>>,
 }
 
 impl PropletService {
@@ -98,6 +99,7 @@ impl PropletService {
             http_client,
             plugin_registry,
             metrics,
+            rpc_state: None,
         };
 
         service.start_chunk_expiry_task();
@@ -134,6 +136,7 @@ impl PropletService {
             http_client,
             plugin_registry,
             metrics,
+            rpc_state: None,
         };
 
         service.start_chunk_expiry_task();
@@ -144,6 +147,10 @@ impl PropletService {
     #[allow(dead_code)]
     pub fn set_tee_runtime(&mut self, tee_runtime: Arc<dyn Runtime>) {
         self.tee_runtime = Some(tee_runtime);
+    }
+
+    pub fn set_rpc_state(&mut self, rpc_state: Arc<crate::rpc::RpcState>) {
+        self.rpc_state = Some(rpc_state);
     }
 
     fn start_chunk_expiry_task(&self) {
@@ -449,6 +456,26 @@ impl PropletService {
             );
         }
 
+        if let Some(method) = msg.envelope_method() {
+            let expected = if msg.topic.contains("control/manager/start") {
+                Some(crate::jsonrpc::METHOD_TASK_START)
+            } else if msg.topic.contains("control/manager/stop") {
+                Some(crate::jsonrpc::METHOD_TASK_STOP)
+            } else {
+                None
+            };
+
+            if let Some(expected) = expected {
+                if method != expected {
+                    warn!(
+                        "Ignoring message on '{}': method '{}' does not match '{}'",
+                        msg.topic, method, expected
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         if msg.topic.contains("control/manager/start") {
             self.handle_start_command(msg).await
         } else if msg.topic.contains("control/manager/invoke") {
@@ -595,6 +622,8 @@ impl PropletService {
             encrypted: req.encrypted,
         };
 
+        let correlation = msg.correlation_id();
+
         if let Some(ref registry) = self.plugin_registry {
             let authorized = match registry.authorize(&plugin_task_info) {
                 Ok(a) => a,
@@ -607,8 +636,13 @@ impl PropletService {
             };
             if let Some(reason) = authorized {
                 error!("Plugin denied task {}: {}", req.id, reason);
-                self.publish_result(&req.id, Vec::new(), Some(reason.clone()))
-                    .await?;
+                self.publish_result_correlated(
+                    &req.id,
+                    Vec::new(),
+                    Some(reason.clone()),
+                    correlation.clone(),
+                )
+                .await?;
                 return Err(anyhow::anyhow!("task denied by plugin: {}", reason));
             }
         }
@@ -633,10 +667,11 @@ impl PropletService {
                 tee_runtime.clone()
             } else {
                 error!("TEE runtime not available but encrypted workload requested");
-                self.publish_result(
+                self.publish_result_correlated(
                     &req.id,
                     Vec::new(),
                     Some("TEE runtime not available".to_string()),
+                    correlation.clone(),
                 )
                 .await?;
                 return Err(anyhow::anyhow!("TEE runtime not available"));
@@ -674,8 +709,13 @@ impl PropletService {
                     self.running_tasks.lock().await.remove(&req.id);
                     self.metrics.tasks_failed.inc();
                     self.metrics.tasks_running.dec();
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result_correlated(
+                        &req.id,
+                        Vec::new(),
+                        Some(e.to_string()),
+                        correlation.clone(),
+                    )
+                    .await?;
                     return Err(e.into());
                 }
             }
@@ -695,8 +735,13 @@ impl PropletService {
                         self.running_tasks.lock().await.remove(&req.id);
                         self.metrics.tasks_failed.inc();
                         self.metrics.tasks_running.dec();
-                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                            .await?;
+                        self.publish_result_correlated(
+                            &req.id,
+                            Vec::new(),
+                            Some(e.to_string()),
+                            correlation.clone(),
+                        )
+                        .await?;
                         return Err(e);
                     }
                 }
@@ -710,8 +755,13 @@ impl PropletService {
                     self.running_tasks.lock().await.remove(&req.id);
                     self.metrics.tasks_failed.inc();
                     self.metrics.tasks_running.dec();
-                    self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                        .await?;
+                    self.publish_result_correlated(
+                        &req.id,
+                        Vec::new(),
+                        Some(e.to_string()),
+                        correlation.clone(),
+                    )
+                    .await?;
                     return Err(e);
                 }
 
@@ -725,8 +775,13 @@ impl PropletService {
                         self.running_tasks.lock().await.remove(&req.id);
                         self.metrics.tasks_failed.inc();
                         self.metrics.tasks_running.dec();
-                        self.publish_result(&req.id, Vec::new(), Some(e.to_string()))
-                            .await?;
+                        self.publish_result_correlated(
+                            &req.id,
+                            Vec::new(),
+                            Some(e.to_string()),
+                            correlation.clone(),
+                        )
+                        .await?;
                         return Err(e);
                     }
                 }
@@ -737,8 +792,13 @@ impl PropletService {
             self.running_tasks.lock().await.remove(&req.id);
             self.metrics.tasks_failed.inc();
             self.metrics.tasks_running.dec();
-            self.publish_result(&req.id, Vec::new(), Some(err.to_string()))
-                .await?;
+            self.publish_result_correlated(
+                &req.id,
+                Vec::new(),
+                Some(err.to_string()),
+                correlation.clone(),
+            )
+            .await?;
             return Err(err);
         };
 
@@ -781,6 +841,19 @@ impl PropletService {
             env.insert(k, v);
         }
 
+        if let Some(ref rpc_state) = self.rpc_state {
+            rpc_state
+                .register(
+                    task_name.clone(),
+                    crate::rpc::DeployedFunction {
+                        task_id: task_id.clone(),
+                        wasm_binary: Arc::new(wasm_binary.clone()),
+                    },
+                )
+                .await;
+            info!("Registered task {} as RPC method '{}'", task_id, task_name);
+        }
+
         if req.latent {
             let mut latent_env = env;
             latent_env
@@ -805,8 +878,13 @@ impl PropletService {
                 self.running_tasks.lock().await.remove(&task_id);
                 self.metrics.tasks_failed.inc();
                 self.metrics.tasks_running.dec();
-                self.publish_result(&task_id, Vec::new(), Some(e.to_string()))
-                    .await?;
+                self.publish_result_correlated(
+                    &task_id,
+                    Vec::new(),
+                    Some(e.to_string()),
+                    correlation.clone(),
+                )
+                .await?;
 
                 return Err(e);
             }
@@ -1325,6 +1403,10 @@ impl PropletService {
         self.runtime.stop_app(req.id.clone()).await?;
         self.monitor.stop_monitoring(&req.id).await.ok();
 
+        if let Some(ref rpc_state) = self.rpc_state {
+            rpc_state.deregister(&req.id).await;
+        }
+
         if self.running_tasks.lock().await.remove(&req.id).is_some() {
             self.metrics.tasks_running.dec();
         }
@@ -1445,11 +1527,12 @@ impl PropletService {
         Ok(None)
     }
 
-    async fn publish_result(
+    async fn publish_result_correlated(
         &self,
         task_id: &str,
         results: Vec<u8>,
         error: Option<String>,
+        correlation: Option<serde_json::Value>,
     ) -> Result<()> {
         let proplet_id = self.config.entity_id.clone();
         let result_str = String::from_utf8_lossy(&results).to_string();
@@ -1458,7 +1541,7 @@ impl PropletService {
             task_id: task_id.to_string(),
             proplet_id,
             results: result_str,
-            error,
+            error: error.clone(),
         };
 
         let topic = build_topic(
@@ -1467,9 +1550,29 @@ impl PropletService {
             "control/proplet/results",
         );
 
-        self.pubsub
-            .publish(&topic, &result_msg, self.config.qos())
-            .await?;
+        match correlation {
+            Some(id) => {
+                let response = match error {
+                    Some(message) => crate::jsonrpc::Response::failure(
+                        Some(id),
+                        crate::jsonrpc::Error::internal(message),
+                    ),
+                    None => crate::jsonrpc::Response::success(
+                        Some(id),
+                        serde_json::to_value(&result_msg)?,
+                    ),
+                };
+                self.pubsub
+                    .publish(&topic, &response, self.config.qos())
+                    .await?;
+            }
+            None => {
+                self.pubsub
+                    .publish(&topic, &result_msg, self.config.qos())
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 
