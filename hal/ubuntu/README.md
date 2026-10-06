@@ -118,7 +118,7 @@ docker compose up -d --force-recreate kbs
 
 KBS is used over plain HTTP, matching `KBS_URL=http://10.0.2.2:8082`. This is not laziness: `coco_keyprovider` links `reqwest` with `rustls-platform-verifier`, whose Linux path loads roots through `rustls-native-certs`. Pointing it at a private CA via `SSL_CERT_FILE` did not work in testing — the handshake failed with `UnknownIssuer` while `openssl s_client` with the same CA succeeded — so a self-signed KBS certificate cannot be trusted by the keyprovider.
 
-The hop never leaves the host, and the image key is additionally wrapped under an RCAR-derived session key, so HTTP is an acceptable trade here. If you need TLS, use a certificate from a publicly trusted CA against a real DNS name (for the local QEMU case the guest addresses the host as `10.0.2.2`, which no public CA will issue for), or route KBS through a component that reads the system trust store reliably. For the cloud-CVM equivalent, see [`../azure/README.md`](../azure/README.md).
+The hop never leaves the host, and the image key is additionally wrapped under an RCAR-derived session key, so HTTP is an acceptable trade here. If you need TLS, use a certificate from a publicly trusted CA against a real DNS name (for the local QEMU case the guest addresses the host as `10.0.2.2`, which no public CA will issue for), or route KBS through a component that reads the system trust store reliably. For the cloud-CVM equivalent, see [`../azure-sev/README.md`](../azure-sev/README.md).
 
 ### Verify from the guest
 
@@ -131,10 +131,11 @@ A JSON error (rather than a connection refused, timeout, or certificate error) m
 
 For the equivalent setup on a cloud CVM (Trustee on a separate VM, guest stack inside the CVM), see:
 
-| Cloud CVM                            | Guide                                            |
-| ------------------------------------ | ------------------------------------------------ |
-| Azure AMD SEV-SNP                    | [`../azure/README.md`](../azure/README.md) or [propeller.absmach.eu/docs/azure-cvm](https://propeller.absmach.eu/docs/azure-cvm) |
-| GCP Intel TDX (C3/C4)                | [`../gcp/README.md`](../gcp/README.md)           |
+| Cloud CVM                 | Guide                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Azure AMD SEV-SNP         | [`../azure-sev/README.md`](../azure-sev/README.md) or [propeller.absmach.eu/docs/azure-cvm](https://propeller.absmach.eu/docs/azure-cvm) |
+| GCP Intel TDX (C3/C4)     | [`../gcp-tdx/README.md`](../gcp-tdx/README.md)                                                                                           |
+| GCP AMD SEV-SNP (N2D/C4D) | [`../gcp-sev/README.md`](../gcp-sev/README.md)                                                                                           |
 
 ## Run
 
