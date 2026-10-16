@@ -56,6 +56,7 @@ type config struct {
 	OTELURL         url.URL `env:"MANAGER_OTEL_URL"`
 	TraceRatio      float64 `env:"MANAGER_TRACE_RATIO" envDefault:"0"`
 	PluginDir       string  `env:"MANAGER_PLUGIN_DIR"`
+	JSONRPCControl  bool    `env:"MANAGER_JSONRPC_CONTROL_PLANE" envDefault:"false"`
 }
 
 func main() {
@@ -174,6 +175,7 @@ func main() {
 		cfg.CoordinatorURL,
 		logger,
 		pluginRegistry,
+		manager.WithJSONRPCControlPlane(cfg.JSONRPCControl),
 	)
 	svc = middleware.Plugin(pluginRegistry, logger, svc)
 	svc = middleware.Logging(logger, svc)
