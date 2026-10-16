@@ -9,7 +9,7 @@ name = "http-client-raw-wit"
 path = "src/main.rs"
 
 [dependencies]
-wit-bindgen = { version = "0.61.1", default-features = false, features = ["realloc", "macros"] }
+wit-bindgen = { version = "0.62.0", default-features = false, features = ["realloc", "macros"] }
 
 [profile.release]
 opt-level = "s"

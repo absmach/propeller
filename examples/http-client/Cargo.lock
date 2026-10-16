@@ -105,7 +105,7 @@ dependencies = [
 name = "http-client"
 version = "0.6.2"
 dependencies = [
- "wasip2 2.0.0+wasi-0.2.12",
+ "wasip2 2.0.1+wasi-0.2.12",
  "wstd",
 ]
 
@@ -253,11 +253,11 @@ dependencies = [
 
 [[package]]
 name = "wasip2"
-version = "2.0.0+wasi-0.2.12"
+version = "2.0.1+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96744b5e833bfd2d84c6faa7569693ce9e04a47c0a4d5519e6442f18af1a0fed"
+checksum = "89aafd4b69fb41a64cfd5d7f214cde92ab422ec4d9bcd55fcc816d3f5f49bbf3"
 dependencies = [
- "wit-bindgen 0.61.1",
+ "wit-bindgen 0.62.0",
 ]
 
 [[package]]
@@ -271,9 +271,9 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen"
-version = "0.61.1"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e473fd0095479f9689ac7d2a52c427cc96bb2b973ace50238dfcc1ab1cd52d93"
+checksum = "53cb4b5556c3a791e86838ea287782bdafa704d55b0e68b5b81a3a16b9ea5f4b"
 dependencies = [
  "bitflags",
 ]
