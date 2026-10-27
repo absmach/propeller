@@ -21,6 +21,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
@@ -622,6 +623,10 @@ pub struct StoreData {
     table: ResourceTable,
     pub(crate) hal: Option<Arc<PropletHal>>,
     pub(crate) storage: Option<Arc<StorageInterface>>,
+    /// Per-task cancellation signal. Host bindings select on this so a
+    /// guest parked in a blocking HAL call (e.g. tcp_accept) unblocks when
+    /// the task is stopped, instead of surviving abort.
+    pub(crate) cancel: Arc<Notify>,
     http_hooks: CustomTlsHttpHooks,
 }
 
@@ -663,11 +668,11 @@ struct PrecompiledComponent {
 pub struct WasmtimeRuntime {
     engine: Engine,
     tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    task_cancels: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
     proxy_ports: Arc<Mutex<HashMap<u16, String>>>,
     proxy_cancellers: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
     precompiled: Arc<Mutex<HashMap<String, PrecompiledComponent>>>,
     hal_enabled: bool,
-    hal: Arc<PropletHal>,
     http_enabled: bool,
     usb_enabled: bool,
     preopened_dirs: Vec<String>,
@@ -710,11 +715,11 @@ impl WasmtimeRuntime {
         Ok(Self {
             engine,
             tasks: Arc::new(Mutex::new(HashMap::new())),
+            task_cancels: Arc::new(Mutex::new(HashMap::new())),
             proxy_ports: Arc::new(Mutex::new(HashMap::new())),
             proxy_cancellers: Arc::new(Mutex::new(HashMap::new())),
             precompiled: Arc::new(Mutex::new(HashMap::new())),
             hal_enabled,
-            hal: PropletHal::new(),
             http_enabled,
             usb_enabled,
             preopened_dirs,
@@ -793,6 +798,28 @@ impl Runtime for WasmtimeRuntime {
 
     async fn stop_app(&self, id: String) -> Result<()> {
         info!("Stopping Wasmtime runtime app: task_id={}", id);
+
+        // Unblock any guest parked in a HAL call (e.g. tcp_accept) for this
+        // task before aborting its JoinHandle; otherwise an in-process daemon
+        // keeps running and holding its listener.
+        if let Some(cancel) = self.task_cancels.lock().await.remove(&id) {
+            cancel.notify_waiters();
+        }
+        // Also cancel any in-flight invocations of a latent task.
+        let inv_prefix = format!("{}-inv-", id);
+        let inv_keys: Vec<String> = self
+            .task_cancels
+            .lock()
+            .await
+            .keys()
+            .filter(|k| k.starts_with(&inv_prefix))
+            .cloned()
+            .collect();
+        for k in inv_keys {
+            if let Some(c) = self.task_cancels.lock().await.remove(&k) {
+                c.notify_waiters();
+            }
+        }
 
         let was_latent = self.precompiled.lock().await.remove(&id).is_some();
 
@@ -1062,14 +1089,28 @@ impl WasmtimeRuntime {
 
         let wasi = wasi_builder.build();
 
+        // Per-task HAL: upstream SocketInterface/StorageInterface instances
+        // carry per-instance registries whose accept/read paths hold internal
+        // locks across .await — sharing one instance across guest tasks would
+        // let the first guest parked in a TCP accept block every other
+        // guest's host calls forever.
+        let task_hal = self
+            .hal_enabled
+            .then(|| PropletHal::with_storage_path(task_hal_storage_path(&config)));
+        let task_cancel = Arc::new(Notify::new());
+        self.task_cancels
+            .lock()
+            .await
+            .insert(config.id.clone(), task_cancel.clone());
         let storage = self.init_task_storage(&config).await;
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
             usb: WasiUsbCtx::new(false),
             table: ResourceTable::new(),
-            hal: self.hal_enabled.then(|| self.hal.clone()),
+            hal: task_hal,
             storage,
+            cancel: task_cancel,
             http_hooks: CustomTlsHttpHooks {
                 tls_config: self.http_tls_config.clone(),
                 policy: config.wasi_security.clone().map(Arc::new),
@@ -1099,6 +1140,7 @@ impl WasmtimeRuntime {
         let task_id = config.id.clone();
         let task_id_for_cleanup = task_id.clone();
         let tasks = self.tasks.clone();
+        let task_cancels = self.task_cancels.clone();
         let stdout_for_result = stdout_pipe.clone();
         let stderr_for_result = stderr_pipe.clone();
 
@@ -1145,6 +1187,7 @@ impl WasmtimeRuntime {
             .await;
 
             tasks.lock().await.remove(&task_id_for_cleanup);
+            task_cancels.lock().await.remove(&task_id_for_cleanup);
 
             let _ = result_tx.send(result);
         });
@@ -1209,14 +1252,28 @@ impl WasmtimeRuntime {
 
         let wasi = wasi_builder.build();
 
+        // Per-task HAL: upstream SocketInterface/StorageInterface instances
+        // carry per-instance registries whose accept/read paths hold internal
+        // locks across .await — sharing one instance across guest tasks would
+        // let the first guest parked in a TCP accept block every other
+        // guest's host calls forever.
+        let task_hal = self
+            .hal_enabled
+            .then(|| PropletHal::with_storage_path(task_hal_storage_path(&config)));
+        let task_cancel = Arc::new(Notify::new());
+        self.task_cancels
+            .lock()
+            .await
+            .insert(config.id.clone(), task_cancel.clone());
         let storage = self.init_task_storage(&config).await;
         let store_data = StoreData {
             wasi,
             http: WasiHttpCtx::new(),
             usb: WasiUsbCtx::new(false),
             table: ResourceTable::new(),
-            hal: self.hal_enabled.then(|| self.hal.clone()),
+            hal: task_hal,
             storage,
+            cancel: task_cancel,
             http_hooks: CustomTlsHttpHooks {
                 tls_config: self.http_tls_config.clone(),
                 policy: config.wasi_security.clone().map(Arc::new),
@@ -1248,6 +1305,7 @@ impl WasmtimeRuntime {
         let function_name = config.function_name.clone();
         let args = config.args.clone();
         let tasks = self.tasks.clone();
+        let task_cancels = self.task_cancels.clone();
 
         let (result_tx, result_rx) = oneshot::channel();
 
@@ -1322,6 +1380,7 @@ impl WasmtimeRuntime {
             .await;
 
             tasks.lock().await.remove(&task_id_for_cleanup);
+            task_cancels.lock().await.remove(&task_id_for_cleanup);
 
             let _ = result_tx.send(result);
         });
@@ -1566,6 +1625,7 @@ impl WasmtimeRuntime {
         let function_name = config.function_name.clone();
         let args = config.args.clone();
         let tasks = self.tasks.clone();
+        let task_cancels = self.task_cancels.clone();
 
         let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>>>();
 
@@ -1725,6 +1785,7 @@ impl WasmtimeRuntime {
             .await;
 
             tasks.lock().await.remove(&task_id_for_cleanup);
+            task_cancels.lock().await.remove(&task_id_for_cleanup);
 
             match result {
                 Ok(Ok(data)) => {
@@ -1797,6 +1858,7 @@ async fn handle_proxy_request(
         table: ResourceTable::new(),
         hal: None,
         storage: None,
+        cancel: Arc::new(Notify::new()),
         http_hooks: CustomTlsHttpHooks {
             tls_config: http_tls_config,
             policy,

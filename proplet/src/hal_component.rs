@@ -376,23 +376,48 @@ impl sockets::Host for StoreData {
     fn accept(&mut self, socket: u64) -> Result<u64, String> {
         let real = hal(self).socket_bridge().resolve(socket)?;
         let sockets_iface = hal(self).sockets();
-        block_on(async move { sockets_iface.tcp_accept(real).await })?.map_err(|e| e.to_string())
+        let cancel = self.cancel.clone();
+        block_on(async move {
+            tokio::select! {
+                r = sockets_iface.tcp_accept(real) => r,
+                _ = cancel.notified() => Err(elastic_tee_hal::HalError::NetworkError(
+                    "task cancelled".to_string(),
+                )),
+            }
+        })?
+        .map_err(|e| e.to_string())
     }
 
     fn send(&mut self, socket: u64, data: Vec<u8>) -> Result<u32, String> {
         let real = hal(self).socket_bridge().resolve(socket)?;
         let sockets_iface = hal(self).sockets();
-        let res = block_on(async move { sockets_iface.socket_write(real, &data).await })?
-            .map_err(|e| e.to_string())?;
+        let cancel = self.cancel.clone();
+        let res = block_on(async move {
+            tokio::select! {
+                r = sockets_iface.socket_write(real, &data) => r,
+                _ = cancel.notified() => Err(elastic_tee_hal::HalError::NetworkError(
+                    "task cancelled".to_string(),
+                )),
+            }
+        })?
+        .map_err(|e| e.to_string())?;
         Ok(res.bytes_transferred as u32)
     }
 
     fn receive(&mut self, socket: u64, max_len: u32) -> Result<Vec<u8>, String> {
         let real = hal(self).socket_bridge().resolve(socket)?;
         let sockets_iface = hal(self).sockets();
+        let cancel = self.cancel.clone();
         let mut buf = vec![0u8; max_len as usize];
-        let res = block_on(async { sockets_iface.socket_read(real, &mut buf).await })?
-            .map_err(|e| e.to_string())?;
+        let res = block_on(async {
+            tokio::select! {
+                r = sockets_iface.socket_read(real, &mut buf) => r,
+                _ = cancel.notified() => Err(elastic_tee_hal::HalError::NetworkError(
+                    "task cancelled".to_string(),
+                )),
+            }
+        })?
+        .map_err(|e| e.to_string())?;
         buf.truncate(res.bytes_transferred);
         Ok(buf)
     }
