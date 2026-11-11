@@ -1088,6 +1088,36 @@ impl PropletService {
                 let _ = handle.await;
             }
 
+            // `start_app` returns as soon as a daemon workload has been
+            // launched, not when it exits. Do not report that as a completed
+            // task: keep the task registered and its monitoring active until
+            // the manager stops it (or the runtime reports an error at start).
+            if daemon && result.is_ok() {
+                info!(
+                    "Daemon task {} started successfully; leaving it running",
+                    task_id
+                );
+
+                if let Ok(data) = &result {
+                    let result_msg = ResultMessage {
+                        task_id: task_id.clone(),
+                        proplet_id: proplet_id.clone(),
+                        results: String::from_utf8_lossy(data).to_string(),
+                        error: None,
+                    };
+                    let topic =
+                        build_topic(&tenant_id, &channel_id, "control/proplet/results");
+                    if let Err(e) = pubsub.publish(&topic, &result_msg, qos).await {
+                        error!(
+                            "Failed to publish daemon start for task {}: {}",
+                            task_id, e
+                        );
+                    }
+                }
+
+                return;
+            }
+
             monitor.stop_monitoring(&task_id).await.ok();
 
             let (result_str, error) = match result {

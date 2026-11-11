@@ -1487,13 +1487,30 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 
 	now := time.Now()
 	t.Results = msg["results"]
-	t.State = task.Completed
 	t.UpdatedAt = now
-	t.FinishTime = now
 
 	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
 		t.Error = errMsg
 		t.State = task.Failed
+		t.FinishTime = now
+	} else if t.Daemon {
+		// A proplet reports a daemon's successful start once the workload is
+		// running, but the workload keeps running until it is stopped. Treat
+		// that report as a status update instead of completion; otherwise a
+		// healthy daemon would immediately appear as Completed in the manager.
+		if t.State.IsTerminal() {
+			return nil
+		}
+		t.State = task.Running
+
+		if err := svc.taskRepo.Update(ctx, t); err != nil {
+			return err
+		}
+
+		return nil
+	} else {
+		t.State = task.Completed
+		t.FinishTime = now
 	}
 
 	if err := svc.taskRepo.Update(ctx, t); err != nil {
