@@ -23,7 +23,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: 1.27
+          # Go 1.27.4 rejects the LTO sections in wasmtime-go's prebuilt
+          # libwasmtime.a, which breaks both lint and cgo builds. Pin until the
+          # dependency ships an LTO-free library.
+          go-version: 1.27.3
           cache-dependency-path: "go.sum"
 
       - name: Run linters
