@@ -1471,6 +1471,33 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]an
 	return nil
 }
 
+// applyTaskResult records a proplet result on t and reports whether the task
+// reached a terminal state. Daemon start acknowledgements are status updates:
+// they keep the task Running because the workload is still alive.
+func (svc *service) applyTaskResult(ctx context.Context, t *task.Task, msg map[string]any) (bool, error) {
+	now := time.Now()
+	t.Results = msg["results"]
+	t.UpdatedAt = now
+
+	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
+		t.Error = errMsg
+		t.State = task.Failed
+		t.FinishTime = now
+	} else if t.Daemon {
+		if t.State.IsTerminal() {
+			return false, nil
+		}
+		t.State = task.Running
+
+		return false, svc.taskRepo.Update(ctx, *t)
+	} else {
+		t.State = task.Completed
+		t.FinishTime = now
+	}
+
+	return true, svc.taskRepo.Update(ctx, *t)
+}
+
 func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any) error {
 	taskID, ok := msg["task_id"].(string)
 	if !ok {
@@ -1485,36 +1512,12 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 		return err
 	}
 
-	now := time.Now()
-	t.Results = msg["results"]
-	t.UpdatedAt = now
-
-	if errMsg, ok := msg["error"].(string); ok && errMsg != "" {
-		t.Error = errMsg
-		t.State = task.Failed
-		t.FinishTime = now
-	} else if t.Daemon {
-		// A proplet reports a daemon's successful start once the workload is
-		// running, but the workload keeps running until it is stopped. Treat
-		// that report as a status update instead of completion; otherwise a
-		// healthy daemon would immediately appear as Completed in the manager.
-		if t.State.IsTerminal() {
-			return nil
-		}
-		t.State = task.Running
-
-		if err := svc.taskRepo.Update(ctx, t); err != nil {
-			return err
-		}
-
-		return nil
-	} else {
-		t.State = task.Completed
-		t.FinishTime = now
-	}
-
-	if err := svc.taskRepo.Update(ctx, t); err != nil {
+	finished, err := svc.applyTaskResult(ctx, &t, msg)
+	if err != nil {
 		return err
+	}
+	if !finished {
+		return nil
 	}
 
 	svc.notifyTaskComplete(ctx, t)

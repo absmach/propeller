@@ -98,8 +98,8 @@ func newServiceWithResultsHandler(t *testing.T) (manager.Service, mqtt.Handler) 
 	var resultsHandler mqtt.Handler
 	pubsub.On("Subscribe", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			if strings.HasSuffix(args.String(1), "/#") {
-				resultsHandler = args.Get(2).(mqtt.Handler)
+			if handler, ok := args.Get(2).(mqtt.Handler); ok && strings.HasSuffix(args.String(1), "/#") {
+				resultsHandler = handler
 			}
 		}).
 		Return(nil).
