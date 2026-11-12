@@ -130,6 +130,27 @@ assert_log_contains() {
     pass "$what"
 }
 
+# wait_for_log_contains polls a container's logs until the pattern appears.
+# The manager HTTP endpoint can answer /health before its MQTT subscriptions are
+# established, so tasks started right after that would have their results
+# published before the manager is listening for them.
+wait_for_log_contains() {
+    local container="$1" pattern="$2" what="$3" timeout="${4:-180}"
+    local deadline=$((SECONDS + timeout)) logs
+
+    while true; do
+        logs="$(docker logs "$container" 2>&1 || true)"
+        if grep -qF -- "$pattern" <<<"$logs"; then
+            pass "$what"
+            return 0
+        fi
+        if (( SECONDS >= deadline )); then
+            fail "$what (no '$pattern' in $container logs)"
+        fi
+        sleep 2
+    done
+}
+
 # assert_log_clean fails if a container logged an ERROR or panicked. WARN is
 # allowed: a stock stack logs some (unconfigured FL coordinator, no local data
 # store) and those are not failures.
@@ -367,6 +388,7 @@ wait_for_proplet() {
 }
 
 wait_for_proplet
+wait_for_log_contains propeller-manager "Subscribe to MQTT topic completed successfully" "manager subscribed to control topics"
 
 # ---------------------------------------------------------------------------
 # 5. Deploy the examples
@@ -482,6 +504,7 @@ PROPLET_EXTERNAL_WASM_RUNTIME="" PROPLET_HTTP_ENABLED=true PROPLET_DIRS="${CI_PR
     make start-propeller-ci
 wait_for_url "manager" "${MANAGER_URL}/health" 180
 wait_for_proplet
+wait_for_log_contains propeller-manager "Subscribe to MQTT topic completed successfully" "manager subscribed to control topics"
 
 filesystem_id="$(create_task '{"name":"_start"}')"
 info "task id: $filesystem_id"
