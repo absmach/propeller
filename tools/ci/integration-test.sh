@@ -50,6 +50,7 @@ EXPECTED_ADDITION="${CI_EXPECTED_ADDITION:-30}"
 HTTP_SERVER_PORT="${CI_HTTP_SERVER_PORT:-8044}"
 
 # Task states (pkg/task.State): 0 Pending, 1 Scheduled, 2 Running, 3 Completed.
+STATE_RUNNING=2
 STATE_COMPLETED=3
 
 log()   { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -212,6 +213,28 @@ wait_task() {
         if (( SECONDS >= deadline )); then
             jq . <<<"$task" >&2
             fail "task ${id} did not complete within ${timeout}s (state=${state})"
+        fi
+        sleep 1
+    done
+}
+
+# wait_task_running <task-id> [timeout] -> echoes the task JSON once it is
+# Running. Daemon workloads stay in this state for as long as they run, so they
+# never reach Completed on their own.
+wait_task_running() {
+    local id="$1" timeout="${2:-120}"
+    local deadline=$((SECONDS + timeout)) task state
+
+    while true; do
+        task="$(json "${MANAGER_URL}/tasks/${id}")"
+        state="$(jq -r '.state' <<<"$task")"
+        case "$state" in
+            "$STATE_RUNNING") printf '%s' "$task"; return 0 ;;
+            4 | 5 | 6) jq . <<<"$task" >&2; fail "task ${id} ended in terminal state ${state}" ;;
+        esac
+        if (( SECONDS >= deadline )); then
+            jq . <<<"$task" >&2
+            fail "task ${id} did not start within ${timeout}s (state=${state})"
         fi
         sleep 1
     done
@@ -389,7 +412,7 @@ http_server_id="$(create_task "{\"name\":\"_start\",\"daemon\":true,\"cli_args\"
 info "task id: $http_server_id"
 upload_multipart "$http_server_id" build/http-server.wasm
 start_task "$http_server_id"
-http_server_task="$(wait_task "$http_server_id")"
+http_server_task="$(wait_task_running "$http_server_id")"
 pass "http-server daemon started ($(jq -r '.results // ""' <<<"$http_server_task" | tr -d '\n'))"
 
 # The proplet reports the port before the component is accepting connections.
