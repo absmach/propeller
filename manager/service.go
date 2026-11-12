@@ -601,7 +601,7 @@ func ComputeJobState(tasks []task.Task) task.State {
 func (svc *service) GetTask(ctx context.Context, taskID string) (task.Task, error) {
 	t, err := svc.taskRepo.Get(ctx, taskID)
 	if err != nil {
-		if errors.Is(err, storage.ErrTaskNotFound) {
+		if errors.Is(err, storage.ErrTaskNotFound) || errors.Is(err, storage.ErrNotFound) {
 			return task.Task{}, pkgerrors.ErrNotFound
 		}
 
@@ -684,6 +684,10 @@ func (svc *service) UpdateTask(ctx context.Context, t task.Task) (task.Task, err
 }
 
 func (svc *service) DeleteTask(ctx context.Context, taskID string) error {
+	if _, err := svc.GetTask(ctx, taskID); err != nil {
+		return err
+	}
+
 	if svc.cronScheduler != nil {
 		if err := svc.cronScheduler.UnscheduleTask(ctx, taskID); err != nil {
 			svc.logger.WarnContext(ctx, "failed to unschedule task from cron scheduler", "error", err, "task_id", taskID)
@@ -2336,7 +2340,25 @@ func (svc *service) getWorkflowTasks(ctx context.Context, workflowID string) ([]
 }
 
 func (svc *service) getJobTasks(ctx context.Context, jobID string) ([]task.Task, error) {
-	return svc.taskRepo.ListByJobID(ctx, jobID)
+	tasks, err := svc.taskRepo.ListByJobID(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) > 0 || svc.jobRepo == nil {
+		return tasks, nil
+	}
+
+	// Legacy jobs may only exist as tasks, so only report not found once the
+	// tasks and the job record are both missing.
+	if _, err := svc.jobRepo.Get(ctx, jobID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, pkgerrors.ErrNotFound) {
+			return nil, pkgerrors.ErrNotFound
+		}
+
+		return nil, err
+	}
+
+	return tasks, nil
 }
 
 func (svc *service) interruptRunningTasks(ctx context.Context) error {
