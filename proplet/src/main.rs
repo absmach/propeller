@@ -12,7 +12,6 @@ mod task_handler;
 mod tee_detection;
 mod telemetry;
 mod types;
-mod wasi_security;
 
 use crate::config::PropletConfig;
 use crate::mqtt::{process_mqtt_events, MqttConfig, PubSub};

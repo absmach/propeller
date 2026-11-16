@@ -4,9 +4,8 @@ pub mod wasmtime_runtime;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use elastic_wasi_security::WasiSecurity;
 use std::collections::HashMap;
-
-use crate::wasi_security::WasiSecurity;
 
 #[derive(Clone, Debug)]
 pub struct StartConfig {

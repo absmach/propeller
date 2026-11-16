@@ -81,6 +81,9 @@ wasm-wave = "0.254.0"
 # ELASTIC WasmHAL-Hardware: wasi-usb
 wasmtime-wasi-usb = "48.0.0"
 
+# ELASTIC Wasi Security
+elastic-wasi-security = { git = "https://github.com/elasticproject-eu/wasi-security", branch = "main" }
+
 # ELASTIC - Dependency for loading external WASI security providers (as a shared library), e.g. THS WASI PEP library.
 dlopen2 = "0.9"
 
@@ -94,11 +97,6 @@ default = []
 [profile.release]
 strip = "symbols"
 
-# ELASTIC - The wasi_security structures are used by external WASI security providers, e.g. THS WASI PEP library.
-# TODO: make wasi_security.rs a separate library crate
-[lib]
-path = "src/wasi_security.rs"
-crate-type = ["lib"]
 
 # SEV-SNP and TDX are x86_64-only technologies, and `tss-esapi-sys` (pulled in
 # by az-snp-vtpm) neither supports riscv64 nor cross-compiles without a target
