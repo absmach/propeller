@@ -25,9 +25,17 @@ import (
 
 const regressionResultsTopic = testBaseTopic + "/control/proplet/results"
 
-// newRegressionService wires an in-memory service and returns the MQTT handler
-// plus captured stop-publish payloads and the repositories for direct setup.
-func newRegressionService(t *testing.T) (manager.Service, mqtt.Handler, *[]any, *sync.Mutex, *storage.Repositories) {
+type regressionEnv struct {
+	svc     manager.Service
+	handler mqtt.Handler
+	stops   *[]any
+	mu      *sync.Mutex
+	repos   *storage.Repositories
+}
+
+// newRegressionService wires an in-memory service and captures the MQTT
+// handler plus stop-publish payloads for direct setup and assertions.
+func newRegressionService(t *testing.T) regressionEnv {
 	t.Helper()
 
 	repos, err := storage.NewRepositories(storage.Config{Type: "memory"})
@@ -60,82 +68,88 @@ func newRegressionService(t *testing.T) (manager.Service, mqtt.Handler, *[]any, 
 	require.NoError(t, svc.Subscribe(context.Background()))
 	require.NotNil(t, handler)
 
-	return svc, handler, &stops, &mu, repos
+	return regressionEnv{svc: svc, handler: handler, stops: &stops, mu: &mu, repos: repos}
 }
 
 func TestCompletionReleasesPropletTaskCount(t *testing.T) {
-	ctx := context.Background()
-	svc, handler, _, _, repos := newRegressionService(t)
+	t.Parallel()
 
-	require.NoError(t, repos.Proplets.Create(ctx, proplet.Proplet{ID: "proplet-1", Alive: true, TaskCount: 1}))
-	created, err := svc.CreateTask(ctx, task.Task{Name: "completed-task", State: task.Running})
+	ctx := context.Background()
+	env := newRegressionService(t)
+
+	require.NoError(t, env.repos.Proplets.Create(ctx, proplet.Proplet{ID: "proplet-1", Alive: true, TaskCount: 1}))
+	created, err := env.svc.CreateTask(ctx, task.Task{Name: "completed-task", State: task.Running})
 	require.NoError(t, err)
-	require.NoError(t, repos.TaskProplets.Create(ctx, created.ID, "proplet-1"))
+	require.NoError(t, env.repos.TaskProplets.Create(ctx, created.ID, "proplet-1"))
 
 	result := map[string]any{"task_id": created.ID, "results": "ok"}
-	require.NoError(t, handler(regressionResultsTopic, result))
+	require.NoError(t, env.handler(regressionResultsTopic, result))
 
-	got, err := svc.GetTask(ctx, created.ID)
+	got, err := env.svc.GetTask(ctx, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, task.Completed, got.State)
 
-	p, err := repos.Proplets.Get(ctx, "proplet-1")
+	p, err := env.repos.Proplets.Get(ctx, "proplet-1")
 	require.NoError(t, err)
 	assert.Zero(t, p.TaskCount, "completing a task must release its active-task slot")
-	_, err = repos.TaskProplets.Get(ctx, created.ID)
+	_, err = env.repos.TaskProplets.Get(ctx, created.ID)
 	require.Error(t, err, "task-to-proplet pin must be removed on completion")
 
 	// Duplicate result messages must not decrement twice.
-	require.NoError(t, handler(regressionResultsTopic, result))
-	p, err = repos.Proplets.Get(ctx, "proplet-1")
+	require.NoError(t, env.handler(regressionResultsTopic, result))
+	p, err = env.repos.Proplets.Get(ctx, "proplet-1")
 	require.NoError(t, err)
 	assert.Zero(t, p.TaskCount)
 }
 
 func TestStartJobFailureStopsStartedTasks(t *testing.T) {
-	ctx := context.Background()
-	svc, _, stops, mu, repos := newRegressionService(t)
+	t.Parallel()
 
-	require.NoError(t, repos.Proplets.Create(ctx, proplet.Proplet{
+	ctx := context.Background()
+	env := newRegressionService(t)
+
+	require.NoError(t, env.repos.Proplets.Create(ctx, proplet.Proplet{
 		ID: "proplet-1", Alive: true, AliveHistory: []time.Time{time.Now()},
 	}))
-	jobID, _, err := svc.CreateJob(ctx, "failing-job", []task.Task{
+	jobID, _, err := env.svc.CreateJob(ctx, "failing-job", []task.Task{
 		{ID: "task-ok", Name: "starts", State: task.Pending},
 		{ID: "task-bad", Name: "fails-to-start", State: task.Pending, PropletID: "missing-proplet"},
 	}, manager.ExecutionModeParallel)
 	require.NoError(t, err)
 
-	err = svc.StartJob(ctx, jobID)
+	err = env.svc.StartJob(ctx, jobID)
 	require.Error(t, err, "the job must report the task that failed to start")
 
-	mu.Lock()
-	stopIDs := make([]string, len(*stops))
-	for i, payload := range *stops {
+	env.mu.Lock()
+	stopIDs := make([]string, len(*env.stops))
+	for i, payload := range *env.stops {
 		m, ok := payload.(map[string]any)
 		require.True(t, ok)
 		stopIDs[i], _ = m["id"].(string)
 	}
-	mu.Unlock()
+	env.mu.Unlock()
 
 	assert.Contains(t, stopIDs, "task-ok", "a sibling that started must be stopped on fail-fast")
 
-	p, err := repos.Proplets.Get(ctx, "proplet-1")
+	p, err := env.repos.Proplets.Get(ctx, "proplet-1")
 	require.NoError(t, err)
 	assert.Zero(t, p.TaskCount, "the stopped task must release its slot")
 }
 
 func TestConcurrentStartsDoNotLoseTaskCount(t *testing.T) {
-	ctx := context.Background()
-	svc, _, _, _, repos := newRegressionService(t)
+	t.Parallel()
 
-	require.NoError(t, repos.Proplets.Create(ctx, proplet.Proplet{
+	ctx := context.Background()
+	env := newRegressionService(t)
+
+	require.NoError(t, env.repos.Proplets.Create(ctx, proplet.Proplet{
 		ID: "proplet-1", Alive: true, AliveHistory: []time.Time{time.Now()},
 	}))
 
 	const taskCount = 8
 	ids := make([]string, 0, taskCount)
-	for i := 0; i < taskCount; i++ {
-		created, err := svc.CreateTask(ctx, task.Task{Name: "concurrent", State: task.Pending})
+	for range taskCount {
+		created, err := env.svc.CreateTask(ctx, task.Task{Name: "concurrent", State: task.Pending})
 		require.NoError(t, err)
 		ids = append(ids, created.ID)
 	}
@@ -148,7 +162,7 @@ func TestConcurrentStartsDoNotLoseTaskCount(t *testing.T) {
 		go func(id string) {
 			defer wg.Done()
 			<-start
-			if err := svc.StartTask(ctx, id); err != nil {
+			if err := env.svc.StartTask(ctx, id); err != nil {
 				errCh <- err
 			}
 		}(id)
@@ -160,7 +174,7 @@ func TestConcurrentStartsDoNotLoseTaskCount(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	p, err := repos.Proplets.Get(ctx, "proplet-1")
+	p, err := env.repos.Proplets.Get(ctx, "proplet-1")
 	require.NoError(t, err)
 	assert.Equal(t, uint64(taskCount), p.TaskCount)
 }
