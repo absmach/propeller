@@ -1,10 +1,10 @@
 use super::{Runtime, RuntimeContext, StartConfig};
 use crate::hal::PropletHal;
 use crate::hal_component;
-use crate::wasi_security::WasiSecurity;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use elastic_tee_hal::StorageInterface;
+use elastic_wasi_security::WasiSecurity;
 use http_body_util::BodyExt;
 use hyper::server::conn::http1;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};

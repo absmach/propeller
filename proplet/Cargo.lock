@@ -1925,6 +1925,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "elastic-wasi-security"
+version = "48.0.0"
+source = "git+https://github.com/elasticproject-eu/wasi-security?rev=6d4fa04702046aa4ddb9b770cde5d002e75c8a73#6d4fa04702046aa4ddb9b770cde5d002e75c8a73"
+dependencies = [
+ "anyhow",
+ "dlopen2",
+ "serde",
+ "toml 1.1.6+spec-1.1.0",
+ "wasmtime-wasi",
+]
+
+[[package]]
 name = "elliptic-curve"
 version = "0.13.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4654,6 +4666,7 @@ dependencies = [
  "config",
  "dlopen2",
  "elastic-tee-hal",
+ "elastic-wasi-security",
  "futures-util",
  "hex",
  "http-body",
