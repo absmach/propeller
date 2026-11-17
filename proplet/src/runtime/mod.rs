@@ -95,4 +95,41 @@ mod tests {
 
         assert_eq!(ctx1.proplet_id, ctx2.proplet_id);
     }
+
+    #[test]
+    fn test_example_wasi_security_policy_parses() {
+        use elastic_wasi_security::NetworkRuleProtocol;
+
+        let raw = include_str!("../../../examples/wasi-security/policy.toml");
+        let policy = WasiSecurity::from_toml(raw).expect("example policy should parse");
+
+        assert_eq!(policy.arguments, Some(vec!["--verbose".to_string()]));
+        assert_eq!(
+            policy.env.as_ref().and_then(|env| env.get("LOG_LEVEL")),
+            Some(&"debug".to_string())
+        );
+        assert_eq!(
+            policy.storage_readonly,
+            vec![("/srv/models".to_string(), "/models".to_string())]
+        );
+        assert_eq!(
+            policy.storage_mount,
+            vec![("/var/lib/task".to_string(), "/data".to_string())]
+        );
+        assert!(!policy.allow_ip_name_lookup);
+
+        assert_eq!(policy.network_bind.len(), 1);
+        assert_eq!(policy.network_bind[0].protocol, NetworkRuleProtocol::Tcp);
+        assert_eq!(
+            policy.network_bind[0].socket,
+            "0.0.0.0:8080".parse().unwrap()
+        );
+
+        assert_eq!(policy.network_connect.len(), 1);
+        assert_eq!(policy.network_connect[0].protocol, NetworkRuleProtocol::Tcp);
+        assert_eq!(
+            policy.network_connect[0].socket,
+            "10.0.0.5:5432".parse().unwrap()
+        );
+    }
 }
