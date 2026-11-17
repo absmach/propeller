@@ -1,4 +1,4 @@
-FROM golang:1.27 AS builder
+FROM golang:1.27.3 AS builder
 ARG SVC
 # TARGETARCH / TARGETVARIANT are set automatically by docker buildx.
 # GOARCH / GOARM can still be passed explicitly via --build-arg to keep
