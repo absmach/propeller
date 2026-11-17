@@ -82,7 +82,7 @@ wasm-wave = "0.261.0"
 wasmtime-wasi-usb = "50.0.0"
 
 # ELASTIC Wasi Security
-elastic-wasi-security = { git = "https://github.com/elasticproject-eu/wasi-security", rev = "6d4fa04702046aa4ddb9b770cde5d002e75c8a73" }
+elastic-wasi-security = { git = "https://github.com/elasticproject-eu/wasi-security", rev = "ee83c55a2186cbaea0f1a86bf0cce7298cd42b05" }
 
 # ELASTIC - Dependency for loading external WASI security providers (as a shared library), e.g. THS WASI PEP library.
 dlopen2 = "0.9"
