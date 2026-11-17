@@ -102,6 +102,40 @@ func TestInvokeBroadcastRetries(t *testing.T) {
 		require.True(t, ids[staleA])
 		require.True(t, ids[staleB])
 	})
+
+	t.Run("re-deploy preserves WASI security metadata", func(t *testing.T) {
+		t.Parallel()
+
+		stale := uuid.NewString()
+		svc, redeploys := broadcastInvokeService(t, func(string) (string, string) {
+			return "", notPrecompiled
+		}, stale)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		policy := "arguments = [\"--verbose\"]"
+		created, err := svc.CreateTask(ctx, task.Task{
+			Name:      "latent-fn",
+			Latent:    true,
+			Broadcast: true,
+			Metadata: task.Metadata{
+				task.MetadataElasticKey: map[string]any{
+					task.ElasticWasiSecurity: policy,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = svc.InvokeTask(ctx, created.ID, []string{"world"}, nil)
+		require.Error(t, err)
+
+		got := redeploys()
+		require.Len(t, got, 1)
+		metadata, ok := got[0]["metadata"].(map[string]any)
+		require.True(t, ok, "re-deploy must carry the reserved elastic metadata")
+		require.Equal(t, policy, metadata[task.ElasticWasiSecurity])
+	})
 }
 
 func broadcastInvokeService(
@@ -176,9 +210,10 @@ func broadcastInvokeService(
 					return
 				}
 				var payload struct {
-					Broadcast bool   `json:"broadcast"`
-					Latent    bool   `json:"latent"`
-					PropletID string `json:"proplet_id"`
+					Broadcast bool           `json:"broadcast"`
+					Latent    bool           `json:"latent"`
+					PropletID string         `json:"proplet_id"`
+					Metadata  map[string]any `json:"metadata"`
 				}
 				if err := json.Unmarshal(raw, &payload); err != nil {
 					return
@@ -190,6 +225,7 @@ func broadcastInvokeService(
 				redeployPayloads = append(redeployPayloads, map[string]any{
 					"broadcast":  payload.Broadcast,
 					"proplet_id": payload.PropletID,
+					"metadata":   payload.Metadata,
 				})
 				mu.Unlock()
 			}
