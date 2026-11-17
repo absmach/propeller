@@ -73,6 +73,10 @@ type service struct {
 	wg               sync.WaitGroup
 	pendingInvokes   map[string]chan invokeResult
 	pendingInvokesMu sync.Mutex
+	// propletMu serialises read-modify-write access to proplet rows. Without it,
+	// concurrent task starts/stops and liveness updates overwrite each other's
+	// task_count, alive and alive_history values.
+	propletMu sync.Mutex
 }
 
 type invokeResult struct {
@@ -195,6 +199,9 @@ func (svc *service) SelectProplet(ctx context.Context, t task.Task) (proplet.Pro
 }
 
 func (svc *service) DeleteProplet(ctx context.Context, propletID string) error {
+	svc.propletMu.Lock()
+	defer svc.propletMu.Unlock()
+
 	p, err := svc.GetProplet(ctx, propletID)
 	if err != nil {
 		return err
@@ -770,7 +777,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	if err := svc.bumpPropletTaskCount(ctx, p, +1); err != nil {
+	if err := svc.bumpPropletTaskCount(ctx, p.ID, +1); err != nil {
 		_ = svc.taskPropletRepo.Delete(ctx, taskID)
 		if stopErr := svc.publishStop(ctx, t, p.ID); stopErr != nil {
 			svc.logger.ErrorContext(ctx, "failed to send stop after bump failure", "task_id", taskID, "error", stopErr)
@@ -785,7 +792,7 @@ func (svc *service) StartTask(ctx context.Context, taskID string) error {
 
 	if err := svc.markTaskRunning(ctx, &t); err != nil {
 		_ = svc.taskPropletRepo.Delete(ctx, taskID)
-		_ = svc.bumpPropletTaskCount(ctx, p, -1)
+		_ = svc.bumpPropletTaskCount(ctx, p.ID, -1)
 		if stopErr := svc.publishStop(ctx, t, p.ID); stopErr != nil {
 			svc.logger.ErrorContext(ctx, "failed to send stop after markRunning failure", "task_id", taskID, "error", stopErr)
 		}
@@ -840,7 +847,7 @@ func (svc *service) StopTask(ctx context.Context, taskID string) error {
 		return err
 	}
 
-	if err := svc.bumpPropletTaskCount(ctx, p, -1); err != nil {
+	if err := svc.bumpPropletTaskCount(ctx, p.ID, -1); err != nil {
 		return err
 	}
 
@@ -1360,9 +1367,14 @@ func (svc *service) startJobConfigurable(ctx context.Context, tasks []task.Task)
 
 func (svc *service) stopJobTasks(ctx context.Context, tasks []task.Task) {
 	for i := range tasks {
-		t := &tasks[i]
-		if t.State == task.Running || t.State == task.Scheduled {
-			_ = svc.StopTask(ctx, t.ID)
+		// The caller's copy is captured before StartTask runs, so its state is
+		// stale by the time fail-fast fires. Re-read the persisted state.
+		fresh, err := svc.GetTask(ctx, tasks[i].ID)
+		if err != nil {
+			continue
+		}
+		if fresh.State == task.Running || fresh.State == task.Scheduled {
+			_ = svc.StopTask(ctx, fresh.ID)
 		}
 	}
 }
@@ -1392,6 +1404,14 @@ func (svc *service) handle(ctx context.Context) func(topic string, msg map[strin
 }
 
 func (svc *service) createPropletHandler(ctx context.Context, msg map[string]any) error {
+	svc.propletMu.Lock()
+	defer svc.propletMu.Unlock()
+
+	return svc.createPropletHandlerLocked(ctx, msg)
+}
+
+// createPropletHandlerLocked requires propletMu to be held by the caller.
+func (svc *service) createPropletHandlerLocked(ctx context.Context, msg map[string]any) error {
 	propletID, ok := msg["proplet_id"].(string)
 	if !ok {
 		return errors.New("invalid proplet_id")
@@ -1455,9 +1475,12 @@ func (svc *service) updateLivenessHandler(ctx context.Context, msg map[string]an
 		return errors.New("proplet id is empty")
 	}
 
+	svc.propletMu.Lock()
+	defer svc.propletMu.Unlock()
+
 	p, err := svc.GetProplet(ctx, propletID)
 	if errors.Is(err, pkgerrors.ErrNotFound) {
-		return svc.createPropletHandler(ctx, msg)
+		return svc.createPropletHandlerLocked(ctx, msg)
 	}
 	if err != nil {
 		return err
@@ -1523,6 +1546,10 @@ func (svc *service) updateResultsHandler(ctx context.Context, msg map[string]any
 	if !finished {
 		return nil
 	}
+
+	// The proplet slot is held from dispatch until the task reaches a terminal
+	// state. StopTask releases it on explicit stop; results do the same here.
+	svc.releaseTaskFromProplet(ctx, taskID)
 
 	svc.notifyTaskComplete(ctx, t)
 
@@ -2320,11 +2347,38 @@ func (svc *service) notifyTaskComplete(ctx context.Context, t task.Task) {
 	}
 }
 
-func (svc *service) bumpPropletTaskCount(ctx context.Context, p proplet.Proplet, delta int64) error {
-	newCount := max(int64(p.TaskCount)+delta, 0)
-	p.TaskCount = uint64(newCount)
+// bumpPropletTaskCount re-reads the proplet under propletMu so concurrent
+// starts/stops cannot lose each other's increments. Callers must not hold
+// propletMu.
+func (svc *service) bumpPropletTaskCount(ctx context.Context, propletID string, delta int64) error {
+	svc.propletMu.Lock()
+	defer svc.propletMu.Unlock()
+
+	p, err := svc.propletRepo.Get(ctx, propletID)
+	if err != nil {
+		return err
+	}
+	p.TaskCount = uint64(max(int64(p.TaskCount)+delta, 0))
 
 	return svc.propletRepo.Update(ctx, p)
+}
+
+// releaseTaskFromProplet clears the task-to-proplet pin and releases the
+// proplet's active-task slot when a task reaches a terminal state. It is
+// idempotent: once the pin is gone, later duplicate result messages are no-ops.
+func (svc *service) releaseTaskFromProplet(ctx context.Context, taskID string) {
+	propletID, err := svc.taskPropletRepo.Get(ctx, taskID)
+	if err != nil {
+		return
+	}
+	if err := svc.taskPropletRepo.Delete(ctx, taskID); err != nil {
+		svc.logger.WarnContext(ctx, "failed to delete task-proplet mapping on completion", "task_id", taskID, "error", err)
+
+		return
+	}
+	if err := svc.bumpPropletTaskCount(ctx, propletID, -1); err != nil {
+		svc.logger.WarnContext(ctx, "failed to release proplet task count on completion", "task_id", taskID, "proplet_id", propletID, "error", err)
+	}
 }
 
 func (svc *service) markTaskRunning(ctx context.Context, t *task.Task) error {
