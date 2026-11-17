@@ -1229,6 +1229,18 @@ func (svc *service) redeployLatent(ctx context.Context, t task.Task, propletID s
 		MonitoringProfile: t.MonitoringProfile,
 		PropletID:         propletID,
 		HalStoragePath:    t.HalStoragePath,
+		Metadata:          t.ElasticConfig(),
+	}
+
+	// A re-deployed latent task must see the same parent results as its initial
+	// dispatch; publishStart does the same for the normal start path.
+	if len(t.DependsOn) > 0 {
+		parentResults, err := svc.GetParentResults(ctx, t.ID)
+		if err != nil {
+			svc.logger.WarnContext(ctx, "failed to get parent results for latent re-deploy", "task_id", t.ID, "error", err)
+			parentResults = make(map[string]any)
+		}
+		payload.ParentResults = parentResults
 	}
 
 	topic := svc.baseTopic + "/control/manager/start"
