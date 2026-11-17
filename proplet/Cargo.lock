@@ -1956,7 +1956,7 @@ dependencies = [
 [[package]]
 name = "elastic-wasi-security"
 version = "48.0.0"
-source = "git+https://github.com/elasticproject-eu/wasi-security?branch=main#7763ee3a708a8f4da4e3e08ab9c2a54592afa602"
+source = "git+https://github.com/elasticproject-eu/wasi-security?rev=6d4fa04702046aa4ddb9b770cde5d002e75c8a73#6d4fa04702046aa4ddb9b770cde5d002e75c8a73"
 dependencies = [
  "anyhow",
  "dlopen2",
