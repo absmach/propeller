@@ -142,7 +142,12 @@ func (a *postgresTaskAdapter) Create(ctx context.Context, t task.Task) (task.Tas
 }
 
 func (a *postgresTaskAdapter) Get(ctx context.Context, id string) (task.Task, error) {
-	return a.repo.Get(ctx, id)
+	t, err := a.repo.Get(ctx, id)
+	if errors.Is(err, postgres.ErrTaskNotFound) {
+		return task.Task{}, ErrTaskNotFound
+	}
+
+	return t, err
 }
 
 func (a *postgresTaskAdapter) Update(ctx context.Context, t task.Task) error {
@@ -216,7 +221,12 @@ func (a *postgresTaskPropletAdapter) Create(ctx context.Context, taskID, proplet
 }
 
 func (a *postgresTaskPropletAdapter) Get(ctx context.Context, taskID string) (string, error) {
-	return a.repo.Get(ctx, taskID)
+	propletID, err := a.repo.Get(ctx, taskID)
+	if errors.Is(err, postgres.ErrNotFound) {
+		return "", ErrNotFound
+	}
+
+	return propletID, err
 }
 
 func (a *postgresTaskPropletAdapter) Delete(ctx context.Context, taskID string) error {
@@ -298,7 +308,12 @@ func (a *sqliteTaskAdapter) Create(ctx context.Context, t task.Task) (task.Task,
 }
 
 func (a *sqliteTaskAdapter) Get(ctx context.Context, id string) (task.Task, error) {
-	return a.repo.Get(ctx, id)
+	t, err := a.repo.Get(ctx, id)
+	if errors.Is(err, sqlite.ErrTaskNotFound) {
+		return task.Task{}, ErrTaskNotFound
+	}
+
+	return t, err
 }
 
 func (a *sqliteTaskAdapter) Update(ctx context.Context, t task.Task) error {
@@ -372,7 +387,12 @@ func (a *sqliteTaskPropletAdapter) Create(ctx context.Context, taskID, propletID
 }
 
 func (a *sqliteTaskPropletAdapter) Get(ctx context.Context, taskID string) (string, error) {
-	return a.repo.Get(ctx, taskID)
+	propletID, err := a.repo.Get(ctx, taskID)
+	if errors.Is(err, sqlite.ErrNotFound) {
+		return "", ErrNotFound
+	}
+
+	return propletID, err
 }
 
 func (a *sqliteTaskPropletAdapter) Delete(ctx context.Context, taskID string) error {
@@ -454,7 +474,12 @@ func (a *badgerTaskAdapter) Create(ctx context.Context, t task.Task) (task.Task,
 }
 
 func (a *badgerTaskAdapter) Get(ctx context.Context, id string) (task.Task, error) {
-	return a.repo.Get(ctx, id)
+	t, err := a.repo.Get(ctx, id)
+	if errors.Is(err, badger.ErrTaskNotFound) {
+		return task.Task{}, ErrTaskNotFound
+	}
+
+	return t, err
 }
 
 func (a *badgerTaskAdapter) Update(ctx context.Context, t task.Task) error {
@@ -528,7 +553,12 @@ func (a *badgerTaskPropletAdapter) Create(ctx context.Context, taskID, propletID
 }
 
 func (a *badgerTaskPropletAdapter) Get(ctx context.Context, taskID string) (string, error) {
-	return a.repo.Get(ctx, taskID)
+	propletID, err := a.repo.Get(ctx, taskID)
+	if errors.Is(err, badger.ErrNotFound) {
+		return "", ErrNotFound
+	}
+
+	return propletID, err
 }
 
 func (a *badgerTaskPropletAdapter) Delete(ctx context.Context, taskID string) error {
@@ -610,7 +640,12 @@ func (a *postgresJobAdapter) Create(ctx context.Context, j job.Job) (job.Job, er
 }
 
 func (a *postgresJobAdapter) Get(ctx context.Context, id string) (job.Job, error) {
-	return a.repo.Get(ctx, id)
+	j, err := a.repo.Get(ctx, id)
+	if errors.Is(err, postgres.ErrNotFound) {
+		return job.Job{}, ErrNotFound
+	}
+
+	return j, err
 }
 
 func (a *postgresJobAdapter) List(ctx context.Context, offset, limit uint64) ([]job.Job, uint64, error) {
@@ -630,7 +665,12 @@ func (a *sqliteJobAdapter) Create(ctx context.Context, j job.Job) (job.Job, erro
 }
 
 func (a *sqliteJobAdapter) Get(ctx context.Context, id string) (job.Job, error) {
-	return a.repo.Get(ctx, id)
+	j, err := a.repo.Get(ctx, id)
+	if errors.Is(err, sqlite.ErrNotFound) {
+		return job.Job{}, ErrNotFound
+	}
+
+	return j, err
 }
 
 func (a *sqliteJobAdapter) List(ctx context.Context, offset, limit uint64) ([]job.Job, uint64, error) {
@@ -650,7 +690,12 @@ func (a *badgerJobAdapter) Create(ctx context.Context, j job.Job) (job.Job, erro
 }
 
 func (a *badgerJobAdapter) Get(ctx context.Context, id string) (job.Job, error) {
-	return a.repo.Get(ctx, id)
+	j, err := a.repo.Get(ctx, id)
+	if errors.Is(err, badger.ErrNotFound) {
+		return job.Job{}, ErrNotFound
+	}
+
+	return j, err
 }
 
 func (a *badgerJobAdapter) List(ctx context.Context, offset, limit uint64) ([]job.Job, uint64, error) {
