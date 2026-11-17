@@ -37,7 +37,7 @@ pub struct MetricsCollector {
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
-            system: System::new_all(),
+            system: System::new_all().expect("failed to initialize system information"),
         }
     }
 
@@ -56,7 +56,7 @@ impl MetricsCollector {
         // Get global CPU usage - use average of all CPUs
         let cpus = self.system.cpus();
         if !cpus.is_empty() {
-            let total_usage: f32 = cpus.iter().map(|cpu| cpu.cpu_usage()).sum();
+            let total_usage: f32 = cpus.iter().map(|cpu| cpu.usage()).sum();
             cpu_metrics.percent = (total_usage / cpus.len() as f32) as f64;
         }
 

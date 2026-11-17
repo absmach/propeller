@@ -262,9 +262,9 @@ impl PropletService {
                     "binary".to_string()
                 };
 
-                let mut sys = System::new_all();
+                let mut sys = System::new_all().expect("failed to initialize system information");
                 sys.refresh_all();
-                let hostname = System::host_name();
+                let hostname = System::host_name().ok();
                 let total_memory_bytes = sys.total_memory();
 
                 (
