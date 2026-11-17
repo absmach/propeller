@@ -25,7 +25,7 @@ pub struct SystemMonitor {
 
 impl SystemMonitor {
     pub fn new(_default_profile: MonitoringProfile) -> Self {
-        let mut system = System::new_all();
+        let mut system = System::new_all().expect("failed to initialize system information");
         system.refresh_all();
 
         Self {

@@ -13,7 +13,7 @@ webpki-roots = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
-wasmtime = { version = "49.0.5", features = ["component-model", "async", "wave"] }
+wasmtime = { version = "50.0.0", features = ["component-model", "async", "wave"] }
 wasmtime-wasi = "50.0.0"
 wasmtime-wasi-http = "50.0.0"
 hyper = { version = "1.11", features = ["full"] }
@@ -61,7 +61,7 @@ kbs_protocol = { git = "https://github.com/rodneyosodo/guest-components", branch
   "background_check",
   "rust-crypto",
 ], default-features = false }
-oci-client = { version = "0.18.0", default-features = false, features = ["rustls-tls"] }
+oci-client = { version = "0.17.0", default-features = false, features = ["rustls-tls"] }
 oci-spec = { version = "0.10.0" }
 resource_uri = { git = "https://github.com/rodneyosodo/guest-components", branch = "enable-wasm-workloads" }
 hex = { version = "0.4" }
@@ -76,7 +76,7 @@ elastic-tee-hal = { git = "https://github.com/elasticproject-eu/wasmhal", branch
   "amd-sev",
   "intel-tdx",
 ] }
-wasm-wave = "0.258.3"
+wasm-wave = "0.261.0"
 
 # ELASTIC WasmHAL-Hardware: wasi-usb
 wasmtime-wasi-usb = "50.0.0"
