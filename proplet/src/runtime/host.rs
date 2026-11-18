@@ -214,14 +214,11 @@ impl Runtime for HostRuntime {
                 .any(|a| a == "--addr" || a.starts_with("--addr="));
 
             // --port is forwarded to the component and does not choose the listening port.
-            if !has_addr {
-                if let Some(port) = Self::requested_port_arg(&config.cli_args) {
-                    warn!(
-                        "Task {}: --port {port} does not choose the listening port; it is forwarded to the component. Use --addr 0.0.0.0:{port} to bind that port, or leave --port out to use the proplet's configured proxy port {}",
-                        config.id,
-                        self.http_proxy_port
-                    );
-                }
+            if !has_addr && let Some(port) = Self::requested_port_arg(&config.cli_args) {
+                warn!(
+                    "Task {}: --port {port} does not choose the listening port; it is forwarded to the component. Use --addr 0.0.0.0:{port} to bind that port, or leave --port out to use the proplet's configured proxy port {}",
+                    config.id, self.http_proxy_port
+                );
             }
 
             let mut _port_holder: Option<(u16, TcpListener)> = None;
@@ -735,9 +732,11 @@ mod tests {
         let task_id = "task-123";
         let expected_path = temp_dir.join(format!("proplet_{}.wasm", task_id));
 
-        assert!(expected_path
-            .to_string_lossy()
-            .contains("proplet_task-123.wasm"));
+        assert!(
+            expected_path
+                .to_string_lossy()
+                .contains("proplet_task-123.wasm")
+        );
     }
 
     #[test]
@@ -746,9 +745,11 @@ mod tests {
         let task_id = "task-with-dashes-123";
         let file_path = temp_dir.join(format!("proplet_{}.wasm", task_id));
 
-        assert!(file_path
-            .to_string_lossy()
-            .contains("proplet_task-with-dashes-123.wasm"));
+        assert!(
+            file_path
+                .to_string_lossy()
+                .contains("proplet_task-with-dashes-123.wasm")
+        );
     }
 
     #[tokio::test]

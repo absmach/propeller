@@ -4,9 +4,7 @@ wit_bindgen::generate!({
 });
 
 use wasi::http::outgoing_handler::OutgoingRequest;
-use wasi::http::types::{
-    Fields, Method, Scheme,
-};
+use wasi::http::types::{Fields, Method, Scheme};
 
 struct Component;
 

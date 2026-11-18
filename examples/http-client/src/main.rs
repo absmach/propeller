@@ -38,7 +38,9 @@ async fn main() {
         }
         Err(e) => {
             eprintln!("ERROR: plain HTTP GET failed: {e:?}");
-            eprintln!("This likely means the scheme was upgraded to HTTPS (port 443) despite using http://");
+            eprintln!(
+                "This likely means the scheme was upgraded to HTTPS (port 443) despite using http://"
+            );
         }
     }
 

@@ -14,12 +14,12 @@ mod telemetry;
 mod types;
 
 use crate::config::PropletConfig;
-use crate::mqtt::{process_mqtt_events, MqttConfig, PubSub};
+use crate::mqtt::{MqttConfig, PubSub, process_mqtt_events};
 use crate::plugin::registry::PluginRegistry;
+use crate::runtime::Runtime;
 use crate::runtime::host::HostRuntime;
 use crate::runtime::tee_runtime::TeeWasmRuntime;
 use crate::runtime::wasmtime_runtime::WasmtimeRuntime;
-use crate::runtime::Runtime;
 use crate::service::PropletService;
 use anyhow::Result;
 use opentelemetry::trace::TracerProvider as _;
@@ -27,7 +27,7 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::Resource;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -144,13 +144,19 @@ async fn main() -> Result<()> {
 
             // The external runtime only honours preopened dirs, not in-process capabilities.
             if config.hal_enabled {
-                warn!("PROPLET_HAL_ENABLED is set but the external Wasm runtime does not support the HAL; ignoring it");
+                warn!(
+                    "PROPLET_HAL_ENABLED is set but the external Wasm runtime does not support the HAL; ignoring it"
+                );
             }
             if config.usb_enabled {
-                warn!("PROPLET_USB_ENABLED is set but the external Wasm runtime does not support USB; ignoring it");
+                warn!(
+                    "PROPLET_USB_ENABLED is set but the external Wasm runtime does not support USB; ignoring it"
+                );
             }
             if config.http_tls_ca_cert.is_some() {
-                warn!("PROPLET_HTTP_TLS_CA_CERT is set but the external Wasm runtime does not support custom TLS CAs; ignoring it");
+                warn!(
+                    "PROPLET_HTTP_TLS_CA_CERT is set but the external Wasm runtime does not support custom TLS CAs; ignoring it"
+                );
             }
 
             Arc::new(HostRuntime::new(

@@ -1,5 +1,5 @@
-use super::metrics::{AggregatedMetrics, ProcessMetrics};
 use super::ProcessMonitor;
+use super::metrics::{AggregatedMetrics, ProcessMetrics};
 use crate::types::MonitoringProfile;
 use anyhow::Result;
 use async_trait::async_trait;

@@ -195,18 +195,18 @@ impl PropletConfig {
             // confidential platform — Azure CVMs hide all of them behind a
             // paravisor. An explicit override is provided so an operator can
             // force the TEE runtime on when detection cannot see the guest.
-            if let Ok(val) = env::var("PROPLET_TEE_ENABLED") {
-                if !val.is_empty() {
-                    let forced = is_truthy(&val);
-                    if forced != config.tee_enabled {
-                        tracing::info!(
-                            "PROPLET_TEE_ENABLED={} overrides TEE detection ({})",
-                            val,
-                            tee_detection.detection_method
-                        );
-                    }
-                    config.tee_enabled = forced;
+            if let Ok(val) = env::var("PROPLET_TEE_ENABLED")
+                && !val.is_empty()
+            {
+                let forced = is_truthy(&val);
+                if forced != config.tee_enabled {
+                    tracing::info!(
+                        "PROPLET_TEE_ENABLED={} overrides TEE detection ({})",
+                        val,
+                        tee_detection.detection_method
+                    );
                 }
+                config.tee_enabled = forced;
             }
 
             tracing::info!(
@@ -247,132 +247,132 @@ impl PropletConfig {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        if let Ok(val) = env::var("PROPLET_LOG_LEVEL") {
-            if !val.is_empty() {
-                config.log_level = val;
-            }
+        if let Ok(val) = env::var("PROPLET_LOG_LEVEL")
+            && !val.is_empty()
+        {
+            config.log_level = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_ADDRESS") {
-            if !val.is_empty() {
-                config.mqtt_address = val;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_ADDRESS")
+            && !val.is_empty()
+        {
+            config.mqtt_address = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_TIMEOUT") {
-            if let Ok(timeout) = val.parse() {
-                config.mqtt_timeout = timeout;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_TIMEOUT")
+            && let Ok(timeout) = val.parse()
+        {
+            config.mqtt_timeout = timeout;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_QOS") {
-            if let Ok(qos) = val.parse() {
-                config.mqtt_qos = qos;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_QOS")
+            && let Ok(qos) = val.parse()
+        {
+            config.mqtt_qos = qos;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_KEEP_ALIVE") {
-            if let Ok(keep_alive) = val.parse() {
-                config.mqtt_keep_alive = keep_alive;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_KEEP_ALIVE")
+            && let Ok(keep_alive) = val.parse()
+        {
+            config.mqtt_keep_alive = keep_alive;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_MAX_PACKET_SIZE") {
-            if let Ok(max_packet_size) = val.parse() {
-                config.mqtt_max_packet_size = max_packet_size;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_MAX_PACKET_SIZE")
+            && let Ok(max_packet_size) = val.parse()
+        {
+            config.mqtt_max_packet_size = max_packet_size;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_INFLIGHT") {
-            if let Ok(inflight) = val.parse() {
-                config.mqtt_inflight = inflight;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_INFLIGHT")
+            && let Ok(inflight) = val.parse()
+        {
+            config.mqtt_inflight = inflight;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_REQUEST_CHANNEL_CAPACITY") {
-            if let Ok(capacity) = val.parse() {
-                config.mqtt_request_channel_capacity = capacity;
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_REQUEST_CHANNEL_CAPACITY")
+            && let Ok(capacity) = val.parse()
+        {
+            config.mqtt_request_channel_capacity = capacity;
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CA_CERT") {
-            if !val.is_empty() {
-                config.mqtt_tls_ca_cert = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CA_CERT")
+            && !val.is_empty()
+        {
+            config.mqtt_tls_ca_cert = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CLIENT_CERT") {
-            if !val.is_empty() {
-                config.mqtt_tls_client_cert = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CLIENT_CERT")
+            && !val.is_empty()
+        {
+            config.mqtt_tls_client_cert = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CLIENT_KEY") {
-            if !val.is_empty() {
-                config.mqtt_tls_client_key = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_MQTT_TLS_CLIENT_KEY")
+            && !val.is_empty()
+        {
+            config.mqtt_tls_client_key = Some(val);
         }
 
         if let Ok(val) = env::var("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY") {
             config.mqtt_tls_insecure_skip_verify = is_truthy(&val);
         }
 
-        if let Ok(val) = env::var("PROPLET_HTTP_TLS_CA_CERT") {
-            if !val.is_empty() {
-                config.http_tls_ca_cert = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_HTTP_TLS_CA_CERT")
+            && !val.is_empty()
+        {
+            config.http_tls_ca_cert = Some(val);
         }
 
         if let Ok(val) = env::var("PROPLET_HTTP_TLS_INSECURE_SKIP_VERIFY") {
             config.http_tls_insecure_skip_verify = is_truthy(&val);
         }
 
-        if let Ok(val) = env::var("PROPLET_LIVELINESS_INTERVAL") {
-            if let Ok(interval) = val.parse() {
-                config.liveliness_interval = interval;
-            }
+        if let Ok(val) = env::var("PROPLET_LIVELINESS_INTERVAL")
+            && let Ok(interval) = val.parse()
+        {
+            config.liveliness_interval = interval;
         }
 
-        if let Ok(val) = env::var("PROPLET_TENANT_ID") {
-            if !val.is_empty() {
-                config.tenant_id = val;
-            }
+        if let Ok(val) = env::var("PROPLET_TENANT_ID")
+            && !val.is_empty()
+        {
+            config.tenant_id = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_CHANNEL_ID") {
-            if !val.is_empty() {
-                config.channel_id = val;
-            }
+        if let Ok(val) = env::var("PROPLET_CHANNEL_ID")
+            && !val.is_empty()
+        {
+            config.channel_id = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_ENTITY_ID") {
-            if !val.is_empty() {
-                config.entity_id = val;
-            }
+        if let Ok(val) = env::var("PROPLET_ENTITY_ID")
+            && !val.is_empty()
+        {
+            config.entity_id = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_API_KEY") {
-            if !val.is_empty() {
-                config.api_key = val;
-            }
+        if let Ok(val) = env::var("PROPLET_API_KEY")
+            && !val.is_empty()
+        {
+            config.api_key = val;
         }
 
-        if let Ok(val) = env::var("PROPLET_MANAGER_K8S_NAMESPACE") {
-            if !val.is_empty() {
-                config.k8s_namespace = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_MANAGER_K8S_NAMESPACE")
+            && !val.is_empty()
+        {
+            config.k8s_namespace = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_EXTERNAL_WASM_RUNTIME") {
-            if !val.is_empty() {
-                config.external_wasm_runtime = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_EXTERNAL_WASM_RUNTIME")
+            && !val.is_empty()
+        {
+            config.external_wasm_runtime = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_METRICS_INTERVAL") {
-            if let Ok(interval) = val.parse() {
-                config.metrics_interval = interval;
-            }
+        if let Ok(val) = env::var("PROPLET_METRICS_INTERVAL")
+            && let Ok(interval) = val.parse()
+        {
+            config.metrics_interval = interval;
         }
 
         if let Ok(val) = env::var("PROPLET_ENABLE_MONITORING") {
@@ -392,10 +392,10 @@ impl PropletConfig {
                 config.layer_store_path = val;
             }
 
-            if let Ok(val) = env::var("PROPLET_PULL_CONCURRENT_LIMIT") {
-                if let Ok(limit) = val.parse() {
-                    config.pull_concurrent_limit = limit;
-                }
+            if let Ok(val) = env::var("PROPLET_PULL_CONCURRENT_LIMIT")
+                && let Ok(limit) = val.parse()
+            {
+                config.pull_concurrent_limit = limit;
             }
 
             if let Ok(val) = env::var("PROPLET_HAL_ENABLED") {
@@ -410,10 +410,10 @@ impl PropletConfig {
                 config.usb_enabled = is_truthy(&val);
             }
 
-            if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT") {
-                if let Ok(port) = val.parse() {
-                    config.http_proxy_port = port;
-                }
+            if let Ok(val) = env::var("PROPLET_HTTP_PROXY_PORT")
+                && let Ok(port) = val.parse()
+            {
+                config.http_proxy_port = port;
             }
 
             if let Ok(val) = env::var("PROPLET_WASI_FEATURES") {
@@ -433,36 +433,36 @@ impl PropletConfig {
             }
         }
 
-        if let Ok(val) = env::var("PROPLET_DESCRIPTION") {
-            if !val.is_empty() {
-                config.description = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_DESCRIPTION")
+            && !val.is_empty()
+        {
+            config.description = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_TAGS") {
-            if !val.is_empty() {
-                config.tags = val
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-            }
+        if let Ok(val) = env::var("PROPLET_TAGS")
+            && !val.is_empty()
+        {
+            config.tags = val
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
 
-        if let Ok(val) = env::var("PROPLET_LOCATION") {
-            if !val.is_empty() {
-                config.location = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_LOCATION")
+            && !val.is_empty()
+        {
+            config.location = Some(val);
         }
 
         if let Ok(val) = env::var("PROPLET_COLLECT_SYSTEM_INFO") {
             config.collect_system_info = !is_falsy(&val);
         }
 
-        if let Ok(val) = env::var("PROPLET_PLUGIN_DIR") {
-            if !val.is_empty() {
-                config.plugin_dir = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_PLUGIN_DIR")
+            && !val.is_empty()
+        {
+            config.plugin_dir = Some(val);
         }
 
         if let Ok(val) = env::var("PROPLET_METRICS_PORT") {
@@ -479,16 +479,16 @@ impl PropletConfig {
             config.metrics_enabled = is_truthy(&val);
         }
 
-        if let Ok(val) = env::var("PROPLET_OTEL_URL") {
-            if !val.is_empty() {
-                config.otel_url = Some(val);
-            }
+        if let Ok(val) = env::var("PROPLET_OTEL_URL")
+            && !val.is_empty()
+        {
+            config.otel_url = Some(val);
         }
 
-        if let Ok(val) = env::var("PROPLET_TRACE_RATIO") {
-            if let Ok(ratio) = val.parse::<f64>() {
-                config.trace_ratio = ratio.clamp(0.0, 1.0);
-            }
+        if let Ok(val) = env::var("PROPLET_TRACE_RATIO")
+            && let Ok(ratio) = val.parse::<f64>()
+        {
+            config.trace_ratio = ratio.clamp(0.0, 1.0);
         }
 
         config
@@ -529,6 +529,21 @@ mod tests {
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         ENV_MUTEX.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    // Since Rust 2024, mutating the process environment is `unsafe` because
+    // other threads may read it concurrently. Every test that mutates the
+    // environment holds `ENV_MUTEX` (via `env_lock()`) for the whole mutation,
+    // and none of these tests spawn threads that read the environment, so no
+    // concurrent reader can observe a partially updated value.
+    fn set_env_var(key: &str, value: &str) {
+        // SAFETY: calls are serialized by `ENV_MUTEX`; see comment above.
+        unsafe { env::set_var(key, value) };
+    }
+
+    fn remove_env_var(key: &str) {
+        // SAFETY: calls are serialized by `ENV_MUTEX`; see comment above.
+        unsafe { env::remove_var(key) };
     }
 
     #[test]
@@ -618,9 +633,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_log_level() {
         let _lock = env_lock();
-        env::set_var("PROPLET_LOG_LEVEL", "debug");
+        set_env_var("PROPLET_LOG_LEVEL", "debug");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_LOG_LEVEL");
+        remove_env_var("PROPLET_LOG_LEVEL");
 
         assert_eq!(config.log_level, "debug");
     }
@@ -628,9 +643,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_mqtt_address() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MQTT_ADDRESS", "tcp://mqtt.example.com:1883");
+        set_env_var("PROPLET_MQTT_ADDRESS", "tcp://mqtt.example.com:1883");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MQTT_ADDRESS");
+        remove_env_var("PROPLET_MQTT_ADDRESS");
 
         assert_eq!(config.mqtt_address, "tcp://mqtt.example.com:1883");
     }
@@ -638,9 +653,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_mqtt_timeout() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MQTT_TIMEOUT", "120");
+        set_env_var("PROPLET_MQTT_TIMEOUT", "120");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MQTT_TIMEOUT");
+        remove_env_var("PROPLET_MQTT_TIMEOUT");
 
         assert_eq!(config.mqtt_timeout, 120);
     }
@@ -648,9 +663,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_mqtt_qos() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MQTT_QOS", "1");
+        set_env_var("PROPLET_MQTT_QOS", "1");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MQTT_QOS");
+        remove_env_var("PROPLET_MQTT_QOS");
 
         assert_eq!(config.mqtt_qos, 1);
     }
@@ -658,9 +673,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_liveliness_interval() {
         let _lock = env_lock();
-        env::set_var("PROPLET_LIVELINESS_INTERVAL", "20");
+        set_env_var("PROPLET_LIVELINESS_INTERVAL", "20");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_LIVELINESS_INTERVAL");
+        remove_env_var("PROPLET_LIVELINESS_INTERVAL");
 
         assert_eq!(config.liveliness_interval, 20);
     }
@@ -668,9 +683,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_tenant_id() {
         let _lock = env_lock();
-        env::set_var("PROPLET_TENANT_ID", "tenant-123");
+        set_env_var("PROPLET_TENANT_ID", "tenant-123");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_TENANT_ID");
+        remove_env_var("PROPLET_TENANT_ID");
 
         assert_eq!(config.tenant_id, "tenant-123");
     }
@@ -678,9 +693,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_channel_id() {
         let _lock = env_lock();
-        env::set_var("PROPLET_CHANNEL_ID", "channel-456");
+        set_env_var("PROPLET_CHANNEL_ID", "channel-456");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_CHANNEL_ID");
+        remove_env_var("PROPLET_CHANNEL_ID");
 
         assert_eq!(config.channel_id, "channel-456");
     }
@@ -688,9 +703,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_entity_id() {
         let _lock = env_lock();
-        env::set_var("PROPLET_ENTITY_ID", "entity-789");
+        set_env_var("PROPLET_ENTITY_ID", "entity-789");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_ENTITY_ID");
+        remove_env_var("PROPLET_ENTITY_ID");
 
         assert_eq!(config.entity_id, "entity-789");
     }
@@ -698,9 +713,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_api_key() {
         let _lock = env_lock();
-        env::set_var("PROPLET_API_KEY", "secret-key");
+        set_env_var("PROPLET_API_KEY", "secret-key");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_API_KEY");
+        remove_env_var("PROPLET_API_KEY");
 
         assert_eq!(config.api_key, "secret-key");
     }
@@ -708,9 +723,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_k8s_namespace() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MANAGER_K8S_NAMESPACE", "production");
+        set_env_var("PROPLET_MANAGER_K8S_NAMESPACE", "production");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MANAGER_K8S_NAMESPACE");
+        remove_env_var("PROPLET_MANAGER_K8S_NAMESPACE");
 
         assert_eq!(config.k8s_namespace, Some("production".to_string()));
     }
@@ -718,9 +733,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_external_runtime() {
         let _lock = env_lock();
-        env::set_var("PROPLET_EXTERNAL_WASM_RUNTIME", "/usr/local/bin/wasmtime");
+        set_env_var("PROPLET_EXTERNAL_WASM_RUNTIME", "/usr/local/bin/wasmtime");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_EXTERNAL_WASM_RUNTIME");
+        remove_env_var("PROPLET_EXTERNAL_WASM_RUNTIME");
 
         assert_eq!(
             config.external_wasm_runtime,
@@ -731,9 +746,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_mqtt_timeout_invalid() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MQTT_TIMEOUT", "not-a-number");
+        set_env_var("PROPLET_MQTT_TIMEOUT", "not-a-number");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MQTT_TIMEOUT");
+        remove_env_var("PROPLET_MQTT_TIMEOUT");
 
         assert_eq!(config.mqtt_timeout, 30);
     }
@@ -741,9 +756,9 @@ mod tests {
     #[test]
     fn test_proplet_config_from_env_mqtt_qos_invalid() {
         let _lock = env_lock();
-        env::set_var("PROPLET_MQTT_QOS", "invalid");
+        set_env_var("PROPLET_MQTT_QOS", "invalid");
         let config = PropletConfig::from_env();
-        env::remove_var("PROPLET_MQTT_QOS");
+        remove_env_var("PROPLET_MQTT_QOS");
 
         assert_eq!(config.mqtt_qos, 2);
     }
@@ -766,7 +781,7 @@ mod tests {
         ];
 
         for var in &vars_to_clear {
-            env::remove_var(var);
+            remove_env_var(var);
         }
 
         let config = PropletConfig::from_env();

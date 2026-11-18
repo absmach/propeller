@@ -47,10 +47,10 @@ impl TaskHandler {
         task_env.insert("ROUND_ID".to_string(), task_config.round_id.clone());
         task_env.insert("MODEL_URI".to_string(), task_config.model_ref.clone());
 
-        if let Some(hyperparams) = &task_config.hyperparams {
-            if let Ok(hyperparams_json) = serde_json::to_string(hyperparams) {
-                task_env.insert("HYPERPARAMS".to_string(), hyperparams_json);
-            }
+        if let Some(hyperparams) = &task_config.hyperparams
+            && let Ok(hyperparams_json) = serde_json::to_string(hyperparams)
+        {
+            task_env.insert("HYPERPARAMS".to_string(), hyperparams_json);
         }
 
         task_env.insert(
@@ -90,19 +90,19 @@ impl TaskHandler {
             }
         }
 
-        if let Some(hyperparams) = &task_config.hyperparams {
-            if let Some(batch_size) = hyperparams.get("batch_size") {
-                if let Some(bs) = batch_size.as_u64() {
-                    if bs <= 8 {
-                        debug!("Small batch size detected, selecting TinyML backend");
-                        return MLBackend::TinyML;
-                    }
-                } else if let Some(bs) = batch_size.as_f64() {
-                    if bs <= 8.0 {
-                        debug!("Small batch size detected, selecting TinyML backend");
-                        return MLBackend::TinyML;
-                    }
+        if let Some(hyperparams) = &task_config.hyperparams
+            && let Some(batch_size) = hyperparams.get("batch_size")
+        {
+            if let Some(bs) = batch_size.as_u64() {
+                if bs <= 8 {
+                    debug!("Small batch size detected, selecting TinyML backend");
+                    return MLBackend::TinyML;
                 }
+            } else if let Some(bs) = batch_size.as_f64()
+                && bs <= 8.0
+            {
+                debug!("Small batch size detected, selecting TinyML backend");
+                return MLBackend::TinyML;
             }
         }
 

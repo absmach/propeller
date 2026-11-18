@@ -28,6 +28,10 @@ use bindings::wasi::http::outgoing_handler;
 use bindings::wasi::http::types::{ErrorCode, Fields, OutgoingBody, OutgoingRequest, Scheme};
 
 fn main() {
+    run_checks();
+}
+
+fn run_checks() {
     eprintln!("=== Test 1: plain HTTP GET (http://httpbin.org/get) ===");
     match fetch("httpbin.org", "/get", false) {
         Ok((status, body)) => {
@@ -59,7 +63,7 @@ struct Main;
 
 impl bindings::exports::wasi::cli::run::Guest for Main {
     fn run() -> Result<(), ()> {
-        main();
+        run_checks();
         Ok(())
     }
 }

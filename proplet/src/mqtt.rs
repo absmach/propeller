@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -56,7 +56,9 @@ impl PubSub {
                         Some((cert, key))
                     }
                     (Some(_), None) | (None, Some(_)) => {
-                        warn!("mTLS requires both PROPLET_MQTT_TLS_CLIENT_CERT and PROPLET_MQTT_TLS_CLIENT_KEY — client auth disabled");
+                        warn!(
+                            "mTLS requires both PROPLET_MQTT_TLS_CLIENT_CERT and PROPLET_MQTT_TLS_CLIENT_KEY — client auth disabled"
+                        );
                         None
                     }
                     _ => None,
@@ -66,15 +68,21 @@ impl PubSub {
                 // rumqttc::Transport::tls() API and has no effect when a CA cert is provided.
                 // Use the Go manager/proxy if insecure TLS is required.
                 if config.tls_insecure_skip_verify {
-                    warn!("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY has no effect when PROPLET_MQTT_TLS_CA_CERT is set — certificate verification is always enforced");
+                    warn!(
+                        "PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY has no effect when PROPLET_MQTT_TLS_CA_CERT is set — certificate verification is always enforced"
+                    );
                 }
                 rumqttc::Transport::tls(ca, client_auth, None)
             } else {
                 if config.tls_client_cert.is_some() || config.tls_client_key.is_some() {
-                    warn!("PROPLET_MQTT_TLS_CLIENT_CERT/KEY are set but ignored — mTLS requires PROPLET_MQTT_TLS_CA_CERT");
+                    warn!(
+                        "PROPLET_MQTT_TLS_CLIENT_CERT/KEY are set but ignored — mTLS requires PROPLET_MQTT_TLS_CA_CERT"
+                    );
                 }
                 if config.tls_insecure_skip_verify {
-                    warn!("PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY is not supported by the Rust proplet — certificate verification uses system root CAs");
+                    warn!(
+                        "PROPLET_MQTT_TLS_INSECURE_SKIP_VERIFY is not supported by the Rust proplet — certificate verification uses system root CAs"
+                    );
                 }
                 rumqttc::Transport::tls_with_default_config()
             };
@@ -223,18 +231,18 @@ fn parse_mqtt_address(address: &str) -> Result<(String, u16, bool)> {
         return Ok((host, port, use_tls));
     }
 
-    if address.starts_with('[') {
-        if let Some(bracket_end) = address.find(']') {
-            let host = address[1..bracket_end].to_string();
-            let port = if let Some(colon_pos) = address[bracket_end..].find(':') {
-                address[bracket_end + colon_pos + 1..]
-                    .parse::<u16>()
-                    .unwrap_or(1883)
-            } else {
-                1883
-            };
-            return Ok((host, port, false));
-        }
+    if address.starts_with('[')
+        && let Some(bracket_end) = address.find(']')
+    {
+        let host = address[1..bracket_end].to_string();
+        let port = if let Some(colon_pos) = address[bracket_end..].find(':') {
+            address[bracket_end + colon_pos + 1..]
+                .parse::<u16>()
+                .unwrap_or(1883)
+        } else {
+            1883
+        };
+        return Ok((host, port, false));
     }
 
     if let Some(colon_pos) = address.rfind(':') {
@@ -400,10 +408,12 @@ mod tests {
 
         let result: Result<serde_json::Value> = msg.decode();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to deserialize"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to deserialize")
+        );
     }
 
     #[test]

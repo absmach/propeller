@@ -11,7 +11,7 @@ import (
 	"github.com/absmach/propeller/pkg/plugin"
 )
 
-const examplePluginPath = "../../examples/plugin-auth/target/wasm32-wasip1/release/plugin_auth.wasm"
+const examplePluginPath = "../../examples/plugin-auth/target/wasm32-wasip2/release/plugin_auth.wasm"
 
 func TestExamplePluginRoundTrip(t *testing.T) {
 	t.Parallel()

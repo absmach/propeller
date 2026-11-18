@@ -17,7 +17,10 @@ impl exports::propeller::proplet_plugin::lifecycle::Guest for Plugin {
                 reason: Some("task name is required".into()),
             };
         }
-        AuthorizeResponse { allow: true, reason: None }
+        AuthorizeResponse {
+            allow: true,
+            reason: None,
+        }
     }
 
     fn enrich(task: TaskInfo) -> EnrichResponse {

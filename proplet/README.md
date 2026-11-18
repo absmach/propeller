@@ -84,9 +84,6 @@ Typed WIT bindings are generated from `wit/hal/hal.wit`
 See the `hal-test` and `attestation-test` examples (and the standalone
 `hal-runner` for running HAL components outside proplet).
 
-P1 core modules (`wasm32-wasip1`) still execute, but receive WASI only — no
-HAL.
-
 The HAL bridges to the `elastic_tee_hal` providers, returning real values on
 TEE hardware (AMD SEV / Intel TDX) and safe defaults elsewhere. v1 covers the
 provider-backed interfaces (`platform`, `attestation`, `crypto`, `clock`,

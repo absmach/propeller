@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use image_rs::layer_store::LayerStore;
 use image_rs::meta_store::MetaStore;
 use image_rs::pull::PullClient;
+use oci_client::Reference;
 use oci_client::client::ClientConfig;
 use oci_client::secrets::RegistryAuth;
-use oci_client::Reference;
 use oci_spec::image::ImageConfiguration;
 use std::path::PathBuf;
 use std::process::Command;
@@ -54,10 +54,10 @@ impl TeeWasmRuntime {
     }
 
     fn setup_keyprovider_config() -> Result<()> {
-        if let Ok(existing_path) = std::env::var("OCICRYPT_KEYPROVIDER_CONFIG") {
-            if std::path::Path::new(&existing_path).exists() {
-                return Ok(());
-            }
+        if let Ok(existing_path) = std::env::var("OCICRYPT_KEYPROVIDER_CONFIG")
+            && std::path::Path::new(&existing_path).exists()
+        {
+            return Ok(());
         }
 
         let config_path = PathBuf::from("/tmp/proplet/ocicrypt_keyprovider.conf");
@@ -84,7 +84,13 @@ impl TeeWasmRuntime {
         std::fs::write(&config_path, config_content)
             .context("Failed to write keyprovider config")?;
 
-        std::env::set_var("OCICRYPT_KEYPROVIDER_CONFIG", config_path);
+        // SAFETY: `OCICRYPT_KEYPROVIDER_CONFIG` must be set before image-rs
+        // initialises its keyprovider client. This runs during `TeeWasmRuntime`
+        // construction, before the runtime is shared with other threads, so no
+        // concurrent readers of the environment can observe a torn state.
+        unsafe {
+            std::env::set_var("OCICRYPT_KEYPROVIDER_CONFIG", config_path);
+        }
 
         Ok(())
     }
@@ -211,12 +217,11 @@ impl TeeWasmRuntime {
         if let Ok(entries) = std::fs::read_dir(&layer_store_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(ext) = path.extension() {
-                        if ext == "wasm" {
-                            return Ok(path);
-                        }
-                    }
+                if path.is_file()
+                    && let Some(ext) = path.extension()
+                    && ext == "wasm"
+                {
+                    return Ok(path);
                 }
             }
         }
@@ -324,30 +329,29 @@ impl TeeWasmRuntime {
 impl Runtime for TeeWasmRuntime {
     async fn start_app(&self, _ctx: RuntimeContext, config: StartConfig) -> Result<Vec<u8>> {
         let nonce = format!("proplet-task-{}", config.id);
-        if self.hal.try_attest(nonce.as_bytes()).is_none() {
-            if let Some(ref agent) = self.attestation_agent {
-                agent
-                    .get_evidence(b"wasm-runner")
-                    .await
-                    .context("Failed to get TEE evidence")?;
-            }
+        if self.hal.try_attest(nonce.as_bytes()).is_none()
+            && let Some(ref agent) = self.attestation_agent
+        {
+            agent
+                .get_evidence(b"wasm-runner")
+                .await
+                .context("Failed to get TEE evidence")?;
         }
 
         if !config.wasm_binary.is_empty() {
             return self.run_wasm_embedded(&config.wasm_binary, &config);
         }
 
-        if !config.cli_args.is_empty() {
-            if let Some(oci_ref) = config.cli_args.first() {
-                if oci_ref.contains("/") || oci_ref.contains(":") {
-                    let wasm_path = self.pull_and_decrypt_wasm(oci_ref).await?;
+        if !config.cli_args.is_empty()
+            && let Some(oci_ref) = config.cli_args.first()
+            && (oci_ref.contains("/") || oci_ref.contains(":"))
+        {
+            let wasm_path = self.pull_and_decrypt_wasm(oci_ref).await?;
 
-                    let mut exec_config = config.clone();
-                    exec_config.cli_args.remove(0);
+            let mut exec_config = config.clone();
+            exec_config.cli_args.remove(0);
 
-                    return self.run_wasm(&wasm_path, &exec_config);
-                }
-            }
+            return self.run_wasm(&wasm_path, &exec_config);
         }
 
         Err(anyhow::anyhow!("No WASM binary or OCI reference provided"))

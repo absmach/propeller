@@ -165,7 +165,7 @@ fn deserialize_base64<'de, D>(deserializer: D) -> std::result::Result<Vec<u8>, D
 where
     D: serde::Deserializer<'de>,
 {
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     use serde::de::Error;
 
     let s = String::deserialize(deserializer)?;

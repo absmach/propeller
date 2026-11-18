@@ -98,24 +98,24 @@ fn detect_tdx() -> Option<TeeDetection> {
         ));
     }
 
-    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
-        if cpuinfo.contains("tdx_guest") {
-            return Some(TeeDetection::with_details(
-                TeeType::Tdx,
-                "cpuinfo",
-                "tdx_guest flag found in /proc/cpuinfo",
-            ));
-        }
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo")
+        && cpuinfo.contains("tdx_guest")
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Tdx,
+            "cpuinfo",
+            "tdx_guest flag found in /proc/cpuinfo",
+        ));
     }
 
-    if let Some(dmesg) = kernel_logs() {
-        if dmesg.contains("tdx: Guest initialized") || dmesg.contains("virt/tdx") {
-            return Some(TeeDetection::with_details(
-                TeeType::Tdx,
-                "dmesg",
-                "TDX initialization found in kernel messages",
-            ));
-        }
+    if let Some(dmesg) = kernel_logs()
+        && (dmesg.contains("tdx: Guest initialized") || dmesg.contains("virt/tdx"))
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Tdx,
+            "dmesg",
+            "TDX initialization found in kernel messages",
+        ));
     }
 
     None
@@ -132,40 +132,38 @@ fn detect_sev() -> Option<TeeDetection> {
 
     if let Ok(sev_status) = fs::read_to_string(
         "/sys/firmware/efi/efivars/SevStatus-00000000-0000-0000-0000-000000000000",
-    ) {
-        if !sev_status.is_empty() {
-            return Some(TeeDetection::with_details(
-                TeeType::Sev,
-                "sysfs",
-                "SEV status found in EFI variables",
-            ));
-        }
+    ) && !sev_status.is_empty()
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Sev,
+            "sysfs",
+            "SEV status found in EFI variables",
+        ));
     }
 
-    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
-        if cpuinfo.contains("sev") || cpuinfo.contains("sev_es") || cpuinfo.contains("sev_snp") {
-            let detail = if cpuinfo.contains("sev_snp") {
-                "SEV-SNP detected in /proc/cpuinfo"
-            } else if cpuinfo.contains("sev_es") {
-                "SEV-ES detected in /proc/cpuinfo"
-            } else {
-                "SEV detected in /proc/cpuinfo"
-            };
-            return Some(TeeDetection::with_details(TeeType::Sev, "cpuinfo", detail));
-        }
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo")
+        && (cpuinfo.contains("sev") || cpuinfo.contains("sev_es") || cpuinfo.contains("sev_snp"))
+    {
+        let detail = if cpuinfo.contains("sev_snp") {
+            "SEV-SNP detected in /proc/cpuinfo"
+        } else if cpuinfo.contains("sev_es") {
+            "SEV-ES detected in /proc/cpuinfo"
+        } else {
+            "SEV detected in /proc/cpuinfo"
+        };
+        return Some(TeeDetection::with_details(TeeType::Sev, "cpuinfo", detail));
     }
 
-    if let Some(dmesg) = kernel_logs() {
-        if dmesg.contains("AMD Memory Encryption Features active: SEV")
+    if let Some(dmesg) = kernel_logs()
+        && (dmesg.contains("AMD Memory Encryption Features active: SEV")
             || dmesg.contains("SEV enabled")
-            || dmesg.contains("SEV-SNP")
-        {
-            return Some(TeeDetection::with_details(
-                TeeType::Sev,
-                "dmesg",
-                "SEV initialization found in kernel messages",
-            ));
-        }
+            || dmesg.contains("SEV-SNP"))
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Sev,
+            "dmesg",
+            "SEV initialization found in kernel messages",
+        ));
     }
 
     // Azure confidential VMs run behind a paravisor in vTOM mode: neither
@@ -173,22 +171,22 @@ fn detect_sev() -> Option<TeeDetection> {
     // masked, so every check above misses. Attestation on these guests goes
     // through the vTPM instead (the `az-snp-vtpm` attester), so a vTPM plus a
     // paravisor boot message is sufficient evidence of a confidential guest.
-    if Path::new("/dev/tpm0").exists() || Path::new("/dev/tpmrm0").exists() {
-        if let Some(dmesg) = kernel_logs() {
-            if dmesg.contains("Detected confidential virtualization sev-snp") {
-                return Some(TeeDetection::with_details(
-                    TeeType::Sev,
-                    "azure_paravisor",
-                    "Azure SEV-SNP confidential VM detected via vTPM",
-                ));
-            }
-            if dmesg.contains("Detected confidential virtualization tdx") {
-                return Some(TeeDetection::with_details(
-                    TeeType::Tdx,
-                    "azure_paravisor",
-                    "Azure TDX confidential VM detected via vTPM",
-                ));
-            }
+    if (Path::new("/dev/tpm0").exists() || Path::new("/dev/tpmrm0").exists())
+        && let Some(dmesg) = kernel_logs()
+    {
+        if dmesg.contains("Detected confidential virtualization sev-snp") {
+            return Some(TeeDetection::with_details(
+                TeeType::Sev,
+                "azure_paravisor",
+                "Azure SEV-SNP confidential VM detected via vTPM",
+            ));
+        }
+        if dmesg.contains("Detected confidential virtualization tdx") {
+            return Some(TeeDetection::with_details(
+                TeeType::Tdx,
+                "azure_paravisor",
+                "Azure TDX confidential VM detected via vTPM",
+            ));
         }
     }
 
@@ -206,10 +204,10 @@ fn kernel_logs() -> Option<String> {
         return Some(logs);
     }
 
-    if let Ok(output) = std::process::Command::new("dmesg").arg("--kernel").output() {
-        if let Ok(dmesg) = String::from_utf8(output.stdout) {
-            return Some(dmesg);
-        }
+    if let Ok(output) = std::process::Command::new("dmesg").arg("--kernel").output()
+        && let Ok(dmesg) = String::from_utf8(output.stdout)
+    {
+        return Some(dmesg);
     }
 
     None
@@ -232,24 +230,24 @@ fn detect_sgx() -> Option<TeeDetection> {
         ));
     }
 
-    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
-        if cpuinfo.contains("sgx") {
-            return Some(TeeDetection::with_details(
-                TeeType::Sgx,
-                "cpuinfo",
-                "SGX flag found in /proc/cpuinfo",
-            ));
-        }
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo")
+        && cpuinfo.contains("sgx")
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Sgx,
+            "cpuinfo",
+            "SGX flag found in /proc/cpuinfo",
+        ));
     }
 
-    if let Some(dmesg) = kernel_logs() {
-        if dmesg.contains("sgx: EPC section") || dmesg.contains("intel_sgx") {
-            return Some(TeeDetection::with_details(
-                TeeType::Sgx,
-                "dmesg",
-                "SGX initialization found in kernel messages",
-            ));
-        }
+    if let Some(dmesg) = kernel_logs()
+        && (dmesg.contains("sgx: EPC section") || dmesg.contains("intel_sgx"))
+    {
+        return Some(TeeDetection::with_details(
+            TeeType::Sgx,
+            "dmesg",
+            "SGX initialization found in kernel messages",
+        ));
     }
 
     None

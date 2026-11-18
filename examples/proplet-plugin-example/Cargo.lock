@@ -119,7 +119,7 @@ version = "0.1.0"
 
 [[package]]
 name = "proplet-plugin-example"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "propeller-proplet-plugin-sdk",
  "wit-bindgen",

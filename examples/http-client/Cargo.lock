@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "http-client"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "wasip2 2.0.1+wasi-0.2.12",
  "wstd",

@@ -18,10 +18,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::oneshot;
-use tokio::sync::watch;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
+use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
@@ -33,8 +33,8 @@ use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
 use wasmtime_wasi::sockets::SocketAddrUse;
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::io::TokioIo;
-use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
+use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperOutgoingBody;
 use wasmtime_wasi_http::{
     Error as HttpError, RequestOptions, WasiBody, WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks,
@@ -208,10 +208,10 @@ fn resolve_component_export(
         let Some(inst_idx) = instance.get_export_index(&mut *store, None, &inst_name) else {
             continue;
         };
-        if let Some(func_idx) = instance.get_export_index(&mut *store, Some(&inst_idx), name) {
-            if let Some(func) = instance.get_func(&mut *store, func_idx) {
-                return Some(func);
-            }
+        if let Some(func_idx) = instance.get_export_index(&mut *store, Some(&inst_idx), name)
+            && let Some(func) = instance.get_func(&mut *store, func_idx)
+        {
+            return Some(func);
         }
     }
 
@@ -241,12 +241,12 @@ fn scan_export_instance_names(bytes: &[u8]) -> Vec<String> {
             while end < bytes.len() && end - start < 128 && is_id_byte(bytes[end]) {
                 end += 1;
             }
-            if end > start {
-                if let Ok(s) = std::str::from_utf8(&bytes[start..end]) {
-                    if s.contains('/') && seen.insert(s.to_string()) {
-                        names.push(s.to_string());
-                    }
-                }
+            if end > start
+                && let Ok(s) = std::str::from_utf8(&bytes[start..end])
+                && s.contains('/')
+                && seen.insert(s.to_string())
+            {
+                names.push(s.to_string());
             }
             i = end.max(start + 1);
         }
@@ -445,7 +445,7 @@ impl http_body::Body for IncomingResponseBody {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
-        use std::task::{ready, Poll};
+        use std::task::{Poll, ready};
         match std::pin::Pin::new(&mut self.as_mut().incoming).poll_frame(cx) {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Err(err))) => {
@@ -605,14 +605,13 @@ async fn custom_tls_send_request_handler(
 }
 
 fn preserve_host_header(request: &mut hyper::Request<HyperOutgoingBody>) {
-    if !request.headers().contains_key(hyper::http::header::HOST) {
-        if let Some(authority) = request.uri().authority().cloned() {
-            if let Ok(host_value) = hyper::http::HeaderValue::from_str(authority.as_str()) {
-                request
-                    .headers_mut()
-                    .insert(hyper::http::header::HOST, host_value);
-            }
-        }
+    if !request.headers().contains_key(hyper::http::header::HOST)
+        && let Some(authority) = request.uri().authority().cloned()
+        && let Ok(host_value) = hyper::http::HeaderValue::from_str(authority.as_str())
+    {
+        request
+            .headers_mut()
+            .insert(hyper::http::header::HOST, host_value);
     }
 }
 
@@ -945,7 +944,7 @@ impl Runtime for WasmtimeRuntime {
                 None => {
                     return Err(anyhow::anyhow!(
                         "task {id} has not been precompiled; deploy it as a latent task first"
-                    ))
+                    ));
                 }
             }
         };
@@ -991,7 +990,7 @@ impl WasmtimeRuntime {
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "Failed to compile Wasmtime module from binary: {e}"
-                ))
+                ));
             }
         };
 
@@ -1036,7 +1035,7 @@ impl WasmtimeRuntime {
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "Failed to instantiate Wasmtime module: {e}"
-                ))
+                ));
             }
         };
 
@@ -1054,7 +1053,7 @@ impl WasmtimeRuntime {
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "Failed to compile WASM component from binary: {e}"
-                ))
+                ));
             }
         };
 
@@ -1154,7 +1153,7 @@ impl WasmtimeRuntime {
                         Err(e) => {
                             return Err(anyhow::anyhow!(
                                 "Failed to instantiate WASM command component: {e}"
-                            ))
+                            ));
                         }
                     };
 
@@ -1224,7 +1223,7 @@ impl WasmtimeRuntime {
             Err(e) => {
                 return Err(anyhow::anyhow!(
                     "Failed to compile WASM component from binary: {e}"
-                ))
+                ));
             }
         };
 
@@ -1314,7 +1313,7 @@ impl WasmtimeRuntime {
                 let instance = match linker.instantiate_async(&mut store, &component).await {
                     Ok(i) => i,
                     Err(e) => {
-                        return Err(anyhow::anyhow!("Failed to instantiate WASM component: {e}"))
+                        return Err(anyhow::anyhow!("Failed to instantiate WASM component: {e}"));
                     }
                 };
 

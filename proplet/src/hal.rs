@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use elastic_tee_hal::interfaces::{
     CapabilitiesInterface, ClockInterface, CryptoInterface, HalProvider, RandomInterface,
 };

@@ -1,7 +1,7 @@
 [package]
 name = "proplet"
-version = "0.6.2"
-edition = "2021"
+version = "0.6.3"
+edition = "2024"
 
 [dependencies]
 tokio = { version = "1.53", features = ["full"] }

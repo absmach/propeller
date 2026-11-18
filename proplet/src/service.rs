@@ -1,7 +1,7 @@
 use crate::config::PropletConfig;
 use crate::metrics::MetricsCollector;
-use crate::monitoring::{system::SystemMonitor, ProcessMonitor};
-use crate::mqtt::{build_topic, MqttMessage, PubSub};
+use crate::monitoring::{ProcessMonitor, system::SystemMonitor};
+use crate::mqtt::{MqttMessage, PubSub, build_topic};
 use crate::plugin::registry::PluginRegistry;
 use crate::plugin::{TaskInfo as PluginTaskInfo, TaskResult as PluginTaskResult};
 use crate::runtime::{Runtime, RuntimeContext, StartConfig};
@@ -15,9 +15,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::SystemTime;
 use sysinfo::System;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn, Instrument};
+use tracing::{Instrument, debug, error, info, warn};
 
 const WASM_FETCH_MAX_BYTES: usize = 100 * 1024 * 1024; // 100MB
 
@@ -336,10 +336,10 @@ impl PropletService {
 
             // Re-announce periodically: a discovery message sent before the
             // manager subscribed is lost and liveness carries no metadata.
-            if ticks.is_multiple_of(Self::DISCOVERY_RENOTIFY_TICKS) {
-                if let Err(e) = self.publish_discovery().await {
-                    error!("Failed to re-publish discovery: {}", e);
-                }
+            if ticks.is_multiple_of(Self::DISCOVERY_RENOTIFY_TICKS)
+                && let Err(e) = self.publish_discovery().await
+            {
+                error!("Failed to re-publish discovery: {}", e);
             }
         }
     }
@@ -508,12 +508,11 @@ impl PropletService {
         tracing::Span::current().record("task_id", req.id.as_str());
         tracing::Span::current().record("task_name", req.name.as_str());
 
-        if !req.broadcast {
-            if let Some(ref target_id) = req.proplet_id {
-                if target_id != &self.config.entity_id {
-                    return Ok(());
-                }
-            }
+        if !req.broadcast
+            && let Some(ref target_id) = req.proplet_id
+            && target_id != &self.config.entity_id
+        {
+            return Ok(());
         }
 
         info!("Received start command for task: {}", req.id);
@@ -546,7 +545,9 @@ impl PropletService {
                     Some(wasi_pep_conf) => {
                         if wasi_security.is_some() {
                             // wasi_security already set from metadata.wasi_security property. Cannot be overridden by wasi_pep.
-                            let err = anyhow::anyhow!("Invalid Metadata: 'wasi_pep' conflicts with 'wasi_security' property. Only one of these properties is allowed in the metadata.");
+                            let err = anyhow::anyhow!(
+                                "Invalid Metadata: 'wasi_pep' conflicts with 'wasi_security' property. Only one of these properties is allowed in the metadata."
+                            );
                             error!("Validation error for task {}: {}", req.id, err);
                             self.publish_result(&req.id, Vec::new(), Some(err.to_string()))
                                 .await?;
@@ -554,7 +555,9 @@ impl PropletService {
                         }
                         // Load the WASI PEP (security plugin) library from $PROPLET_PLUGIN_DIR/libWasiSecurityPlugin.so
                         let Some(ref plugin_dir) = self.config.plugin_dir else {
-                            let err = anyhow::anyhow!("PROPLET_PLUGIN_DIR undefined but it is required by 'wasi_pep' metadata to find the WASI PEP library ($PROPLET_PLUGIN_DIR/libWasiSecurityPlugin.so)");
+                            let err = anyhow::anyhow!(
+                                "PROPLET_PLUGIN_DIR undefined but it is required by 'wasi_pep' metadata to find the WASI PEP library ($PROPLET_PLUGIN_DIR/libWasiSecurityPlugin.so)"
+                            );
                             error!("Validation error for task {}: {}", req.id, err);
                             self.publish_result(&req.id, Vec::new(), Some(err.to_string()))
                                 .await?;
@@ -567,7 +570,11 @@ impl PropletService {
                         } {
                             Ok(container) => container,
                             Err(e) => {
-                                let err = anyhow::anyhow!("Could not open WASI security plugin library or load symbols from file '{}': {}", wasi_pep_lib_path.display(), e);
+                                let err = anyhow::anyhow!(
+                                    "Could not open WASI security plugin library or load symbols from file '{}': {}",
+                                    wasi_pep_lib_path.display(),
+                                    e
+                                );
                                 error!(
                                     "Task {} - metadata.wasi_pep config loading error: {}",
                                     req.id, err
@@ -589,7 +596,11 @@ impl PropletService {
                         {
                             Ok(new_wasi_security) => Some(new_wasi_security),
                             Err(e) => {
-                                let err = anyhow::anyhow!("Could not load the WASI security config from plugin library file '{}': {}", wasi_pep_lib_path.display(), e);
+                                let err = anyhow::anyhow!(
+                                    "Could not load the WASI security config from plugin library file '{}': {}",
+                                    wasi_pep_lib_path.display(),
+                                    e
+                                );
                                 error!(
                                     "Task {} - metadata.wasi_pep config loading error: {}",
                                     req.id, err
@@ -685,7 +696,7 @@ impl PropletService {
         }
 
         let wasm_binary = if !req.file.is_empty() {
-            use base64::{engine::general_purpose::STANDARD, Engine};
+            use base64::{Engine, engine::general_purpose::STANDARD};
             match STANDARD.decode(&req.file) {
                 Ok(decoded) => {
                     info!("Decoded wasm binary, size: {} bytes", decoded.len());
@@ -890,14 +901,13 @@ impl PropletService {
                 wasi_security,
             };
 
-            if export_metrics {
-                if let Err(e) = monitor
+            if export_metrics
+                && let Err(e) = monitor
                     .start_monitoring(&task_id, monitoring_profile.clone())
                     .await
                 {
                     error!("Failed to start monitoring for task {}: {}", task_id, e);
                 }
-            }
 
             let monitor_handle = if export_metrics {
                 let monitor_clone = monitor.clone();
@@ -991,15 +1001,14 @@ impl PropletService {
                 info!("Fetching model from registry: {}", model_url);
                 match http_client.get(&model_url).send().await {
                     Ok(response) if response.status().is_success() => {
-                        if let Ok(model_json) = response.json::<serde_json::Value>().await {
-                            if let Ok(model_str) = serde_json::to_string(&model_json) {
+                        if let Ok(model_json) = response.json::<serde_json::Value>().await
+                            && let Ok(model_str) = serde_json::to_string(&model_json) {
                                 env.insert("MODEL_DATA".to_string(), model_str);
                                 info!(
                                     "Successfully fetched model v{} and passed to client",
                                     model_version
                                 );
                             }
-                        }
                     }
                     Ok(response) => {
                         warn!("Failed to fetch model: HTTP {}", response.status());
@@ -1037,8 +1046,8 @@ impl PropletService {
                 info!("Fetching dataset from Local Data Store: {}", dataset_url);
                 match http_client.get(&dataset_url).send().await {
                     Ok(response) if response.status().is_success() => {
-                        if let Ok(dataset_json) = response.json::<serde_json::Value>().await {
-                            if let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
+                        if let Ok(dataset_json) = response.json::<serde_json::Value>().await
+                            && let Ok(dataset_str) = serde_json::to_string(&dataset_json) {
                                 env.insert("DATASET_DATA".to_string(), dataset_str);
                                 if let Some(size) =
                                     dataset_json.get("size").and_then(|s| s.as_u64())
@@ -1048,7 +1057,6 @@ impl PropletService {
                                     info!("Successfully fetched dataset and passed to client");
                                 }
                             }
-                        }
                     }
                     Ok(response) => {
                         warn!(
@@ -1297,12 +1305,11 @@ impl PropletService {
 
         tracing::Span::current().record("task_id", req.id.as_str());
 
-        if !req.broadcast {
-            if let Some(ref target_id) = req.proplet_id {
-                if target_id != &self.config.entity_id {
-                    return Ok(());
-                }
-            }
+        if !req.broadcast
+            && let Some(ref target_id) = req.proplet_id
+            && target_id != &self.config.entity_id
+        {
+            return Ok(());
         }
 
         info!("Received invoke command for task: {}", req.id);
@@ -1478,21 +1485,21 @@ impl PropletService {
     async fn try_assemble_chunks(&self, app_name: &str) -> Result<Option<Vec<u8>>> {
         let mut assembly = self.chunk_assembly.lock().await;
 
-        if let Some(state) = assembly.get(app_name) {
-            if state.is_complete() {
-                let binary = state.assemble();
+        if let Some(state) = assembly.get(app_name)
+            && state.is_complete()
+        {
+            let binary = state.assemble();
 
-                info!(
-                    "Assembled binary for app '{}', size: {} bytes from {} chunks",
-                    app_name,
-                    binary.len(),
-                    state.total_chunks
-                );
+            info!(
+                "Assembled binary for app '{}', size: {} bytes from {} chunks",
+                app_name,
+                binary.len(),
+                state.total_chunks
+            );
 
-                assembly.remove(app_name);
+            assembly.remove(app_name);
 
-                return Ok(Some(binary));
-            }
+            return Ok(Some(binary));
         }
 
         Ok(None)
@@ -1532,36 +1539,35 @@ impl PropletService {
 
         for line in stderr.lines() {
             if let Some(json_str) = line.strip_prefix("MODEL_REQUEST:") {
-                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
-                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
-                        requests.push(HttpRequest {
-                            action: "get_model".to_string(),
-                            url: url.to_string(),
-                            data: None,
-                        });
-                    }
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim())
+                    && let Some(url) = req.get("url").and_then(|u| u.as_str())
+                {
+                    requests.push(HttpRequest {
+                        action: "get_model".to_string(),
+                        url: url.to_string(),
+                        data: None,
+                    });
                 }
             } else if let Some(json_str) = line.strip_prefix("UPDATE_REQUEST:") {
-                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
-                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
-                        let data = req.get("data").cloned();
-                        requests.push(HttpRequest {
-                            action: "post_update".to_string(),
-                            url: url.to_string(),
-                            data,
-                        });
-                    }
+                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim())
+                    && let Some(url) = req.get("url").and_then(|u| u.as_str())
+                {
+                    let data = req.get("data").cloned();
+                    requests.push(HttpRequest {
+                        action: "post_update".to_string(),
+                        url: url.to_string(),
+                        data,
+                    });
                 }
-            } else if let Some(json_str) = line.strip_prefix("TASK_REQUEST:") {
-                if let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim()) {
-                    if let Some(url) = req.get("url").and_then(|u| u.as_str()) {
-                        requests.push(HttpRequest {
-                            action: "get_task".to_string(),
-                            url: url.to_string(),
-                            data: None,
-                        });
-                    }
-                }
+            } else if let Some(json_str) = line.strip_prefix("TASK_REQUEST:")
+                && let Ok(req) = serde_json::from_str::<serde_json::Value>(json_str.trim())
+                && let Some(url) = req.get("url").and_then(|u| u.as_str())
+            {
+                requests.push(HttpRequest {
+                    action: "get_task".to_string(),
+                    url: url.to_string(),
+                    data: None,
+                });
             }
         }
 
@@ -1657,10 +1663,10 @@ struct HttpRequest {
 
 fn extract_model_version_from_uri(uri: &str) -> i32 {
     if let Some(last_part) = uri.split('/').next_back() {
-        if let Some(v_part) = last_part.strip_prefix("global_model_v") {
-            if let Ok(version) = v_part.parse::<i32>() {
-                return version;
-            }
+        if let Some(v_part) = last_part.strip_prefix("global_model_v")
+            && let Ok(version) = v_part.parse::<i32>()
+        {
+            return version;
         }
         if let Ok(num_str) = last_part
             .chars()
@@ -1684,7 +1690,7 @@ fn build_fl_update_envelope(
     result_str: &str,
     env: &HashMap<String, String>,
 ) -> serde_json::Value {
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
 
     let num_samples = env
         .get("FL_NUM_SAMPLES")
@@ -1774,15 +1780,15 @@ async fn fetch_wasm_from_http(client: &HttpClient, url: &str) -> Result<Vec<u8>>
         ));
     }
 
-    if let Some(content_length) = response.content_length() {
-        if content_length as usize > WASM_FETCH_MAX_BYTES {
-            return Err(anyhow::anyhow!(
-                "wasm response from {} exceeds size limit ({} > {} bytes)",
-                url,
-                content_length,
-                WASM_FETCH_MAX_BYTES
-            ));
-        }
+    if let Some(content_length) = response.content_length()
+        && content_length as usize > WASM_FETCH_MAX_BYTES
+    {
+        return Err(anyhow::anyhow!(
+            "wasm response from {} exceeds size limit ({} > {} bytes)",
+            url,
+            content_length,
+            WASM_FETCH_MAX_BYTES
+        ));
     }
 
     let mut binary = Vec::new();

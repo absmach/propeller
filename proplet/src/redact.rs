@@ -78,10 +78,12 @@ mod tests {
         assert_eq!(value["file"].as_str().unwrap().len(), 30);
         assert!(value["file"].as_str().unwrap().contains(REDACTED_MARKER));
         assert!(value["file"].as_str().unwrap().starts_with(&file[..10]));
-        assert!(value["file"]
-            .as_str()
-            .unwrap()
-            .ends_with(&file[file.len() - 10..]));
+        assert!(
+            value["file"]
+                .as_str()
+                .unwrap()
+                .ends_with(&file[file.len() - 10..])
+        );
     }
 
     #[test]

@@ -122,10 +122,10 @@ impl MetricsCollector {
     fn collect_memory_metrics(&mut self) -> MemoryMetrics {
         let mut mem_metrics = MemoryMetrics::default();
 
-        if let Ok(pid) = sysinfo::get_current_pid() {
-            if let Some(process) = self.system.process(pid) {
-                mem_metrics.rss_bytes = process.memory();
-            }
+        if let Ok(pid) = sysinfo::get_current_pid()
+            && let Some(process) = self.system.process(pid)
+        {
+            mem_metrics.rss_bytes = process.memory();
         }
 
         #[cfg(target_os = "linux")]

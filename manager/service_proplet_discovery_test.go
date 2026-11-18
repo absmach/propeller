@@ -61,12 +61,12 @@ func TestCreatePropletHandlerRefreshesExistingProplet(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, before.Metadata.Hostname)
 
-	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-a", "0.6.2")))
+	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-a", "0.6.3")))
 
 	after, err := repo.Get(ctx, id)
 	require.NoError(t, err)
 	require.Equal(t, "node-a", after.Metadata.Hostname)
-	require.Equal(t, "0.6.2", after.Metadata.PropletVersion)
+	require.Equal(t, "0.6.3", after.Metadata.PropletVersion)
 	require.Equal(t, "wasmtime", after.Metadata.WasmRuntime)
 	require.Equal(t, "172.30.0.8", after.Metadata.IP)
 }
@@ -78,7 +78,7 @@ func TestCreatePropletHandlerCreatesNewProplet(t *testing.T) {
 	ctx := context.Background()
 	const id = "proplet-new"
 
-	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-b", "0.6.2")))
+	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-b", "0.6.3")))
 
 	got, err := repo.Get(ctx, id)
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestCreatePropletHandlerPreservesIdentityOnRefresh(t *testing.T) {
 	ctx := context.Background()
 	const id = "proplet-2"
 
-	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-c", "0.6.2")))
+	require.NoError(t, svc.createPropletHandler(ctx, discoveryMsg(id, "node-c", "0.6.3")))
 
 	original, err := repo.Get(ctx, id)
 	require.NoError(t, err)

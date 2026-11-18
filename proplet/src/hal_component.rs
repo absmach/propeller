@@ -18,8 +18,8 @@
 //! fine-grained `get-metadata`) we return a clear `Err(String)`.
 
 use anyhow::Result;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::warn;
 
 use crate::hal::{PropletHal, SocketProtocol};
